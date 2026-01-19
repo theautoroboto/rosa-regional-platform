@@ -156,7 +156,7 @@ resource "aws_codebuild_project" "sandbox_project" {
 
   source {
     type      = "CODEPIPELINE"
-    buildspec = "terraform/terraform/sandbox/terraform/pipeline/buildspec.yml"
+    buildspec = "terraform/sandbox/terraform/pipeline/buildspec.yml"
   }
 }
 
