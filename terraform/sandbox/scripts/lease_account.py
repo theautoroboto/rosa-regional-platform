@@ -24,6 +24,7 @@ def run_cloud_nuke(credentials):
 
     cmd = [
         "cloud-nuke", "aws",
+        "--region", REGION,
         "--config", config_path,
         "--force"
     ]
