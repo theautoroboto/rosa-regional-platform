@@ -1,0 +1,30 @@
+# =============================================================================
+# Regional Cluster Infrastructure Configuration Template
+# =============================================================================
+# This file contains the configuration template for the regional cluster.
+#
+# IMPORTANT: Never commit terraform.tfvars to git - it's in .gitignore for security
+
+# Tagging Configuration
+# Application code for resource tagging and cost allocation
+app_code      = "APP001"
+
+# Service phase (development, staging, production)
+service_phase = "development"
+
+# Cost center identifier for billing and cost allocation
+cost_center   = "123"
+
+# =============================================================================
+# ArgoCD Bootstrap Configuration
+# =============================================================================
+# Git repository configuration for cluster bootstrap and ongoing management
+
+# Git repository URL containing cluster configuration
+repository_url    = "https://github.com/openshift-online/rosa-regional-platform"
+
+# Path within repository containing ArgoCD applications for regional cluster
+repository_path   = "argocd/regional-cluster"
+
+# Git branch to use for cluster configuration (defaults to "main" if not specified)
+repository_branch = "main"

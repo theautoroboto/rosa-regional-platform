@@ -16,7 +16,7 @@ module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 6.0"
 
-  name = "${var.cluster_name}-vpc"
+  name = "${local.resource_name_base}-vpc"
   cidr = var.vpc_cidr
 
   # Use auto-detected AZs if not provided, ensuring 3 AZs for proper EKS distribution
@@ -43,20 +43,13 @@ module "vpc" {
   # EKS-specific subnet tags for INTERNAL load balancer discovery only
   # Note: NO external load balancer tags - this ensures only internal LBs are created
   public_subnet_tags = {
-    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+    "kubernetes.io/cluster/${local.resource_name_base}" = "shared"
     # Explicitly NOT setting "kubernetes.io/role/elb" to prevent external load balancers
   }
 
   # Private subnets: Worker nodes and internal load balancers only
   private_subnet_tags = {
-    "kubernetes.io/role/internal-elb"           = "1" # Internal load balancers only
-    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+    "kubernetes.io/role/internal-elb"                   = "1" # Internal load balancers only
+    "kubernetes.io/cluster/${local.resource_name_base}" = "shared"
   }
-
-  tags = merge(
-    var.tags,
-    {
-      "kubernetes.io/cluster/${var.cluster_name}" = "shared"
-    }
-  )
 }

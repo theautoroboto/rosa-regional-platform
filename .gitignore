@@ -1,5 +1,7 @@
 .terraform
 *.tfstate*
-*.tfvars*
 .local
 .vscode
+*.tfvars
+*.terraform.lock.hcl
+*.zip

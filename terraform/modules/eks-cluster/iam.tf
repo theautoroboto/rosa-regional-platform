@@ -3,7 +3,7 @@
 # This allows the EBS CSI driver to create, attach, and manage EBS volumes for pods
 # =============================================================================
 resource "aws_iam_role" "ebs_csi_driver" {
-  name = "${var.cluster_name}-ebs-csi-driver"
+  name = "${local.resource_name_base}-ebs-csi-driver"
 
   # Trust policy allows the Pod Identity service to assume this role
   assume_role_policy = jsonencode({
@@ -20,13 +20,10 @@ resource "aws_iam_role" "ebs_csi_driver" {
     }]
   })
 
-  tags = merge(
-    var.tags,
-    {
-      "Purpose"        = "EBS-CSI-Driver-Pod-Identity"
-      "Security-Scope" = "persistent-volume-management"
-    }
-  )
+  tags = {
+    "Purpose"        = "EBS-CSI-Driver-Pod-Identity"
+    "Security-Scope" = "persistent-volume-management"
+  }
 }
 
 # Attach AWS managed policy for EBS CSI driver permissions
@@ -45,11 +42,8 @@ resource "aws_eks_pod_identity_association" "ebs_csi_driver" {
   service_account = "ebs-csi-controller-sa"
   role_arn        = aws_iam_role.ebs_csi_driver.arn
 
-  tags = merge(
-    var.tags,
-    {
-      "Association-Purpose" = "EBS-CSI-Driver"
-      "ServiceAccount"      = "ebs-csi-controller-sa"
-    }
-  )
+  tags = {
+    "Association-Purpose" = "EBS-CSI-Driver"
+    "ServiceAccount"      = "ebs-csi-controller-sa"
+  }
 }

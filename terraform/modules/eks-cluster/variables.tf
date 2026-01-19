@@ -2,16 +2,6 @@
 # Required variables
 # =============================================================================
 
-variable "cluster_name" {
-  description = "Name of the EKS cluster. Used for naming all related resources."
-  type        = string
-
-  validation {
-    condition     = length(var.cluster_name) > 0 && length(var.cluster_name) <= 100
-    error_message = "Cluster name must be between 1 and 100 characters."
-  }
-}
-
 variable "cluster_type" {
   description = "Type of cluster: 'regional' for workload clusters or 'management' for control plane clusters"
   type        = string
@@ -22,20 +12,6 @@ variable "cluster_type" {
   }
 }
 
-variable "region" {
-  description = "AWS region where resources will be created"
-  type        = string
-
-  validation {
-    condition     = can(regex("^[a-z]{2}-[a-z]+-[0-9]$", var.region))
-    error_message = "Region must be a valid AWS region format (e.g., us-east-1, eu-west-1)."
-  }
-}
-
-variable "aws_profile" {
-  description = "AWS profile to use for authentication. Should match your ~/.aws/credentials profile."
-  type        = string
-}
 
 # =============================================================================
 # Kubernetes configuration
@@ -165,25 +141,6 @@ variable "node_disk_size" {
   }
 }
 
-# =============================================================================
-# Resource tagging
-# =============================================================================
-
-variable "tags" {
-  description = "Tags to apply to all resources for organization, cost tracking, and governance"
-  type        = map(string)
-  default = {
-    Project   = "ROSA-Regional-Platform"
-    ManagedBy = "Terraform"
-  }
-
-  validation {
-    condition = alltrue([
-      for key, value in var.tags : length(key) > 0 && length(value) > 0
-    ])
-    error_message = "All tag keys and values must be non-empty strings."
-  }
-}
 
 # =============================================================================
 # Advanced security configuration options
@@ -200,6 +157,7 @@ variable "enable_pod_security_standards" {
   type        = bool
   default     = true
 }
+
 
 # =============================================================================
 # Validation Rules

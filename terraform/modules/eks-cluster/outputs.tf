@@ -28,3 +28,13 @@ output "cluster_security_group_id" {
   description = "EKS cluster security group ID"
   value       = module.eks.cluster_security_group_id
 }
+
+output "cluster_arn" {
+  description = "EKS cluster ARN"
+  value       = module.eks.cluster_arn
+}
+
+output "resource_name_base" {
+  description = "Base name for resources (cluster_type-random_suffix)"
+  value       = local.resource_name_base
+}

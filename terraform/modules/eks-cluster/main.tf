@@ -35,7 +35,7 @@ module "eks" {
   version = "~> 21.14"
 
   # Cluster configuration
-  name               = var.cluster_name
+  name               = local.resource_name_base
   kubernetes_version = var.cluster_version
 
   # VPC and networking
@@ -79,7 +79,7 @@ module "eks" {
       }
 
       tags = {
-        "Name" = "${var.cluster_name}-main-node-group"
+        "Name" = "${local.resource_name_base}-main-node-group"
       }
     }
   }
@@ -106,7 +106,5 @@ module "eks" {
 
   # IAM configuration - using newer Pod Identity instead of IRSA
   enable_irsa = false
-
-  tags = local.common_tags
 }
 
