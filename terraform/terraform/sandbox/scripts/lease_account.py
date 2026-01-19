@@ -110,22 +110,11 @@ def lease_account():
                     sts = boto3.client('sts', region_name=REGION)
                     try:
                         role_arn = f"arn:aws:iam::{account_id}:role/OrganizationAccountAccessRole"
-                        try:
-                            assumed_role_object = sts.assume_role(
-                                RoleArn=role_arn,
-                                RoleSessionName="LeasedSession",
-                                DurationSeconds=3600
-                            )
-                        except ClientError as e:
-                            if e.response['Error']['Code'] == 'ValidationError':
-                                print(f"Warning: Failed to assume role with 3600s duration for account {account_id}, retrying with 1600s.", file=sys.stderr)
-                                assumed_role_object = sts.assume_role(
-                                    RoleArn=role_arn,
-                                    RoleSessionName="LeasedSession",
-                                    DurationSeconds=1600
-                                )
-                            else:
-                                raise e
+                        assumed_role_object = sts.assume_role(
+                            RoleArn=role_arn,
+                            RoleSessionName="LeasedSession",
+                            DurationSeconds=3600
+                        )
 
                         credentials = assumed_role_object['Credentials']
 
