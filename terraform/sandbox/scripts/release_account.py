@@ -28,17 +28,17 @@ def run_cloud_nuke(credentials):
     ]
 
     try:
-        # Capture output
+        # Stream output to stdout/stderr
         subprocess.run(
             cmd,
             env=env,
             check=True,
-            capture_output=True,
+            capture_output=False,
             text=True
         )
         return True
     except subprocess.CalledProcessError as e:
-        print(f"cloud-nuke failed: {e.stderr}", file=sys.stderr)
+        print(f"cloud-nuke failed with exit code {e.returncode}", file=sys.stderr)
         return False
     except FileNotFoundError:
         print(f"cloud-nuke binary not found.", file=sys.stderr)
