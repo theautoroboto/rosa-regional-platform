@@ -11,16 +11,10 @@ echo -e "${GREEN}Starting environment setup...${NC}"
 # Determine script directory for relative paths
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# Create a temporary directory for downloads
+# Create a temporary directory for downloads and extraction
 TEMP_DIR=$(mktemp -d)
 echo "Using temporary directory: $TEMP_DIR"
-
-# Cleanup function
-cleanup() {
-    echo "Cleaning up temporary directory..."
-    rm -rf "$TEMP_DIR"
-}
-trap cleanup EXIT
+trap "rm -rf $TEMP_DIR" EXIT
 
 # 1. Install/Verify Terraform
 echo -e "${YELLOW}Checking Terraform...${NC}"
@@ -33,7 +27,9 @@ if ! command -v terraform &> /dev/null; then
     ARCH="amd64"
 
     wget -P "$TEMP_DIR" "https://releases.hashicorp.com/terraform/${REQUIRED_TF_VERSION}/terraform_${REQUIRED_TF_VERSION}_${OS}_${ARCH}.zip"
-    unzip "$TEMP_DIR/terraform_${REQUIRED_TF_VERSION}_${OS}_${ARCH}.zip" -d "$TEMP_DIR"
+    echo "Unzipping terraform cli"
+    unzip -d "$TEMP_DIR" "$TEMP_DIR/terraform_${REQUIRED_TF_VERSION}_${OS}_${ARCH}.zip"
+    echo "Moving extracted terraform cli"
     sudo mv "$TEMP_DIR/terraform" /usr/local/bin/
     echo -e "${GREEN}Terraform installed successfully.${NC}"
 else
@@ -46,7 +42,7 @@ echo -e "${YELLOW}Checking AWS CLI...${NC}"
 if ! command -v aws &> /dev/null; then
     echo "AWS CLI not found. Installing..."
     curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "$TEMP_DIR/awscliv2.zip"
-    unzip -q "$TEMP_DIR/awscliv2.zip" -d "$TEMP_DIR"
+    unzip -q -d "$TEMP_DIR" "$TEMP_DIR/awscliv2.zip"
     sudo "$TEMP_DIR/aws/install"
     echo -e "${GREEN}AWS CLI installed successfully.${NC}"
 else
