@@ -70,8 +70,8 @@ resource "aws_iam_role_policy" "codebuild_policy" {
         Resource = aws_dynamodb_table.account_pool.arn
       },
       {
-        Effect   = "Allow"
-        Action   = "sts:AssumeRole"
+        Effect = "Allow"
+        Action = "sts:AssumeRole"
         Resource = [for id in var.account_ids : "arn:aws:iam::${id}:role/OrganizationAccountAccessRole"]
       }
     ]
@@ -125,8 +125,8 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
         Resource = "*"
       },
       {
-        Effect   = "Allow"
-        Action   = "codestar-connections:UseConnection"
+        Effect = "Allow"
+        Action = "codestar-connections:UseConnection"
         Resource = aws_codestarconnections_connection.github.arn
       }
     ]
@@ -156,7 +156,7 @@ resource "aws_codebuild_project" "sandbox_project" {
 
   source {
     type      = "CODEPIPELINE"
-    buildspec = "buildspec.yml"
+    buildspec = "terraform/sandbox/pipeline/buildspec.yml"
   }
 }
 
@@ -193,12 +193,12 @@ resource "aws_codepipeline" "sandbox_pipeline" {
     name = "Build"
 
     action {
-      name            = "Build"
-      category        = "Build"
-      owner           = "AWS"
-      provider        = "CodeBuild"
-      input_artifacts = ["source_output"]
-      version         = "1"
+      name             = "Build"
+      category         = "Build"
+      owner            = "AWS"
+      provider         = "CodeBuild"
+      input_artifacts  = ["source_output"]
+      version          = "1"
 
       configuration = {
         ProjectName = aws_codebuild_project.sandbox_project.name
@@ -237,8 +237,8 @@ resource "aws_iam_role_policy" "event_policy" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = "codepipeline:StartPipelineExecution"
+        Effect = "Allow"
+        Action = "codepipeline:StartPipelineExecution"
         Resource = aws_codepipeline.sandbox_pipeline.arn
       }
     ]
@@ -254,6 +254,6 @@ resource "aws_cloudwatch_event_target" "pipeline" {
 
 # --- Outputs ---
 output "codestar_connection_arn" {
-  value       = aws_codestarconnections_connection.github.arn
+  value = aws_codestarconnections_connection.github.arn
   description = "The ARN of the CodeStar connection. You must complete the handshake in the AWS Console."
 }
