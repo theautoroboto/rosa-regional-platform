@@ -44,8 +44,8 @@ def run_cloud_nuke(credentials):
         print(f"cloud-nuke binary not found.", file=sys.stderr)
         return False
 
-def release_account(account_id):
-    print(f"Starting release_account.py for account {account_id} in region {REGION}", file=sys.stderr)
+def release_account(account_id, status='AVAILABLE'):
+    print(f"Starting release_account.py for account {account_id} with status {status} in region {REGION}", file=sys.stderr)
     dynamodb = boto3.resource('dynamodb', region_name=REGION)
     table = dynamodb.Table(TABLE_NAME)
     IAM_USER_NAME = 'sandbox-temporary-user'
@@ -66,7 +66,8 @@ def release_account(account_id):
             sys.exit(1)
 
         current_status = item.get('status')
-        if current_status != 'IN_USE':
+        # Allow releasing if status is IN_USE or FAILED (re-releasing a failed account to AVAILABLE or resetting it)
+        if current_status not in ['IN_USE', 'FAILED']:
             error_msg = {
                 "status": "error",
                 "message": f"Account {account_id} is not leased (current status: {current_status})",
@@ -75,6 +76,18 @@ def release_account(account_id):
             }
             print(json.dumps(error_msg), file=sys.stderr)
             sys.exit(1)
+
+        # If we are setting status to FAILED, we skip cleanup to allow debugging
+        if status == 'FAILED':
+            print(f"Marking account {account_id} as FAILED. Skipping cleanup.", file=sys.stderr)
+            table.update_item(
+                Key={'account_id': account_id},
+                UpdateExpression="SET #s = :failed",
+                ExpressionAttributeNames={'#s': 'status'},
+                ExpressionAttributeValues={':failed': 'FAILED'}
+            )
+            print(f"Successfully marked account {account_id} as FAILED")
+            return
 
         # Attempt to clean up the temporary user
         try:
@@ -165,12 +178,12 @@ def release_account(account_id):
         # Proceed to release
         table.update_item(
             Key={'account_id': account_id},
-            UpdateExpression="SET #s = :available REMOVE lease_timestamp",
+            UpdateExpression="SET #s = :status REMOVE lease_timestamp",
             ConditionExpression="attribute_exists(account_id)",
             ExpressionAttributeNames={'#s': 'status'},
-            ExpressionAttributeValues={':available': 'AVAILABLE'}
+            ExpressionAttributeValues={':status': status}
         )
-        print(f"Successfully released account {account_id}")
+        print(f"Successfully released account {account_id} with status {status}")
 
     except ClientError as e:
         error_msg = {
@@ -192,6 +205,7 @@ def release_account(account_id):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Release a leased AWS account.')
     parser.add_argument('account_id', type=str, help='The ID of the account to release')
+    parser.add_argument('--status', type=str, default='AVAILABLE', choices=['AVAILABLE', 'FAILED'], help='The target status for the account (AVAILABLE or FAILED)')
     args = parser.parse_args()
 
-    release_account(args.account_id)
+    release_account(args.account_id, args.status)

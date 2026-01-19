@@ -4,6 +4,12 @@ variable "account_ids" {
   default     = ["109342711269", "114594328247", "095279701323", "507041536644"]
 }
 
+variable "aws_region" {
+  description = "AWS Region for resources and cleanup"
+  type        = string
+  default     = "us-east-2"
+}
+
 variable "github_owner" {
   description = "GitHub repository owner"
   type        = string
