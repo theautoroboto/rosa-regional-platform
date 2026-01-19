@@ -28,13 +28,15 @@ def run_cloud_nuke(credentials):
     ]
 
     try:
-        # Stream output to stdout/stderr
+        # Stream output to stderr to allow viewing progress while keeping stdout clean for JSON
         subprocess.run(
             cmd,
             env=env,
             check=True,
             capture_output=False,
-            text=True
+            text=True,
+            stdout=sys.stderr, # Redirect stdout to stderr
+            stderr=sys.stderr  # Redirect stderr to stderr
         )
         return True
     except subprocess.CalledProcessError as e:
@@ -44,7 +46,37 @@ def run_cloud_nuke(credentials):
         print(f"cloud-nuke binary not found.", file=sys.stderr)
         return False
 
-def release_account(account_id, status='AVAILABLE'):
+def run_terraform_destroy(credentials, terraform_path):
+    env = os.environ.copy()
+    env['AWS_ACCESS_KEY_ID'] = credentials['AccessKeyId']
+    env['AWS_SECRET_ACCESS_KEY'] = credentials['SecretAccessKey']
+    if credentials.get('SessionToken'):
+        env['AWS_SESSION_TOKEN'] = credentials['SessionToken']
+
+    cmd = [
+        "terraform", "destroy",
+        "-auto-approve"
+    ]
+
+    try:
+        # Stream output to stdout/stderr
+        subprocess.run(
+            cmd,
+            cwd=terraform_path,
+            env=env,
+            check=True,
+            capture_output=False,
+            text=True
+        )
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"terraform destroy failed with exit code {e.returncode}", file=sys.stderr)
+        return False
+    except FileNotFoundError:
+        print(f"terraform binary not found.", file=sys.stderr)
+        return False
+
+def release_account(account_id, status='AVAILABLE', terraform_path=None):
     print(f"Starting release_account.py for account {account_id} with status {status} in region {REGION}", file=sys.stderr)
     dynamodb = boto3.resource('dynamodb', region_name=REGION)
     table = dynamodb.Table(TABLE_NAME)
@@ -101,6 +133,26 @@ def release_account(account_id, status='AVAILABLE'):
                 DurationSeconds=3600
             )
             credentials = assumed_role_object['Credentials']
+
+            # Run terraform destroy if path is provided
+            if terraform_path:
+                print(f"Running terraform destroy on account {account_id} in {terraform_path}...", file=sys.stderr)
+                if not run_terraform_destroy(credentials, terraform_path):
+                    print(f"Error: terraform destroy failed for account {account_id}. Marking as DIRTY.", file=sys.stderr)
+                    # Mark as DIRTY
+                    table.update_item(
+                        Key={'account_id': account_id},
+                        UpdateExpression="SET #s = :dirty REMOVE lease_timestamp",
+                        ExpressionAttributeNames={'#s': 'status'},
+                        ExpressionAttributeValues={':dirty': 'DIRTY'}
+                    )
+                    error_msg = {
+                        "status": "error",
+                        "message": f"terraform destroy failed for account {account_id}",
+                        "account_id": account_id
+                    }
+                    print(json.dumps(error_msg), file=sys.stderr)
+                    sys.exit(1)
 
             # Run cloud-nuke
             print(f"Running cloud-nuke on account {account_id} (using assumed role credentials)...", file=sys.stderr)
@@ -206,6 +258,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Release a leased AWS account.')
     parser.add_argument('account_id', type=str, help='The ID of the account to release')
     parser.add_argument('--status', type=str, default='AVAILABLE', choices=['AVAILABLE', 'FAILED'], help='The target status for the account (AVAILABLE or FAILED)')
+    parser.add_argument('--terraform-path', type=str, help='Path to terraform configuration to destroy')
     args = parser.parse_args()
 
-    release_account(args.account_id, args.status)
+    release_account(args.account_id, args.status, args.terraform_path)

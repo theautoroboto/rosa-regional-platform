@@ -92,23 +92,13 @@ phases:
 
   post_build:
     commands:
-      - echo "=== Handling Cleanup ==="
-      
-      - |
-        # Determine status based on build success
-        if [ "$CODEBUILD_BUILD_SUCCEEDING" = "1" ]; then
-          TARGET_STATUS="AVAILABLE"
-          echo "Build Succeeded. Releasing accounts to AVAILABLE."
-        else
-          TARGET_STATUS="FAILED"
-          echo "Build Failed. Releasing accounts to FAILED state (Skipping cleanup for debugging)."
-        fi
+      - echo "=== Cleaning up ==="
 
       - |
         if [ -f /tmp/mgmt_account_id ]; then
           MGMT_ACCOUNT_ID=$(cat /tmp/mgmt_account_id)
-          echo "Releasing Management Account $MGMT_ACCOUNT_ID as $TARGET_STATUS..."
-          python3 terraform/sandbox/scripts/release_account.py $MGMT_ACCOUNT_ID --status $TARGET_STATUS || echo "Error: Failed to release Management Account $MGMT_ACCOUNT_ID"
+          echo "Releasing Management Account $MGMT_ACCOUNT_ID..."
+          python3 terraform/sandbox/scripts/release_account.py $MGMT_ACCOUNT_ID --terraform-path terraform/config/management-cluster || echo "Error: Failed to release Management Account $MGMT_ACCOUNT_ID"
         else
           echo "No Management Account to release."
         fi
@@ -116,8 +106,8 @@ phases:
       - |
         if [ -f /tmp/reg_account_id ]; then
           REG_ACCOUNT_ID=$(cat /tmp/reg_account_id)
-          echo "Releasing Regional Account $REG_ACCOUNT_ID as $TARGET_STATUS..."
-          python3 terraform/sandbox/scripts/release_account.py $REG_ACCOUNT_ID --status $TARGET_STATUS || echo "Error: Failed to release Regional Account $REG_ACCOUNT_ID"
+          echo "Releasing Regional Account $REG_ACCOUNT_ID..."
+          python3 terraform/sandbox/scripts/release_account.py $REG_ACCOUNT_ID --terraform-path terraform/config/regional-cluster || echo "Error: Failed to release Regional Account $REG_ACCOUNT_ID"
         else
           echo "No Regional Account to release."
         fi
