@@ -25,7 +25,7 @@ if ! command -v terraform &> /dev/null; then
     # Detect OS/Arch (simplified for Linux amd64 as per typical CI environments)
     OS="linux"
     ARCH="amd64"
-
+    echo "Downloading terraform ${REQUIRED_TF_VERSION}"
     wget -P "$TEMP_DIR" "https://releases.hashicorp.com/terraform/${REQUIRED_TF_VERSION}/terraform_${REQUIRED_TF_VERSION}_${OS}_${ARCH}.zip"
     echo "Unzipping terraform cli"
     unzip -d "$TEMP_DIR" "$TEMP_DIR/terraform_${REQUIRED_TF_VERSION}_${OS}_${ARCH}.zip"
