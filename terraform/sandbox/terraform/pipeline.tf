@@ -73,6 +73,15 @@ resource "aws_iam_role_policy" "codebuild_policy" {
         Effect = "Allow"
         Action = "sts:AssumeRole"
         Resource = [for id in var.account_ids : "arn:aws:iam::${id}:role/OrganizationAccountAccessRole"]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "codebuild:StartBuild",
+          "codebuild:StopBuild",
+          "codebuild:RetryBuild"
+        ]
+        Resource = aws_codebuild_project.sandbox_project.arn
       }
     ]
   })
