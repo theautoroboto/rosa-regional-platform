@@ -72,4 +72,17 @@ else
     echo "cloud-nuke is already installed."
 fi
 
+# 5. Install/Verify kubectl
+echo -e "${YELLOW}Checking kubectl...${NC}"
+if ! command -v kubectl &> /dev/null; then
+    echo "kubectl not found. Installing..."
+    # Install latest stable release
+    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+    chmod +x kubectl
+    sudo mv kubectl /usr/local/bin/
+    echo -e "${GREEN}kubectl installed successfully.${NC}"
+else
+    echo "kubectl is already installed."
+fi
+
 echo -e "${GREEN}Setup complete!${NC}"
