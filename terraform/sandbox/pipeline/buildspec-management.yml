@@ -8,6 +8,8 @@ env:
 phases:
   install:
     commands:
+      - 'echo "Waiting 20 seconds to stagger start..."'
+      - sleep 20
       - 'echo "Step 1: Installing dependencies..."'
       - apt-get update && apt-get install -y jq
       - chmod +x terraform/sandbox/scripts/setup_env.sh
