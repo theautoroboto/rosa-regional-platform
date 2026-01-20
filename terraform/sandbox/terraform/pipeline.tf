@@ -156,7 +156,7 @@ resource "aws_codebuild_project" "sandbox_project" {
 
   source {
     type      = "CODEPIPELINE"
-    buildspec = "terraform/sandbox/pipeline/buildspec.yml"
+    buildspec = "terraform/sandbox/pipeline/buildspec-batch.yml"
   }
 }
 
@@ -165,7 +165,6 @@ resource "aws_codebuild_project" "janitor_project" {
   description   = "Cleanup failed sandbox accounts"
   build_timeout = 20 # minutes
   service_role  = aws_iam_role.codebuild_role.arn
-  source_version = var.github_branch
 
   artifacts {
     type = "NO_ARTIFACTS"
