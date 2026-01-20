@@ -1,4 +1,4 @@
-.PHONY: help terraform-fmt terraform-upgrade provision-management provision-regional apply-infra-management apply-infra-regional destroy-management destroy-regional
+.PHONY: help terraform-fmt terraform-upgrade provision-management provision-regional apply-infra-management apply-infra-regional destroy-management destroy-regional pipeline-provision-management pipeline-provision-regional pipeline-destroy-management pipeline-destroy-regional
 
 # Default target
 help:
@@ -7,6 +7,12 @@ help:
 	@echo "  provision-regional               - Provision regional cluster environment (infra & argocd bootstrap)"
 	@echo "  destroy-management               - Destroy management cluster environment"
 	@echo "  destroy-regional                 - Destroy regional cluster environment"
+	@echo ""
+	@echo "🤖 Pipeline Targets (Non-interactive):"
+	@echo "  pipeline-provision-management    - Provision management cluster (CI/CD mode)"
+	@echo "  pipeline-provision-regional      - Provision regional cluster (CI/CD mode)"
+	@echo "  pipeline-destroy-management      - Destroy management cluster (CI/CD mode)"
+	@echo "  pipeline-destroy-regional        - Destroy regional cluster (CI/CD mode)"
 	@echo ""
 	@echo "🔧 Infrastructure Only:"
 	@echo "  apply-infra-management       - Apply only management cluster infrastructure"
@@ -79,7 +85,7 @@ provision-regional:
 		terraform init && terraform apply
 	@echo ""
 	@echo "Bootstrapping argocd..."
-	@scripts/bootstrap-argocd.sh regional
+	scripts/bootstrap-argocd.sh regional
 
 # Destroy management cluster and all resources
 destroy-management:
@@ -114,6 +120,36 @@ destroy-regional:
 		terraform init && terraform destroy
 
 # =============================================================================
+# Pipeline Targets (Non-interactive)
+# =============================================================================
+
+pipeline-provision-management:
+	@echo "🚀 [Pipeline] Provisioning management cluster..."
+	@cd terraform/config/management-cluster && \
+		terraform init && terraform apply -auto-approve
+	@echo ""
+	@echo "[Pipeline] Bootstrapping argocd..."
+	scripts/bootstrap-argocd.sh management
+
+pipeline-provision-regional:
+	@echo "🚀 [Pipeline] Provisioning regional cluster..."
+	@cd terraform/config/regional-cluster && \
+		terraform init && terraform apply -auto-approve
+	@echo ""
+	@echo "[Pipeline] Bootstrapping argocd..."
+	scripts/bootstrap-argocd.sh regional
+
+pipeline-destroy-management:
+	@echo "🗑️  [Pipeline] Destroying management cluster..."
+	@cd terraform/config/management-cluster && \
+		terraform init && terraform destroy -auto-approve
+
+pipeline-destroy-regional:
+	@echo "🗑️  [Pipeline] Destroying regional cluster..."
+	@cd terraform/config/regional-cluster && \
+		terraform init && terraform destroy -auto-approve
+
+# =============================================================================
 # Infrastructure Maintenance Targets
 # =============================================================================
 
@@ -145,5 +181,3 @@ apply-infra-regional:
 	@echo ""
 	@cd terraform/config/regional-cluster && \
 		terraform init && terraform apply
-
-

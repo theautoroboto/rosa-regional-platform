@@ -8,7 +8,7 @@ env:
 phases:
   install:
     commands:
-      - echo "Installing dependencies..."
+      - echo "Step 1: Installing dependencies..."
       - apt-get update && apt-get install -y jq
       - chmod +x terraform/sandbox/scripts/setup_env.sh
       - ./terraform/sandbox/scripts/setup_env.sh
@@ -16,98 +16,144 @@ phases:
 
   build:
     commands:
-      # --- Regional Cluster (First) ---
-      - echo "=== Starting Regional Cluster Deployment ==="
-
-      - echo "Leasing Regional Account..."
+      # Step 2: Lease Regional Account
+      - echo "Step 2: Leasing Regional Account..."
       - export REG_LEASE_OUTPUT=$(python3 terraform/sandbox/scripts/lease_account.py)
+      - echo "Regional Lease Output: $REG_LEASE_OUTPUT"
       - export REG_ACCOUNT_ID=$(echo $REG_LEASE_OUTPUT | jq -r '.account_id')
-      # Persist Account ID for post_build cleanup
       - echo "$REG_ACCOUNT_ID" > /tmp/reg_account_id
-
       - export AWS_ACCESS_KEY_ID_REG=$(echo $REG_LEASE_OUTPUT | jq -r '.credentials.AccessKeyId')
       - export AWS_SECRET_ACCESS_KEY_REG=$(echo $REG_LEASE_OUTPUT | jq -r '.credentials.SecretAccessKey')
       - export AWS_SESSION_TOKEN_REG=$(echo $REG_LEASE_OUTPUT | jq -r '.credentials.SessionToken // empty')
 
-      - echo "Deploying Regional Cluster in Account $REG_ACCOUNT_ID..."
-      - cd terraform/config/regional-cluster
-      - cp terraform.tfvars.example terraform.tfvars
-      # Run Terraform with leased credentials
+      # Step 3: Provision Regional
+      - echo "Step 3: Provisioning Regional Cluster..."
+      - cp terraform/config/regional-cluster/terraform.tfvars.example terraform/config/regional-cluster/terraform.tfvars
       - |
         (
           export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID_REG
           export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY_REG
           export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN_REG
-          terraform init
-          terraform apply -auto-approve
-        )
-      - cd ../../../
-
-      - echo "Bootstrapping ArgoCD for Regional Cluster..."
-      # Run bootstrap script with leased credentials
-      - |
-        (
-          export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID_REG
-          export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY_REG
-          export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN_REG
-          ./scripts/bootstrap-argocd.sh regional
+          make pipeline-provision-regional
         )
 
-      # --- Management Cluster ---
-      - echo "=== Starting Management Cluster Deployment ==="
-
-      - echo "Leasing Management Account..."
+      # Step 4: Lease Management Account
+      - echo "Step 4: Leasing Management Account..."
       - export MGMT_LEASE_OUTPUT=$(python3 terraform/sandbox/scripts/lease_account.py)
+      - echo "Management Lease Output: $MGMT_LEASE_OUTPUT"
       - export MGMT_ACCOUNT_ID=$(echo $MGMT_LEASE_OUTPUT | jq -r '.account_id')
-      # Persist Account ID for post_build cleanup
       - echo "$MGMT_ACCOUNT_ID" > /tmp/mgmt_account_id
-
       - export AWS_ACCESS_KEY_ID_MGMT=$(echo $MGMT_LEASE_OUTPUT | jq -r '.credentials.AccessKeyId')
       - export AWS_SECRET_ACCESS_KEY_MGMT=$(echo $MGMT_LEASE_OUTPUT | jq -r '.credentials.SecretAccessKey')
       - export AWS_SESSION_TOKEN_MGMT=$(echo $MGMT_LEASE_OUTPUT | jq -r '.credentials.SessionToken // empty')
 
-      - echo "Deploying Management Cluster in Account $MGMT_ACCOUNT_ID..."
-      - cd terraform/config/management-cluster
-      - cp terraform.tfvars.example terraform.tfvars
-      # Run Terraform with leased credentials
+      # Step 5: Provision Management
+      - echo "Step 5: Provisioning Management Cluster..."
+      - cp terraform/config/management-cluster/terraform.tfvars.example terraform/config/management-cluster/terraform.tfvars
       - |
         (
           export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID_MGMT
           export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY_MGMT
           export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN_MGMT
-          terraform init
-          terraform apply -auto-approve
+          make pipeline-provision-management
         )
-      - cd ../../../
 
-      - echo "Bootstrapping ArgoCD for Management Cluster..."
-      # Run bootstrap script with leased credentials
+      # Step 6: Verify ArgoCD
+      - echo "Step 6: Verifying ArgoCD Status..."
+      # Verify Regional
+      - |
+        (
+          export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID_REG
+          export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY_REG
+          export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN_REG
+          echo "Verifying Regional Cluster ($REG_ACCOUNT_ID)..."
+          cd terraform/config/regional-cluster
+          CLUSTER_NAME=$(terraform output -raw cluster_name)
+          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+          echo "Checking pods in argocd namespace..."
+          kubectl get pods -n argocd
+          if kubectl get pods -n argocd | grep -q "Running"; then
+             echo "SUCCESS: ArgoCD pods are running in Regional Cluster."
+          else
+             echo "FAILURE: No running pods found in argocd namespace in Regional Cluster."
+             exit 1
+          fi
+        )
+      # Verify Management
       - |
         (
           export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID_MGMT
           export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY_MGMT
           export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN_MGMT
-          ./scripts/bootstrap-argocd.sh management
+          echo "Verifying Management Cluster ($MGMT_ACCOUNT_ID)..."
+          cd terraform/config/management-cluster
+          CLUSTER_NAME=$(terraform output -raw cluster_name)
+          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+          echo "Checking pods in argocd namespace..."
+          kubectl get pods -n argocd
+          if kubectl get pods -n argocd | grep -q "Running"; then
+             echo "SUCCESS: ArgoCD pods are running in Management Cluster."
+          else
+             echo "FAILURE: No running pods found in argocd namespace in Management Cluster."
+             exit 1
+          fi
         )
 
   post_build:
     commands:
-      - echo "=== Cleaning up ==="
-
-      - |
-        if [ -f /tmp/mgmt_account_id ]; then
-          MGMT_ACCOUNT_ID=$(cat /tmp/mgmt_account_id)
-          echo "Releasing Management Account $MGMT_ACCOUNT_ID..."
-          python3 terraform/sandbox/scripts/release_account.py $MGMT_ACCOUNT_ID --terraform-path terraform/config/management-cluster || echo "Error: Failed to release Management Account $MGMT_ACCOUNT_ID"
-        else
-          echo "No Management Account to release."
-        fi
-
+      # Step 7: Destroy Regional Cluster
+      - echo "Step 7: Destroying Regional Cluster..."
       - |
         if [ -f /tmp/reg_account_id ]; then
           REG_ACCOUNT_ID=$(cat /tmp/reg_account_id)
-          echo "Releasing Regional Account $REG_ACCOUNT_ID..."
-          python3 terraform/sandbox/scripts/release_account.py $REG_ACCOUNT_ID --terraform-path terraform/config/regional-cluster || echo "Error: Failed to release Regional Account $REG_ACCOUNT_ID"
-        else
-          echo "No Regional Account to release."
+          echo "Assuming role for Regional Account $REG_ACCOUNT_ID..."
+          CREDS=$(aws sts assume-role --role-arn arn:aws:iam::$REG_ACCOUNT_ID:role/OrganizationAccountAccessRole --role-session-name DestroySession --output json)
+          export AWS_ACCESS_KEY_ID=$(echo $CREDS | jq -r '.Credentials.AccessKeyId')
+          export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | jq -r '.Credentials.SecretAccessKey')
+          export AWS_SESSION_TOKEN=$(echo $CREDS | jq -r '.Credentials.SessionToken')
+
+          make pipeline-destroy-regional || echo "Make destroy failed, proceeding to release..."
         fi
+
+      # Step 8: Destroy Management Cluster
+      - echo "Step 8: Destroying Management Cluster..."
+      - |
+        if [ -f /tmp/mgmt_account_id ]; then
+          MGMT_ACCOUNT_ID=$(cat /tmp/mgmt_account_id)
+          echo "Assuming role for Management Account $MGMT_ACCOUNT_ID..."
+          CREDS=$(aws sts assume-role --role-arn arn:aws:iam::$MGMT_ACCOUNT_ID:role/OrganizationAccountAccessRole --role-session-name DestroySession --output json)
+          export AWS_ACCESS_KEY_ID=$(echo $CREDS | jq -r '.Credentials.AccessKeyId')
+          export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | jq -r '.Credentials.SecretAccessKey')
+          export AWS_SESSION_TOKEN=$(echo $CREDS | jq -r '.Credentials.SessionToken')
+
+          make pipeline-destroy-management || echo "Make destroy failed, proceeding to release..."
+        fi
+
+      # Step 9: Release Regional
+      - echo "Step 9: Releasing Regional Account..."
+      - |
+        if [ -f /tmp/reg_account_id ]; then
+          REG_ACCOUNT_ID=$(cat /tmp/reg_account_id)
+          python3 terraform/sandbox/scripts/release_account.py $REG_ACCOUNT_ID --terraform-path terraform/config/regional-cluster
+        fi
+
+      # Step 10: Release Management
+      - echo "Step 10: Releasing Management Account..."
+      - |
+        if [ -f /tmp/mgmt_account_id ]; then
+          MGMT_ACCOUNT_ID=$(cat /tmp/mgmt_account_id)
+          python3 terraform/sandbox/scripts/release_account.py $MGMT_ACCOUNT_ID --terraform-path terraform/config/management-cluster
+        fi
+
+      # Step 11: Reporting
+      - echo "Step 11: Reporting Results..."
+      - echo "Build Phase Status: $CODEBUILD_BUILD_SUCCEEDING"
+      - |
+        if [ "$CODEBUILD_BUILD_SUCCEEDING" -eq "0" ]; then
+           echo "Build FAILED. Review logs for details."
+           echo "Result: FAILURE" > build_result.txt
+        else
+           echo "Build SUCCEEDED."
+           echo "Result: SUCCESS" > build_result.txt
+        fi
+      - cat build_result.txt
