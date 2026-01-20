@@ -53,7 +53,7 @@ phases:
           ./scripts/bootstrap-argocd.sh regional
         )
 
-      # --- Management Cluster (Second) ---
+      # --- Management Cluster ---
       - echo "=== Starting Management Cluster Deployment ==="
 
       - echo "Leasing Management Account..."
