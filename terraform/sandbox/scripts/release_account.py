@@ -53,12 +53,23 @@ def run_terraform_destroy(credentials, terraform_path):
     if credentials.get('SessionToken'):
         env['AWS_SESSION_TOKEN'] = credentials['SessionToken']
 
-    cmd = [
-        "terraform", "destroy",
-        "-auto-approve"
-    ]
-
     try:
+        # Run init first to ensure providers are available
+        init_cmd = ["terraform", "init"]
+        subprocess.run(
+            init_cmd,
+            cwd=terraform_path,
+            env=env,
+            check=True,
+            capture_output=False,
+            text=True
+        )
+
+        cmd = [
+            "terraform", "destroy",
+            "-auto-approve"
+        ]
+
         # Stream output to stdout/stderr
         subprocess.run(
             cmd,
@@ -70,7 +81,7 @@ def run_terraform_destroy(credentials, terraform_path):
         )
         return True
     except subprocess.CalledProcessError as e:
-        print(f"terraform destroy failed with exit code {e.returncode}", file=sys.stderr)
+        print(f"terraform command failed with exit code {e.returncode}", file=sys.stderr)
         return False
     except FileNotFoundError:
         print(f"terraform binary not found.", file=sys.stderr)
