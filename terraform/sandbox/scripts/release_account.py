@@ -24,7 +24,8 @@ def run_cloud_nuke(credentials):
         "cloud-nuke", "aws",
         "--region", REGION,
         "--config", config_path,
-        "--force"
+        "--force",
+        "--timeout", "30m"
     ]
 
     try:
