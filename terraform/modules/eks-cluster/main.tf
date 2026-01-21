@@ -40,7 +40,15 @@ module "eks" {
 
   # VPC and networking
   vpc_id     = module.vpc.vpc_id
-  subnet_ids = concat(module.vpc.private_subnets, module.vpc.public_subnets)
+  subnet_ids = module.vpc.private_subnets  # Auto Mode nodes use private subnets with NAT gateway
+
+  # EKS Auto Mode - Automatic compute provisioning and scaling
+  # https://docs.aws.amazon.com/eks/latest/userguide/create-node-pool.html
+  # To look at how to construct our own pools
+  compute_config = {
+    enabled    = true
+    node_pools = ["general-purpose"]
+  }
 
   # Fully private endpoint for security
   endpoint_public_access  = false
@@ -55,34 +63,8 @@ module "eks" {
     "scheduler"
   ]
 
-  # EKS managed node groups in private subnets
-  eks_managed_node_groups = {
-    main = {
-      account_id = data.aws_caller_identity.current.account_id
-      partition  = data.aws_partition.current.partition
-
-      # Node group configuration
-      min_size     = var.node_group_min_size
-      max_size     = var.node_group_max_size
-      desired_size = var.node_group_desired_size
-
-      instance_types = var.node_instance_types
-      capacity_type  = "ON_DEMAND"
-      disk_size      = var.node_disk_size
-      disk_type      = "gp3"
-
-      subnet_ids = module.vpc.private_subnets
-
-      enable_irsa = false
-      update_config = {
-        max_unavailable_percentage = 25
-      }
-
-      tags = {
-        "Name" = "${local.resource_name_base}-main-node-group"
-      }
-    }
-  }
+  # Note: Node groups are now managed by EKS Auto Mode (compute_config)
+  # Traditional eks_managed_node_groups cannot coexist with Auto Mode
 
 
   # Essential EKS managed addons
