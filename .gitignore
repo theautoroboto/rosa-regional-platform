@@ -3,5 +3,7 @@
 .local
 .vscode
 *.tfvars
+*.tfvars.json
 *.terraform.lock.hcl
 *.zip
+bastion_task.json

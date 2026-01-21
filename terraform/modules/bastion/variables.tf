@@ -1,0 +1,53 @@
+variable "resource_name_base" {
+  description = "Base name for all resources (e.g., 'regional-x8k2')"
+  type        = string
+}
+
+variable "cluster_name" {
+  description = "Name of the EKS cluster to connect to"
+  type        = string
+}
+
+variable "cluster_endpoint" {
+  description = "EKS cluster API endpoint URL"
+  type        = string
+}
+
+variable "cluster_security_group_id" {
+  description = "Security group ID of the EKS cluster control plane"
+  type        = string
+}
+
+variable "vpc_id" {
+  description = "VPC ID where the bastion will be deployed"
+  type        = string
+}
+
+variable "private_subnet_ids" {
+  description = "List of private subnet IDs where the bastion task can run"
+  type        = list(string)
+}
+
+variable "log_retention_days" {
+  description = "Number of days to retain CloudWatch logs"
+  type        = number
+  default     = 30
+}
+
+variable "cpu" {
+  description = "CPU units for the Fargate task (256, 512, 1024, 2048, 4096)"
+  type        = string
+  default     = "512"
+}
+
+variable "memory" {
+  description = "Memory (MB) for the Fargate task"
+  type        = string
+  default     = "1024"
+}
+
+variable "tags" {
+  description = "Additional tags to apply to all resources"
+  type        = map(string)
+  default     = {}
+}

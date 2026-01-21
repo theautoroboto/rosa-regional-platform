@@ -93,3 +93,32 @@ output "repository_branch" {
   description = "Git branch for cluster configuration"
   value       = module.ecs_bootstrap.repository_branch
 }
+
+# =============================================================================
+# Bastion Outputs (only available when enable_bastion = true)
+# =============================================================================
+
+output "bastion_ecs_cluster_name" {
+  description = "ECS cluster name for bastion tasks"
+  value       = var.enable_bastion ? module.bastion[0].ecs_cluster_name : null
+}
+
+output "bastion_log_group_name" {
+  description = "CloudWatch log group name for bastion logs"
+  value       = var.enable_bastion ? module.bastion[0].log_group_name : null
+}
+
+output "bastion_run_task_command" {
+  description = "AWS CLI command to start a bastion task"
+  value       = var.enable_bastion ? module.bastion[0].run_task_command : null
+}
+
+output "bastion_exec_command_template" {
+  description = "AWS CLI command template to connect to a running bastion (replace <TASK_ID>)"
+  value       = var.enable_bastion ? module.bastion[0].exec_command_template : null
+}
+
+output "bastion_ssm_port_forward_template" {
+  description = "AWS CLI command template for SSM port forwarding (replace <TASK_ID> and <RUNTIME_ID>)"
+  value       = var.enable_bastion ? module.bastion[0].ssm_port_forward_template : null
+}
