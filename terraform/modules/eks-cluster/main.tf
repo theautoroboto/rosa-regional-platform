@@ -63,10 +63,6 @@ module "eks" {
     "scheduler"
   ]
 
-  # Note: Node groups are now managed by EKS Auto Mode (compute_config)
-  # Traditional eks_managed_node_groups cannot coexist with Auto Mode
-
-
   # Essential EKS managed addons
   addons = {
     coredns = {}

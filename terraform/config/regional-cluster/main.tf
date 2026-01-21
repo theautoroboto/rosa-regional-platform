@@ -19,9 +19,6 @@ module "regional_cluster" {
 
   # Required variables
   cluster_type = "regional"
-
-  # Note: Node sizing is now managed by EKS Auto Mode
-  # Auto Mode automatically scales based on pod resource requests
 }
 
 # Call the ECS bootstrap module for external bootstrap execution
