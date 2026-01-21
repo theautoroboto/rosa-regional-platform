@@ -55,9 +55,6 @@ def lease_account():
     # Retry interval reduced to 2s to allow multiple checks within short timeout
     RETRY_INTERVAL = 2
 
-    IAM_USER_NAME = 'sandbox-temporary-user'
-    IAM_USER_POLICY_ARN = os.environ.get('IAM_USER_POLICY_ARN', 'arn:aws:iam::aws:policy/AdministratorAccess')
-
     print(f"Starting lease_account.py in region {REGION}", file=sys.stderr)
     dynamodb = boto3.resource('dynamodb', region_name=REGION)
     table = dynamodb.Table(TABLE_NAME)
@@ -133,66 +130,22 @@ def lease_account():
                             )
                             continue  # Try next available account
 
-                        print(f"cloud-nuke completed for account {account_id}. Creating temporary user...", file=sys.stderr)
+                        print(f"cloud-nuke completed for account {account_id}. Returning STS credentials...", file=sys.stderr)
 
-                        # Initialize IAM resource with assumed credentials
-                        iam_resource = boto3.resource(
-                            'iam',
-                            aws_access_key_id=credentials['AccessKeyId'],
-                            aws_secret_access_key=credentials['SecretAccessKey'],
-                            aws_session_token=credentials['SessionToken'],
-                            region_name=REGION
-                        )
-
-                        user = iam_resource.User(IAM_USER_NAME)
-
-                        # Cleanup existing user if exists
-                        try:
-                            # Check if user exists by loading attributes
-                            user.load()
-                            # Delete login profile if exists
-                            try:
-                                user.LoginProfile().delete()
-                            except ClientError:
-                                pass # No login profile
-
-                            # Delete access keys
-                            for key in user.access_keys.all():
-                                key.delete()
-
-                            # Detach policies
-                            for policy in user.attached_policies.all():
-                                user.detach_policy(PolicyArn=policy.arn)
-
-                            # Delete inline policies (if any, though we only attach managed)
-                            for policy in user.policies.all():
-                                policy.delete()
-
-                            # Delete user
-                            user.delete()
-                        except ClientError as e:
-                            if e.response['Error']['Code'] == 'NoSuchEntity':
-                                pass # User doesn't exist
-                            else:
-                                raise e
-
-                        # Create new user
-                        new_user = iam_resource.create_user(UserName=IAM_USER_NAME)
-
-                        # Attach Policy
-                        new_user.attach_policy(PolicyArn=IAM_USER_POLICY_ARN)
-
-                        # Create Access Key
-                        key_pair = new_user.create_access_key_pair()
+                        # Use the STS credentials from the assumed role
+                        # Ensure Expiration is serialized to string
+                        expiration = credentials.get('Expiration')
+                        if isinstance(expiration, datetime):
+                            expiration = expiration.isoformat()
 
                         result = {
                             "account_id": account_id,
                             "status": "success",
                             "credentials": {
-                                "AccessKeyId": key_pair.id,
-                                "SecretAccessKey": key_pair.secret,
-                                "SessionToken": None, # IAM Users don't have session tokens for long-term keys
-                                "Expiration": None
+                                "AccessKeyId": credentials['AccessKeyId'],
+                                "SecretAccessKey": credentials['SecretAccessKey'],
+                                "SessionToken": credentials['SessionToken'],
+                                "Expiration": expiration
                             }
                         }
 
