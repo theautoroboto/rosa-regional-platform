@@ -1,0 +1,43 @@
+version: 0.2
+
+env:
+  git-credential-helper: yes
+
+phases:
+  install:
+    commands:
+      # SRE Pro Tip: CodeBuild usually does a "shallow clone" (depth 1).
+      # You MUST fetch history to compare commits, or git diff will fail.
+      - git fetch --depth=2 
+
+  pre_build:
+    commands:
+      - echo "Determining which stacks to deploy..."
+      - chmod +x detect_changes.sh
+      - ./detect_changes.sh
+      # Load the variables we just created
+      - . ./build_vars.env 
+
+  build:
+    commands:
+      # --- VPC STACK ---
+      - |
+        if [ "$DO_DEPLOY_VPC" = "true" ]; then
+          echo "🚀 Deploying VPC Stack..."
+          cd infrastructure/vpc
+          terraform init && terraform apply -auto-approve
+          cd ../..
+        fi
+
+      # --- DATABASE STACK ---
+      - |
+        if [ "$DO_DEPLOY_DATABASE" = "true" ]; then
+          echo "🚀 Deploying Database Stack..."
+          cd infrastructure/rds
+          terraform init && terraform apply -auto-approve
+          cd ../..
+        fi
+
+artifacts:
+  files:
+    - build_vars.env # Optional: Save this if you want to debug what happened
