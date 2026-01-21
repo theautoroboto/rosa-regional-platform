@@ -95,7 +95,7 @@ data "aws_caller_identity" "current" {}
 resource "aws_eks_access_entry" "bootstrap_task" {
   cluster_name  = var.eks_cluster_name
   principal_arn = aws_iam_role.task.arn
-  type         = "STANDARD"
+  type          = "STANDARD"
 }
 
 # Associate cluster admin policy with the access entry

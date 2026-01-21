@@ -31,14 +31,30 @@ module "ecs_bootstrap" {
   source = "../../modules/ecs-bootstrap"
 
   vpc_id                        = module.management_cluster.vpc_id
-  private_subnets              = module.management_cluster.private_subnets
-  eks_cluster_arn              = module.management_cluster.cluster_arn
-  eks_cluster_name             = module.management_cluster.cluster_name
+  private_subnets               = module.management_cluster.private_subnets
+  eks_cluster_arn               = module.management_cluster.cluster_arn
+  eks_cluster_name              = module.management_cluster.cluster_name
   eks_cluster_security_group_id = module.management_cluster.cluster_security_group_id
-  resource_name_base           = module.management_cluster.resource_name_base
+  resource_name_base            = module.management_cluster.resource_name_base
 
   # ArgoCD bootstrap configuration
   repository_url    = var.repository_url
   repository_path   = var.repository_path
   repository_branch = var.repository_branch
+}
+
+# =============================================================================
+# Bastion Module (Optional)
+# =============================================================================
+
+module "bastion" {
+  count  = var.enable_bastion ? 1 : 0
+  source = "../../modules/bastion"
+
+  resource_name_base        = module.management_cluster.resource_name_base
+  cluster_name              = module.management_cluster.cluster_name
+  cluster_endpoint          = module.management_cluster.cluster_endpoint
+  cluster_security_group_id = module.management_cluster.cluster_security_group_id
+  vpc_id                    = module.management_cluster.vpc_id
+  private_subnet_ids        = module.management_cluster.private_subnets
 }

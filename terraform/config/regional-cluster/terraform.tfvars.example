@@ -28,3 +28,13 @@ repository_path   = "argocd/regional-cluster"
 
 # Git branch to use for cluster configuration (defaults to "main" if not specified)
 repository_branch = "main"
+
+# =============================================================================
+# Bastion Configuration (Optional)
+# =============================================================================
+# Enable ECS Fargate bastion for break-glass/development access to the cluster.
+# When enabled, creates a dedicated ECS cluster and task definition for bastion access.
+# See terraform/modules/bastion/README.md for usage instructions.
+
+# Enable bastion access (defaults to false)
+# enable_bastion = true
