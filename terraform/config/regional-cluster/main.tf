@@ -53,3 +53,16 @@ module "bastion" {
   vpc_id                    = module.regional_cluster.vpc_id
   private_subnet_ids        = module.regional_cluster.private_subnets
 }
+
+# =============================================================================
+# API Gateway Module
+# =============================================================================
+
+module "api_gateway" {
+  source = "../../modules/api-gateway"
+
+  vpc_id             = module.regional_cluster.vpc_id
+  private_subnet_ids = module.regional_cluster.private_subnets
+  resource_name_base = module.regional_cluster.resource_name_base
+  region_name        = var.region_name
+}

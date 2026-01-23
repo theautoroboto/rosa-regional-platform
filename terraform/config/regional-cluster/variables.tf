@@ -46,3 +46,12 @@ variable "enable_bastion" {
   type        = bool
   default     = false
 }
+
+# =============================================================================
+# API Gateway Configuration Variables
+# =============================================================================
+
+variable "region_name" {
+  description = "AWS region name for API Gateway URL construction (e.g., 'us-west-2')"
+  type        = string
+}

@@ -1,0 +1,62 @@
+# =============================================================================
+# Security Groups
+#
+# Two security groups control traffic flow:
+# 1. VPC Link SG - Attached to the VPC Link, allows outbound to ALB
+# 2. ALB SG - Attached to the ALB, allows inbound from VPC Link and outbound to targets
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# VPC Link Security Group
+# -----------------------------------------------------------------------------
+
+resource "aws_security_group" "vpc_link" {
+  name        = "${var.resource_name_base}-api-vpc-link"
+  description = "Security group for API Gateway VPC Link"
+  vpc_id      = var.vpc_id
+
+  tags = {
+    Name = "${var.resource_name_base}-api-vpc-link"
+  }
+}
+
+resource "aws_vpc_security_group_egress_rule" "vpc_link_to_alb" {
+  security_group_id            = aws_security_group.vpc_link.id
+  description                  = "Allow traffic to ALB"
+  ip_protocol                  = "tcp"
+  from_port                    = 80
+  to_port                      = 80
+  referenced_security_group_id = aws_security_group.alb.id
+}
+
+# -----------------------------------------------------------------------------
+# ALB Security Group
+# -----------------------------------------------------------------------------
+
+resource "aws_security_group" "alb" {
+  name        = "${var.resource_name_base}-api-alb"
+  description = "Security group for internal API ALB"
+  vpc_id      = var.vpc_id
+
+  tags = {
+    Name = "${var.resource_name_base}-api-alb"
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "alb_from_vpc_link" {
+  security_group_id            = aws_security_group.alb.id
+  description                  = "Allow traffic from VPC Link"
+  ip_protocol                  = "tcp"
+  from_port                    = 80
+  to_port                      = 80
+  referenced_security_group_id = aws_security_group.vpc_link.id
+}
+
+resource "aws_vpc_security_group_egress_rule" "alb_to_targets" {
+  security_group_id = aws_security_group.alb.id
+  description       = "Allow traffic to target pods"
+  ip_protocol       = "tcp"
+  from_port         = var.target_port
+  to_port           = var.target_port
+  cidr_ipv4         = "0.0.0.0/0" # Pods can be anywhere in the VPC
+}

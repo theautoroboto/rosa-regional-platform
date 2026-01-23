@@ -122,3 +122,37 @@ output "bastion_ssm_port_forward_template" {
   description = "AWS CLI command template for SSM port forwarding (replace <TASK_ID> and <RUNTIME_ID>)"
   value       = var.enable_bastion ? module.bastion[0].ssm_port_forward_template : null
 }
+
+# =============================================================================
+# API Gateway Outputs
+# =============================================================================
+
+output "api_gateway_invoke_url" {
+  description = "API Gateway invoke URL for testing"
+  value       = module.api_gateway.invoke_url
+}
+
+output "api_gateway_id" {
+  description = "API Gateway REST API ID"
+  value       = module.api_gateway.api_gateway_id
+}
+
+output "api_target_group_arn" {
+  description = "Target group ARN for TargetGroupBinding in Kubernetes"
+  value       = module.api_gateway.target_group_arn
+}
+
+output "api_alb_dns_name" {
+  description = "Internal ALB DNS name"
+  value       = module.api_gateway.alb_dns_name
+}
+
+output "api_alb_security_group_id" {
+  description = "ALB security group ID"
+  value       = module.api_gateway.alb_security_group_id
+}
+
+output "api_test_command" {
+  description = "awscurl command to test the API"
+  value       = module.api_gateway.test_command
+}
