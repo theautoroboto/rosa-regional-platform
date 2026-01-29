@@ -89,10 +89,32 @@ phases:
   build:
     commands:
       - echo "Starting cross-account test..."
-      - echo "Role to assume: $ROLE_NAME"
+      - 'echo "Role to assume: $ROLE_NAME"'
       
-      # Define function for assume role logic
+      # Write the test logic to a script file to ensure function scope is preserved
       - |
+        cat << 'SCRIPT' > cross_account_test.sh
+        #!/bin/bash
+        set -e
+
+        TARGET_ACCOUNT_1=$1
+        TARGET_ACCOUNT_2=$2
+        ROLE_NAME=$3
+
+        # Validate inputs
+        if [ -z "$TARGET_ACCOUNT_1" ]; then
+          echo "ERROR: TARGET_ACCOUNT_1 is not set."
+          exit 1
+        fi
+        if [ -z "$TARGET_ACCOUNT_2" ]; then
+          echo "ERROR: TARGET_ACCOUNT_2 is not set."
+          exit 1
+        fi
+        if [ -z "$ROLE_NAME" ]; then
+            echo "ERROR: ROLE_NAME is not set."
+            exit 1
+        fi
+
         assume_role() {
           local account_id=$1
           local role_name=$2
@@ -123,13 +145,17 @@ phases:
           )
         }
 
-      - echo "--------------------------------------------------"
-      - echo "Target Account 1: $TARGET_ACCOUNT_1"
-      - if [ "$TARGET_ACCOUNT_1" != "placeholder" ] && [ -n "$TARGET_ACCOUNT_1" ]; then assume_role "$TARGET_ACCOUNT_1" "$ROLE_NAME"; else echo "Skipping Account 1 (not set)"; fi
-      
-      - echo "--------------------------------------------------"
-      - echo "Target Account 2: $TARGET_ACCOUNT_2"
-      - if [ "$TARGET_ACCOUNT_2" != "placeholder" ] && [ -n "$TARGET_ACCOUNT_2" ]; then assume_role "$TARGET_ACCOUNT_2" "$ROLE_NAME"; else echo "Skipping Account 2 (not set)"; fi
+        echo "--------------------------------------------------"
+        echo "Target Account 1: $TARGET_ACCOUNT_1"
+        assume_role "$TARGET_ACCOUNT_1" "$ROLE_NAME"
+        
+        echo "--------------------------------------------------"
+        echo "Target Account 2: $TARGET_ACCOUNT_2"
+        assume_role "$TARGET_ACCOUNT_2" "$ROLE_NAME"
+        SCRIPT
+
+      - chmod +x cross_account_test.sh
+      - ./cross_account_test.sh "$TARGET_ACCOUNT_1" "$TARGET_ACCOUNT_2" "$ROLE_NAME"
 EOF
   }
 
@@ -146,11 +172,11 @@ EOF
     # Environment variables to be overridden at runtime
     environment_variable {
       name  = "TARGET_ACCOUNT_1"
-      value = "placeholder"
+      value = ""
     }
     environment_variable {
       name  = "TARGET_ACCOUNT_2"
-      value = "placeholder"
+      value = ""
     }
     environment_variable {
       name  = "ROLE_NAME"
@@ -217,12 +243,12 @@ resource "aws_cloudwatch_event_target" "codebuild_target" {
     environmentVariablesOverride = [
       {
         name  = "TARGET_ACCOUNT_1"
-        value = length(var.target_account_ids) > 0 ? var.target_account_ids[0] : "placeholder"
+        value = var.target_account_ids[0]
         type  = "PLAINTEXT"
       },
       {
         name  = "TARGET_ACCOUNT_2"
-        value = length(var.target_account_ids) > 1 ? var.target_account_ids[1] : "placeholder"
+        value = var.target_account_ids[1]
         type  = "PLAINTEXT"
       },
       {
