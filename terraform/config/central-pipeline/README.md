@@ -1,14 +1,14 @@
-# Cross-Account Testing Pipeline
+# Cross-Account Testing Pipeline - Scheduled Execution
 
-This Terraform configuration deploys a CodePipeline that automatically tests cross-account access when changes are pushed to the GitHub repository. It validates that the central account can successfully assume roles in target AWS accounts.
+This Terraform configuration deploys a CodePipeline that automatically tests cross-account access on an hourly schedule. It validates that the central account can successfully assume roles in target AWS accounts.
 
 ## Features
 
-- **🚀 Fully Automated**: CodeStar Connection is created automatically by Terraform
-- **🔄 Auto-Triggering**: Pipeline triggers on push to configured GitHub branch
-- **🔐 Secure**: Uses AWS CodeStar Connections (OAuth) - no long-lived tokens
+- **⏰ Scheduled Execution**: Runs automatically every hour (configurable)
+- **🔄 EventBridge Trigger**: No GitHub or manual intervention needed
 - **📊 Cross-Account Testing**: Validates access to multiple AWS accounts
 - **📝 Detailed Logging**: CloudWatch Logs capture all test execution details
+- **🚀 Simple Setup**: Just configure account IDs and deploy
 
 ## Architecture
 
@@ -16,25 +16,25 @@ This Terraform configuration deploys a CodePipeline that automatically tests cro
 ┌─────────────────────────────────────────────────────────────┐
 │                     Central Account                          │
 │                                                              │
-│  ┌─────────────┐    ┌──────────────────────────────┐       │
-│  │   GitHub    │───▶│  CodeStar Connection         │       │
-│  │  (trigger)  │    │  (auto-created by Terraform) │       │
-│  └─────────────┘    └──────────────────────────────┘       │
-│                                │                            │
-│                                ▼                            │
-│                     ┌──────────────────────────────┐       │
-│                     │     CodePipeline             │       │
-│                     │  - Source: GitHub            │       │
-│                     │  - Test: CodeBuild           │       │
-│                     └──────────────────────────────┘       │
-│                                │                            │
-│                                ▼                            │
-│                     ┌──────────────────────────────┐       │
-│                     │      CodeBuild Project       │       │
-│                     │  - Assumes roles in targets  │───────┼────┐
-│                     │  - Runs get-caller-identity  │       │    │
-│                     └──────────────────────────────┘       │    │
-└─────────────────────────────────────────────────────────────┘    │
+│  ┌──────────────────┐                                       │
+│  │  EventBridge     │  ⏰ Every hour (configurable)         │
+│  │  Cron Rule       │                                       │
+│  └──────────────────┘                                       │
+│           │                                                  │
+│           ▼                                                  │
+│  ┌──────────────────────────────┐                          │
+│  │     CodePipeline             │                          │
+│  │  - Source: Dummy S3          │                          │
+│  │  - Test: CodeBuild           │                          │
+│  └──────────────────────────────┘                          │
+│           │                                                  │
+│           ▼                                                  │
+│  ┌──────────────────────────────┐                          │
+│  │      CodeBuild Project       │                          │
+│  │  - Assumes roles in targets  │───────┼────┐            │
+│  │  - Runs get-caller-identity  │       │    │            │
+│  └──────────────────────────────┘       │    │            │
+└─────────────────────────────────────────┘    │            │
                                                                     │
 ┌────────────────────────────────────────────────────────┐        │
 │                    Target Account 1                     │        │
@@ -54,9 +54,8 @@ This Terraform configuration deploys a CodePipeline that automatically tests cro
 ### Prerequisites
 
 1. AWS Account (central account) with appropriate permissions
-2. GitHub repository
-3. Target AWS accounts where cross-account access will be tested
-4. Terraform >= 1.0
+2. Target AWS accounts where cross-account access will be tested
+3. Terraform >= 1.0
 
 ### Step 1: Configure Variables
 
@@ -77,12 +76,6 @@ target_account_ids = [
   "987654321098"   # Account 2
 ]
 
-# GitHub repository (format: "owner/repo")
-github_repo_full_name = "your-org/your-repo"
-
-# Branch to monitor
-github_repo_branch = "main"
-
 # Role name in target accounts
 target_role_name = "OrganizationAccountAccessRole"
 ```
@@ -90,8 +83,10 @@ target_role_name = "OrganizationAccountAccessRole"
 **Optional customization:**
 
 ```hcl
-# Customize connection name
-github_connection_name = "my-github-connection"
+# Change schedule (default: every hour)
+schedule_expression = "rate(30 minutes)"  # Run every 30 minutes
+# Or use cron format:
+# schedule_expression = "cron(0 9 * * ? *)"  # Daily at 9 AM UTC
 ```
 
 ### Step 2: Deploy with Terraform
@@ -108,46 +103,14 @@ terraform apply
 ```
 
 **What gets created:**
-- ✅ CodeStar Connection to GitHub (in PENDING status)
-- ✅ CodePipeline with Source and Test stages
+- ✅ EventBridge rule with hourly schedule
+- ✅ CodePipeline with dummy S3 source and Test stage
 - ✅ CodeBuild project for cross-account testing
 - ✅ S3 bucket for artifacts (encrypted, versioned)
 - ✅ IAM roles and policies
 - ✅ CloudWatch Log Group
 
-### Step 3: Approve GitHub Connection
-
-After `terraform apply`, the CodeStar Connection will be in **PENDING** status and requires manual approval.
-
-**Terraform will output the approval URL:**
-
-```
-Connection Status: PENDING
-
-⚠️  IMPORTANT: GitHub Connection Requires Approval!
-
-1. Approve GitHub Connection:
-
-   Open this URL in your browser:
-   https://console.aws.amazon.com/codesuite/settings/connections/<connection-id>
-
-   Click "Update pending connection" and authorize AWS to access GitHub.
-```
-
-**Approval steps:**
-
-1. Open the connection URL (shown in Terraform outputs)
-2. Click **"Update pending connection"**
-3. Click **"Install a new app"** (or select existing GitHub App)
-4. Authorize AWS access to your GitHub account/organization
-5. Select which repositories AWS can access
-6. Complete the authorization
-
-**After approval:**
-- Connection status changes to **AVAILABLE**
-- Pipeline can now trigger on GitHub pushes
-
-### Step 4: Configure Target Accounts
+### Step 3: Configure Target Accounts
 
 In **each target account**, create an IAM role that trusts the central account's CodeBuild role.
 
@@ -218,9 +181,9 @@ aws iam put-role-policy \
   --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:GetCallerIdentity","Resource":"*"}]}'
 ```
 
-### Step 5: Test the Pipeline
+### Step 4: Wait for First Run (or Trigger Manually)
 
-The pipeline will automatically trigger on pushes to the configured branch. You can also trigger it manually:
+The pipeline will automatically run every hour. You can also trigger it manually immediately:
 
 ```bash
 # Get the pipeline name

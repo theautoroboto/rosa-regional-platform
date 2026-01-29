@@ -156,19 +156,6 @@ EOF
 }
 
 # -----------------------------------------------------------------------------
-# CodeStar Connection to GitHub
-# -----------------------------------------------------------------------------
-resource "aws_codestarconnections_connection" "github" {
-  name          = var.github_connection_name
-  provider_type = "GitHub"
-
-  tags = {
-    Name      = "GitHub Connection for Cross-Account Pipeline"
-    ManagedBy = "Terraform"
-  }
-}
-
-# -----------------------------------------------------------------------------
 # S3 Bucket for CodePipeline Artifacts
 # -----------------------------------------------------------------------------
 resource "aws_s3_bucket" "pipeline_artifacts" {
@@ -254,13 +241,6 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
           "codebuild:StartBuild"
         ]
         Resource = aws_codebuild_project.cross_account_test.arn
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "codestar-connections:UseConnection"
-        ]
-        Resource = aws_codestarconnections_connection.github.arn
       }
     ]
   })
@@ -278,24 +258,22 @@ resource "aws_codepipeline" "cross_account_test" {
     type     = "S3"
   }
 
-  # Source stage - GitHub via CodeStar Connections
+  # Source stage - Dummy S3 source (required by CodePipeline)
   stage {
     name = "Source"
 
     action {
-      name             = "GitHub_Source"
+      name             = "DummySource"
       category         = "Source"
       owner            = "AWS"
-      provider         = "CodeStarSourceConnection"
+      provider         = "S3"
       version          = "1"
       output_artifacts = ["source_output"]
 
       configuration = {
-        ConnectionArn    = aws_codestarconnections_connection.github.arn
-        FullRepositoryId = var.github_repo_full_name
-        BranchName       = var.github_repo_branch
-        # Enable trigger on push
-        DetectChanges = "true"
+        S3Bucket             = aws_s3_bucket.pipeline_artifacts.bucket
+        S3ObjectKey          = "dummy-source.zip"
+        PollForSourceChanges = "false"
       }
     }
   }
@@ -353,4 +331,82 @@ resource "aws_cloudwatch_log_group" "codebuild_logs" {
     Name      = "CodeBuild Cross-Account Test Logs"
     ManagedBy = "Terraform"
   }
+}
+
+# -----------------------------------------------------------------------------
+# Dummy Source File for Pipeline
+# -----------------------------------------------------------------------------
+resource "aws_s3_object" "dummy_source" {
+  bucket  = aws_s3_bucket.pipeline_artifacts.bucket
+  key     = "dummy-source.zip"
+  content = "dummy"
+  etag    = md5("dummy")
+
+  tags = {
+    Name      = "Dummy Source for Pipeline Trigger"
+    ManagedBy = "Terraform"
+  }
+}
+
+# -----------------------------------------------------------------------------
+# EventBridge Rule for Hourly Trigger
+# -----------------------------------------------------------------------------
+resource "aws_cloudwatch_event_rule" "hourly_trigger" {
+  name                = "cross-account-test-schedule"
+  description         = "Trigger cross-account test pipeline on schedule"
+  schedule_expression = var.schedule_expression
+
+  tags = {
+    Name      = "Cross-Account Test Schedule Trigger"
+    ManagedBy = "Terraform"
+  }
+}
+
+resource "aws_cloudwatch_event_target" "pipeline" {
+  rule     = aws_cloudwatch_event_rule.hourly_trigger.name
+  arn      = aws_codepipeline.cross_account_test.arn
+  role_arn = aws_iam_role.eventbridge_role.arn
+}
+
+# -----------------------------------------------------------------------------
+# IAM Role for EventBridge to Trigger Pipeline
+# -----------------------------------------------------------------------------
+resource "aws_iam_role" "eventbridge_role" {
+  name = "cross-account-eventbridge-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "events.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+
+  tags = {
+    Name      = "EventBridge Pipeline Trigger Role"
+    ManagedBy = "Terraform"
+  }
+}
+
+resource "aws_iam_role_policy" "eventbridge_policy" {
+  name = "eventbridge-pipeline-trigger"
+  role = aws_iam_role.eventbridge_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "codepipeline:StartPipelineExecution"
+        ]
+        Resource = aws_codepipeline.cross_account_test.arn
+      }
+    ]
+  })
 }

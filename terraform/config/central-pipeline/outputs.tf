@@ -33,43 +33,38 @@ output "artifacts_bucket" {
   value       = aws_s3_bucket.pipeline_artifacts.bucket
 }
 
-output "github_connection_arn" {
-  description = "ARN of the CodeStar Connection to GitHub"
-  value       = aws_codestarconnections_connection.github.arn
+output "eventbridge_rule_name" {
+  description = "Name of the EventBridge rule triggering the pipeline hourly"
+  value       = aws_cloudwatch_event_rule.hourly_trigger.name
 }
 
-output "github_connection_status" {
-  description = "Status of the GitHub connection (PENDING requires manual approval)"
-  value       = aws_codestarconnections_connection.github.connection_status
-}
-
-output "github_connection_url" {
-  description = "Console URL to complete GitHub connection approval"
-  value       = "https://console.aws.amazon.com/codesuite/settings/connections/${aws_codestarconnections_connection.github.id}"
+output "eventbridge_schedule" {
+  description = "Schedule expression for the EventBridge trigger"
+  value       = aws_cloudwatch_event_rule.hourly_trigger.schedule_expression
 }
 
 output "setup_instructions" {
   description = "Next steps to complete the setup"
   value       = <<-EOT
     ╔═══════════════════════════════════════════════════════════════════════════╗
-    ║                    Cross-Account Pipeline Setup                          ║
+    ║            Cross-Account Test Pipeline - Hourly Schedule                 ║
     ╚═══════════════════════════════════════════════════════════════════════════╝
 
-    Pipeline Created:     ${aws_codepipeline.cross_account_test.name}
-    CodeBuild Role:       ${aws_iam_role.codebuild_role.arn}
-    GitHub Connection:    ${aws_codestarconnections_connection.github.arn}
-    Connection Status:    ${aws_codestarconnections_connection.github.connection_status}
+    ✓ Pipeline Created:   ${aws_codepipeline.cross_account_test.name}
+    ✓ CodeBuild Role:     ${aws_iam_role.codebuild_role.arn}
+    ✓ Hourly Trigger:     ${aws_cloudwatch_event_rule.hourly_trigger.schedule_expression}
+    ✓ Auto-Trigger:       Enabled (runs every hour)
 
     NEXT STEPS:
 
-    ${aws_codestarconnections_connection.github.connection_status == "PENDING" ? "⚠️  IMPORTANT: GitHub Connection Requires Approval!" : "✓ GitHub Connection is ready!"}
-
-    ${aws_codestarconnections_connection.github.connection_status == "PENDING" ? "1. Approve GitHub Connection:\n\n       Open this URL in your browser:\n       https://console.aws.amazon.com/codesuite/settings/connections/${aws_codestarconnections_connection.github.id}\n\n       Click \"Update pending connection\" and authorize AWS to access GitHub.\n       This creates an OAuth app in your GitHub account.\n\n    2." : "1."} In each target account, create IAM role with trust policy:
+    1. In each target account, create IAM role with trust policy:
 
        Role Name: ${var.target_role_name}
        Trust Policy Principal: ${aws_iam_role.codebuild_role.arn}
 
-       Example trust policy:
+       Example AWS CLI commands (run in each target account):
+
+       cat > trust-policy.json <<EOF
        {
          "Version": "2012-10-17",
          "Statement": [{
@@ -78,24 +73,37 @@ output "setup_instructions" {
            "Action": "sts:AssumeRole"
          }]
        }
+       EOF
 
-    ${aws_codestarconnections_connection.github.connection_status == "PENDING" ? "3." : "2."} Test the pipeline:
+       aws iam create-role \
+         --role-name ${var.target_role_name} \
+         --assume-role-policy-document file://trust-policy.json
+
+       aws iam put-role-policy \
+         --role-name ${var.target_role_name} \
+         --policy-name GetCallerIdentity \
+         --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:GetCallerIdentity","Resource":"*"}]}'
+
+    2. Test the pipeline (optional - will run automatically every hour):
 
        # Manual trigger:
        aws codepipeline start-pipeline-execution --name ${aws_codepipeline.cross_account_test.name}
 
-       # Or push to GitHub branch: ${var.github_repo_branch}
+    3. Monitor execution:
 
-    ${aws_codestarconnections_connection.github.connection_status == "PENDING" ? "4." : "3."} Monitor execution:
+       # View pipeline in console:
+       https://console.aws.amazon.com/codesuite/codepipeline/pipelines/${aws_codepipeline.cross_account_test.name}/view
 
-       Pipeline: ${aws_codepipeline.cross_account_test.name}
-       Logs:     /aws/codebuild/cross-account-test
+       # Tail logs:
+       aws logs tail /aws/codebuild/cross-account-test --follow
 
-       View in console:
-       ${aws_codepipeline.cross_account_test.name != "" ? "https://console.aws.amazon.com/codesuite/codepipeline/pipelines/${aws_codepipeline.cross_account_test.name}/view" : ""}
+       # Check next scheduled run:
+       aws events list-rules --name-prefix ${aws_cloudwatch_event_rule.hourly_trigger.name}
 
     Target Accounts Configured:
     ${join("\n    ", [for id in var.target_account_ids : "- ${id}"])}
+
+    The pipeline will automatically test cross-account access every hour!
 
     ═══════════════════════════════════════════════════════════════════════════
   EOT

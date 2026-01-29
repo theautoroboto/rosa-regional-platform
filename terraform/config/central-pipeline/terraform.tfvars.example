@@ -1,39 +1,32 @@
-# Example configuration for Central Pipeline
+# Example configuration for Cross-Account Test Pipeline
 # Copy this file to terraform.tfvars and fill in your specific values
 
 # ============================================================================
 # Required: Target AWS Accounts
 # ============================================================================
-# List of AWS Account IDs that the pipeline is allowed to access
-# These are the accounts where the cross-account role will be assumed
+# List of AWS Account IDs that the pipeline will test cross-account access to
+# These are the accounts where the IAM role will be assumed
 target_account_ids = [
   "123456789012",  # Target Account 1
   "987654321098"   # Target Account 2
 ]
 
 # Name of the IAM role to assume in target accounts
+# This role must exist in each target account with a trust policy allowing
+# the central account's CodeBuild role to assume it
 target_role_name = "OrganizationAccountAccessRole"
 
 # ============================================================================
-# Required: GitHub Configuration
+# Optional: Schedule Configuration
 # ============================================================================
-# Full repository name in format "owner/repo"
-github_repo_full_name = "theautoroboto/rosa-regional-platform"
-
-# Branch to monitor for changes (pipeline will trigger on push)
-github_repo_branch = "main"
-
-# ============================================================================
-# Optional: GitHub Connection Name
-# ============================================================================
-# The CodeStar Connection to GitHub is created automatically by Terraform.
-# You only need to approve it after terraform apply (see outputs for URL).
+# How often to run the cross-account test
+# Default: Every hour
 #
-# Optionally customize the connection name:
-# github_connection_name = "my-custom-github-connection"
-
-# ============================================================================
-# Optional: Advanced Configuration
-# ============================================================================
-# Override GitHub repository URL (for reference only)
-# github_repo_url = "https://github.com/your-org/your-repo"
+# Examples:
+#   schedule_expression = "rate(1 hour)"      # Every hour
+#   schedule_expression = "rate(30 minutes)"  # Every 30 minutes
+#   schedule_expression = "rate(1 day)"       # Daily
+#   schedule_expression = "cron(0 */2 * * ? *)"  # Every 2 hours (cron format)
+#   schedule_expression = "cron(0 9 * * ? *)"    # Daily at 9 AM UTC
+#
+# schedule_expression = "rate(1 hour)"
