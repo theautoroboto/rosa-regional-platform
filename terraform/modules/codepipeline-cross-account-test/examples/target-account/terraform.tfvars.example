@@ -1,0 +1,13 @@
+# Example terraform.tfvars for Target Account
+# Copy this file to terraform.tfvars and fill in your actual values
+# Deploy this in BOTH target accounts (update values for each account)
+
+aws_region = "us-east-1"
+role_name  = "CodePipelineCrossAccountRole"
+
+# Get these values from the central account Terraform outputs
+central_account_id         = "999999999999"  # Replace with central account ID
+central_codebuild_role_arn = "arn:aws:iam::999999999999:role/codebuild-cross-account-XXXXX"
+
+# Optional: Use external ID for enhanced security
+external_id = ""

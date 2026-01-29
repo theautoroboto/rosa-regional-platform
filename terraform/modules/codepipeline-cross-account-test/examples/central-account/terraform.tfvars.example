@@ -1,0 +1,8 @@
+# Example terraform.tfvars for Central Account
+# Copy this file to terraform.tfvars and fill in your actual values
+
+aws_region          = "us-east-1"
+environment         = "test"
+target_account_1_id = "111111111111"  # Replace with actual Account 1 ID
+target_account_2_id = "222222222222"  # Replace with actual Account 2 ID
+target_role_name    = "CodePipelineCrossAccountRole"

@@ -1,0 +1,76 @@
+version: 0.2
+
+# BuildSpec for testing cross-account STS GetCallerIdentity
+# This buildspec assumes a role in the target account and retrieves caller identity
+
+phases:
+  pre_build:
+    commands:
+      - echo "=== Cross-Account STS Test for $ACCOUNT_NAME ==="
+      - echo "Central Account (running in):"
+      - aws sts get-caller-identity
+      - echo ""
+      - echo "Target Account ID: $TARGET_ACCOUNT_ID"
+      - echo "Target Role Name: $TARGET_ROLE_NAME"
+      - echo ""
+
+  build:
+    commands:
+      - echo "=== Assuming role in target account ==="
+      - |
+        ROLE_ARN="arn:aws:iam::${TARGET_ACCOUNT_ID}:role/${TARGET_ROLE_NAME}"
+        echo "Role ARN: $ROLE_ARN"
+
+      - |
+        # Assume the role and capture credentials
+        CREDENTIALS=$(aws sts assume-role \
+          --role-arn "arn:aws:iam::${TARGET_ACCOUNT_ID}:role/${TARGET_ROLE_NAME}" \
+          --role-session-name "codepipeline-cross-account-test-${CODEBUILD_BUILD_NUMBER}" \
+          --duration-seconds 900 \
+          --output json)
+
+      - |
+        # Export the temporary credentials
+        export AWS_ACCESS_KEY_ID=$(echo $CREDENTIALS | jq -r '.Credentials.AccessKeyId')
+        export AWS_SECRET_ACCESS_KEY=$(echo $CREDENTIALS | jq -r '.Credentials.SecretAccessKey')
+        export AWS_SESSION_TOKEN=$(echo $CREDENTIALS | jq -r '.Credentials.SessionToken')
+
+      - echo ""
+      - echo "=== Successfully assumed role! ==="
+      - echo "Session ARN:" $(echo $CREDENTIALS | jq -r '.AssumedRoleUser.Arn')
+      - echo ""
+
+      - echo "=== Getting Caller Identity in Target Account ==="
+      - aws sts get-caller-identity
+      - echo ""
+
+      - |
+        # Verify we're in the correct account
+        CURRENT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+        if [ "$CURRENT_ACCOUNT" != "$TARGET_ACCOUNT_ID" ]; then
+          echo "ERROR: Expected account $TARGET_ACCOUNT_ID but got $CURRENT_ACCOUNT"
+          exit 1
+        fi
+
+      - echo "✓ Successfully verified access to $ACCOUNT_NAME (Account ID: $TARGET_ACCOUNT_ID)"
+
+  post_build:
+    commands:
+      - echo ""
+      - echo "=== Test Summary ==="
+      - echo "Account Name: $ACCOUNT_NAME"
+      - echo "Target Account ID: $TARGET_ACCOUNT_ID"
+      - echo "Status: SUCCESS"
+      - echo ""
+      - |
+        if [ $CODEBUILD_BUILD_SUCCEEDING -eq 1 ]; then
+          echo "✓ Cross-account access test PASSED for $ACCOUNT_NAME"
+        else
+          echo "✗ Cross-account access test FAILED for $ACCOUNT_NAME"
+          exit 1
+        fi
+
+artifacts:
+  files:
+    - '**/*'
+  name: cross-account-test-results
