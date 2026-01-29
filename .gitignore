@@ -12,3 +12,5 @@ bastion_task.json
 # Helm
 charts/
 Chart.lock
+
+/ignore/*
