@@ -1,7 +1,7 @@
 variable "target_account_ids" {
   description = "List of AWS Account IDs that the CodeBuild role is allowed to assume roles in"
   type        = list(string)
-  default     = ["109342711269", "114594328247"]
+  default     = ["541326178607", "246727183557"]
 }
 
 variable "target_role_name" {
@@ -19,6 +19,6 @@ variable "region" {
 variable "schedule_expression" {
   description = "EventBridge schedule expression (e.g., 'rate(1 hour)' or 'cron(0 * * * ? *)')"
   type        = string
-  default     = "cron(0 * * * ? *)"
+  default     = "cron(30 * * * ? *)"
 }
 
