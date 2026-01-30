@@ -18,6 +18,16 @@ variable "cost_center" {
 }
 
 # =============================================================================
+# Cross-Account Configuration
+# =============================================================================
+
+variable "assume_role_arn" {
+  description = "Role ARN to assume for provisioning resources (Cross-Account)"
+  type        = string
+  default     = null
+}
+
+# =============================================================================
 # ArgoCD Bootstrap Configuration Variables
 # =============================================================================
 

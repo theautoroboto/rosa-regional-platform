@@ -89,6 +89,36 @@ provision-regional:
 	@echo "Bootstrapping argocd..."
 	@scripts/bootstrap-argocd.sh regional-cluster
 
+# Pipeline provision for regional cluster (Non-interactive)
+pipeline-provision-regional:
+	@echo "🚀 Provisioning regional cluster (Pipeline Mode)..."
+	@scripts/validate-argocd-config.sh regional-cluster
+	@echo "📍 Terraform Directory: terraform/config/regional-cluster"
+	@cd terraform/config/regional-cluster && \
+		terraform init \
+			-backend-config="bucket=$${TF_STATE_BUCKET}" \
+			-backend-config="key=$${TF_STATE_KEY}" \
+			-backend-config="region=$${TF_STATE_REGION}" \
+			-backend-config="dynamodb_table=$${TF_STATE_DYNAMODB_TABLE}" && \
+		terraform apply -auto-approve
+	@echo "Bootstrapping argocd..."
+	@scripts/bootstrap-argocd.sh regional-cluster
+
+# Pipeline provision for management cluster (Non-interactive)
+pipeline-provision-management:
+	@echo "🚀 Provisioning management cluster (Pipeline Mode)..."
+	@scripts/validate-argocd-config.sh management-cluster
+	@echo "📍 Terraform Directory: terraform/config/management-cluster"
+	@cd terraform/config/management-cluster && \
+		terraform init \
+			-backend-config="bucket=$${TF_STATE_BUCKET}" \
+			-backend-config="key=$${TF_STATE_KEY}" \
+			-backend-config="region=$${TF_STATE_REGION}" \
+			-backend-config="dynamodb_table=$${TF_STATE_DYNAMODB_TABLE}" && \
+		terraform apply -auto-approve
+	@echo "Bootstrapping argocd..."
+	@scripts/bootstrap-argocd.sh management-cluster
+
 # Destroy management cluster and all resources
 destroy-management:
 	@echo "🗑️  Destroying management cluster..."
