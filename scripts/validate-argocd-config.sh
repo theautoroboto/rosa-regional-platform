@@ -4,7 +4,7 @@ set -euo pipefail
 
 CLUSTER_TYPE="${1:-}"
 ENVIRONMENT="${2:-integration}"
-REGION="${3:-$(aws configure get region 2>/dev/null || echo "us-east-1")}"
+REGION="${3:-$(aws configure get region 2>/dev/null || echo "us-east-2")}"
 
 if [[ -z "$CLUSTER_TYPE" ]]; then
     echo "Usage: $0 <cluster-type> [environment] [region]"

@@ -14,11 +14,6 @@ variable "github_branch" {
   default     = "main"
 }
 
-variable "codestar_connection_arn" {
-  type        = string
-  description = "ARN of the CodeStar Connection to GitHub"
-}
-
 variable "region" {
   type        = string
   description = "AWS Region"
@@ -29,4 +24,23 @@ variable "assume_role_arn" {
   description = "Role ARN to assume for provisioning resources (Cross-Account)"
   type        = string
   default     = null
+}
+
+# Optional variables for manual/single-target deployment
+variable "target_account_id" {
+  type        = string
+  description = "Target AWS Account ID (Optional override)"
+  default     = ""
+}
+
+variable "target_region" {
+  type        = string
+  description = "Target AWS Region (Optional override)"
+  default     = ""
+}
+
+variable "target_alias" {
+  type        = string
+  description = "Target Alias (Optional override)"
+  default     = ""
 }

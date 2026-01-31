@@ -5,6 +5,11 @@ provider "aws" {
   }
 }
 
+resource "aws_codestarconnections_connection" "github" {
+  name          = "regional-github-connection"
+  provider_type = "GitHub"
+}
+
 # IAM Role for CodeBuild
 resource "aws_iam_role" "codebuild_role" {
   name = "regional-codebuild-role"
@@ -48,8 +53,20 @@ resource "aws_iam_role_policy" "codebuild_policy" {
         ]
         Resource = [
           aws_s3_bucket.pipeline_artifact.arn,
-          "${aws_s3_bucket.pipeline_artifact.arn}/*"
+          "${aws_s3_bucket.pipeline_artifact.arn}/*",
+          aws_s3_bucket.management_state.arn,
+          "${aws_s3_bucket.management_state.arn}/*"
         ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:LockItem"
+        ]
+        Resource = aws_dynamodb_table.management_locks.arn
       },
       {
         Effect   = "Allow"
@@ -103,7 +120,7 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
         Action = [
           "codestar-connections:UseConnection"
         ]
-        Resource = var.codestar_connection_arn
+        Resource = aws_codestarconnections_connection.github.arn
       },
       {
         Effect = "Allow"
@@ -137,6 +154,19 @@ resource "aws_codebuild_project" "regional_builder" {
     image                       = "aws/codebuild/amazonlinux2-x86_64-standard:4.0"
     type                        = "LINUX_CONTAINER"
     image_pull_credentials_type = "CODEBUILD"
+
+    environment_variable {
+      name  = "MANUAL_TARGET_ACCOUNT_ID"
+      value = var.target_account_id
+    }
+    environment_variable {
+      name  = "MANUAL_TARGET_REGION"
+      value = var.target_region
+    }
+    environment_variable {
+      name  = "MANUAL_TARGET_ALIAS"
+      value = var.target_alias
+    }
   }
 
   source {
@@ -167,7 +197,7 @@ resource "aws_codepipeline" "regional_pipeline" {
       output_artifacts = ["source_output"]
 
       configuration = {
-        ConnectionArn    = var.codestar_connection_arn
+        ConnectionArn    = aws_codestarconnections_connection.github.arn
         FullRepositoryId = "${var.github_repo_owner}/${var.github_repo_name}"
         BranchName       = var.github_branch
       }

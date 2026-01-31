@@ -46,10 +46,12 @@ phases:
             export AWS_SESSION_TOKEN=$(echo $CREDENTIALS | jq -r .Credentials.SessionToken)
             
             # Export Variables for Makefile / Terraform Backend
-            export TF_STATE_BUCKET="terraform-state-${MANAGEMENT_ACCOUNT_ID}"
+            # State is stored in the Regional Account (Current Account), but we use the Management Alias in the key
+            REGIONAL_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            export TF_STATE_BUCKET="terraform-state-management-${REGIONAL_ACCOUNT_ID}"
             export TF_STATE_KEY="management-cluster/${ALIAS}.tfstate"
-            export TF_STATE_REGION="$REGION"
-            export TF_STATE_DYNAMODB_TABLE="terraform-locks"
+            export TF_STATE_REGION="${AWS_REGION:-us-east-1}"
+            export TF_STATE_DYNAMODB_TABLE="terraform-locks-management"
             
             # Run Provision
             echo "Running Provisioning..."
