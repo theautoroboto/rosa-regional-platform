@@ -8,7 +8,7 @@ hypershift:
   # S3 bucket configuration, please update the name here before execute
   oidcStorageS3Bucket:
     name: hypershift-mc-bucket
-    region: us-east-2
+    region: us-east-1
 
   # External DNS configuration
   externalDns:
