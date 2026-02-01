@@ -45,7 +45,7 @@ phases:
             
             # Dynamically detect bucket region
             BUCKET_REGION=$(aws s3api get-bucket-location --bucket $TF_STATE_BUCKET --query LocationConstraint --output text)
-            if [ "$BUCKET_REGION" == "None" ] || [ -z "$BUCKET_REGION" ]; then BUCKET_REGION="us-east-1"; fi
+            if [ "$BUCKET_REGION" == "None" ] || [ -z "$BUCKET_REGION" ]; then BUCKET_REGION="us-east-2"; fi
             export TF_STATE_REGION=$BUCKET_REGION
             
             export TF_STATE_DYNAMODB_TABLE="terraform-locks"

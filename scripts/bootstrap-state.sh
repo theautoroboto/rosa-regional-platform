@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-REGION=${1:-$(aws configure get region 2>/dev/null || echo "us-east-1")}
+REGION=${1:-$(aws configure get region 2>/dev/null || echo "us-east-2")}
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 BUCKET_NAME="terraform-state-${ACCOUNT_ID}"
 DYNAMODB_TABLE="terraform-locks"
@@ -15,7 +15,7 @@ if aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
     echo "Bucket $BUCKET_NAME already exists."
 else
     echo "Creating bucket $BUCKET_NAME..."
-    if [[ "$REGION" == "us-east-1" ]]; then
+    if [[ "$REGION" == "us-east-2" ]]; then
         aws s3api create-bucket --bucket "$BUCKET_NAME" --region "$REGION"
     else
         aws s3api create-bucket --bucket "$BUCKET_NAME" --create-bucket-configuration LocationConstraint="$REGION" --region "$REGION"

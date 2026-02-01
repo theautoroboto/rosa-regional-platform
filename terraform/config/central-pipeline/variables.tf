@@ -17,7 +17,7 @@ variable "github_branch" {
 variable "region" {
   type        = string
   description = "AWS Region for the Pipeline"
-  default     = "us-east-1"
+  default     = "us-east-2"
 }
 
 # Optional variables for manual/single-target deployment

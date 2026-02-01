@@ -4,7 +4,7 @@ set -euo pipefail
 
 CLUSTER_TYPE="${1:-}"
 ENVIRONMENT="${2:-integration}"
-REGION="${3:-$(aws configure get region 2>/dev/null || echo "us-east-1")}"
+REGION="${3:-$(aws configure get region 2>/dev/null || echo "us-east-2")}"
 
 if [[ "${SKIP_ARGOCD_VALIDATION:-false}" == "true" ]]; then
     echo "⚠️ Skipping ArgoCD config validation (SKIP_ARGOCD_VALIDATION=true)"
