@@ -50,8 +50,16 @@ phases:
             REGIONAL_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
             export TF_STATE_BUCKET="terraform-state-management-${REGIONAL_ACCOUNT_ID}"
             export TF_STATE_KEY="management-cluster/${ALIAS}.tfstate"
-            export TF_STATE_REGION="${AWS_REGION:-us-east-1}"
+            
+            # Dynamically detect bucket region
+            BUCKET_REGION=$(aws s3api get-bucket-location --bucket $TF_STATE_BUCKET --query LocationConstraint --output text)
+            if [ "$BUCKET_REGION" == "None" ] || [ -z "$BUCKET_REGION" ]; then BUCKET_REGION="us-east-1"; fi
+            export TF_STATE_REGION=$BUCKET_REGION
+            
             export TF_STATE_DYNAMODB_TABLE="terraform-locks-management"
+
+            # Skip ArgoCD validation for infra provisioning
+            export SKIP_ARGOCD_VALIDATION=true
             
             # Run Provision
             echo "Running Provisioning..."

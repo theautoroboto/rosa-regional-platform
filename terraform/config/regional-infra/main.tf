@@ -129,6 +129,13 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
           "codebuild:StartBuild"
         ]
         Resource = aws_codebuild_project.regional_builder.arn
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "codebuild:StartBuild"
+        ]
+        Resource = "arn:aws:codebuild:*:*:project/${aws_codebuild_project.regional_builder.name}"
       }
     ]
   })
