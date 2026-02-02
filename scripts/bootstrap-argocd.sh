@@ -32,7 +32,7 @@ BOOTSTRAP_SECURITY_GROUP=$(echo "$OUTPUTS" | jq -r '.bootstrap_security_group_id
 LOG_GROUP=$(echo "$OUTPUTS" | jq -r '.bootstrap_log_group_name.value')
 REPOSITORY_URL=$(echo "$OUTPUTS" | jq -r '.repository_url.value')
 REPOSITORY_BRANCH=$(echo "$OUTPUTS" | jq -r '.repository_branch.value')
-API_ALLOWED_ACCOUNTS=$(echo "$OUTPUTS" | jq -r '.api_allowed_accounts.value')
+API_ALLOWED_ACCOUNTS=$(echo "$OUTPUTS" | jq -r '.api_allowed_accounts.value // ""')
 
 # Static values
 APPLICATIONSET_PATH="argocd/rendered/$ENVIRONMENT/$REGION/${CLUSTER_TYPE}-manifests"
