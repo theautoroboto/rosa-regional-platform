@@ -353,15 +353,15 @@ awscurl -X POST https://$API_GATEWAY_URL/prod/api/v0/work --service execute-api 
 
 ```bash
 # List the current management_clusters
-✗ awscurl --service execute-api --region $REGION https://$API_GATEWAY_API/prod/api/v0/management_clusters
+awscurl --service execute-api --region $REGION https://$API_GATEWAY_API/prod/api/v0/management_clusters
 
 # List all ManifestWorks, jq to filter by consumer
-✗ awscurl --service execute-api --region $REGION https://$API_GATEWAY_API/prod/api/v0/resource_bundles
+awscurl --service execute-api --region $REGION https://$API_GATEWAY_API/prod/api/v0/resource_bundles
 
 # Example:
-✗ awscurl --service execute-api --region us-east-2 https://z0l5l43or4.execute-api.us-east-2.amazonaws.com/prod/api/v0/management_clusters
+awscurl --service execute-api --region us-east-2 https://z0l5l43or4.execute-api.us-east-2.amazonaws.com/prod/api/v0/management_clusters
 
-✗ awscurl --service execute-api --region us-east-2 https://z0l5l43or4.execute-api.us-east-2.amazonaws.com/prod/api/v0/resource_bundles | jq -r '.items[].status.resourceStatus[]'
+awscurl --service execute-api --region us-east-2 https://z0l5l43or4.execute-api.us-east-2.amazonaws.com/prod/api/v0/resource_bundles | jq -r '.items[].status.resourceStatus[]'
 ```
 
 </details>
