@@ -1,21 +1,101 @@
-# Maestro Architecture Overview
+# Design Decision 002: MQTT-Based Resource Distribution via Maestro
 
-This document provides comprehensive architecture diagrams for the Maestro MQTT-based orchestration system in the ROSA Regional Platform.
+## Status
+**Implemented**
 
 ## Table of Contents
-1. [High-Level Architecture](#high-level-architecture)
-2. [Complete Message Flow](#complete-message-flow)
-3. [MQTT Topic Structure](#mqtt-topic-structure)
-4. [IAM Roles and Cross-Account Setup](#iam-roles-and-cross-account-setup)
-5. [Deployment Workflow](#deployment-workflow)
-6. [Certificate Transfer Process](#certificate-transfer-process)
-7. [Network Topology](#network-topology)
+1. [Scope](#scope)
+2. [Context](#context)
+3. [Alternatives Explored](#alternatives-explored)
+   - [Alternative 1: Direct REST API Push](#alternative-1-direct-rest-api-push)
+   - [Alternative 2: Pull-Based with Polling](#alternative-2-pull-based-with-polling)
+   - [Alternative 3: Message Queue with AWS Services](#alternative-3-message-queue-with-aws-services)
+4. [Decision: Maestro with AWS IoT Core MQTT](#decision-maestro-with-aws-iot-core-mqtt)
+5. [High-Level Architecture](#high-level-architecture)
+6. [Complete Message Flow](#complete-message-flow)
+7. [MQTT Topic Structure](#mqtt-topic-structure)
+8. [Implementation Design](#implementation-design)
+   - [Maestro Server](#maestro-server-regional-cluster)
+   - [Maestro Agent](#maestro-agent-management-cluster)
+   - [Authentication & Security](#authentication--security)
+     - [IAM Roles and Cross-Account Setup](#iam-roles-and-cross-account-setup)
+     - [IAM Trust Relationships](#iam-trust-relationships)
+     - [Secret Flow Architecture](#secret-flow-architecture)
+     - [Key IAM Components](#key-iam-components)
+   - [State Management](#state-management)
+9. [Deployment Workflow](#deployment-workflow)
+10. [Certificate Transfer Process](#certificate-transfer-process)
+11. [Network Topology](#network-topology)
+12. [Benefits](#benefits)
+13. [Operational Considerations](#operational-considerations)
+    - [Monitoring & Alerting](#monitoring--alerting)
+    - [Troubleshooting Guide](#troubleshooting-guide)
+    - [Performance Tuning](#performance-tuning)
+    - [Cost Optimization](#cost-optimization)
+14. [Related Documentation](#related-documentation)
 
 ---
 
+## Scope
+
+This design decision addresses how the Regional Cluster distributes cluster configuration and resources to Management Clusters without direct network connectivity between their Kubernetes APIs.
+
+The solution must work in an environment where Management Clusters have fully private Kubernetes APIs with no network path to the Regional Cluster, enabling maximum security isolation while maintaining operational capability. This document provides comprehensive architecture diagrams, detailed implementation guidance, and operational procedures for the Maestro MQTT-based orchestration system in the ROSA Regional Platform.
+
+## Context
+
+The rosa-regional-platform requires a mechanism to distribute HostedCluster and NodePool resources from the Regional Cluster's CLM (Cluster Lifecycle Manager) to multiple Management Clusters across potentially different AWS accounts.
+
+**Critical Constraint**: Management Clusters MUST have no network path to the Regional Cluster Kubernetes API, and vice versa. This eliminates traditional push mechanisms that rely on direct API access.
+
+This constraint arises from fundamental security requirements:
+- **Network Isolation**: No VPC peering, Transit Gateway, or VPN connections between Regional and Management VPCs
+- **Account Separation**: Management Clusters may reside in different AWS accounts with independent governance
+- **Zero Trust Architecture**: No implicit trust relationships based on network topology
+- **Attack Surface Minimization**: Eliminating direct API exposure reduces potential security vulnerabilities
+
+## Alternatives Explored
+
+### Alternative 1: Direct REST API Push
+**Approach**: Regional Cluster makes HTTPS requests to Management Cluster API endpoints
+- Regional Cluster CLM directly calls Management Cluster Kubernetes APIs
+- VPC Peering or Transit Gateway for network connectivity
+- API Gateway or PrivateLink for secure exposure
+
+**Assessment**: Violates fundamental security requirement of network isolation. Creates operational coupling and increases attack surface. Requires complex network topology management.
+
+### Alternative 2: Pull-Based with Polling
+**Approach**: Management Clusters poll Regional Cluster for updates
+- Management Clusters periodically query Regional API for resource changes
+- Time-based reconciliation loop (e.g., every 30 seconds)
+- Regional API exposed via PrivateLink or VPC Peering
+
+**Assessment**: Still requires network connectivity. Introduces latency (bounded by poll interval), increases API load, and creates inefficient resource utilization. Not event-driven, leading to delayed propagation.
+
+### Alternative 3: Message Queue with AWS Services
+**Implementation Options**:
+- **Amazon SQS/SNS**: Queue-based message delivery with topic subscriptions
+- **Amazon EventBridge**: Event bus for cross-account event routing
+- **AWS IoT Core MQTT**: Publish-subscribe messaging with certificate-based authentication
+
+**Assessment**: Viable approach that satisfies network isolation requirement. Each has different trade-offs in terms of message delivery semantics, authentication models, and operational complexity.
+
+## Decision: Maestro with AWS IoT Core MQTT
+
+**Chosen Approach**: Alternative 3 (Message Queue) implemented via **Maestro** orchestration system using **AWS IoT Core MQTT** as the transport layer.
+
+**Implementation Rationale**:
+- **Network Isolation**: AWS IoT Core is an internet-accessible service, eliminating need for VPC connectivity between Regional and Management clusters
+- **Cross-Account Support**: IoT Core supports cross-account authentication via IAM policies, enabling Management Clusters in different AWS accounts to connect to Regional account IoT endpoint
+- **Message Delivery Guarantees**: MQTT QoS 1 (at least once delivery) ensures reliable resource distribution
+- **Event-Driven Architecture**: Immediate message delivery upon publication, enabling low-latency cluster operations
+- **Proven Technology**: Maestro is used in production by ARO-HCP (Azure Red Hat OpenShift - Hosted Control Planes)
+
+**Trade-offs**: Introduces dependency on AWS IoT Core availability and requires MQTT expertise for troubleshooting. Certificate management adds operational complexity (manual transfer process).
+
 ## High-Level Architecture
 
-This diagram shows all AWS components and their relationships across Regional and Management clusters.
+The following diagram shows all AWS components and their relationships across Regional and Management clusters, providing a complete view of the distributed system topology.
 
 ```mermaid
 graph TB
@@ -108,7 +188,7 @@ graph TB
     style IAM_Agent2 fill:#ffcccc
 ```
 
-**Key Points:**
+**Key Architectural Points:**
 - **Regional Cluster**: Centralized Maestro Server with RDS state database
 - **Management Clusters**: Distributed agents in separate AWS accounts
 - **AWS IoT Core**: MQTT broker enabling pub/sub communication (cross-account via IAM permissions)
@@ -116,11 +196,9 @@ graph TB
 - **Local Secrets**: Each cluster reads MQTT certificates from its own Secrets Manager
 - **Network Isolation**: No direct network path between regional and management clusters
 
----
-
 ## Complete Message Flow
 
-End-to-end flow showing how ManifestWork resources are distributed from Regional to Management clusters.
+The following sequence diagram illustrates the end-to-end flow showing how ManifestWork resources are distributed from Regional to Management clusters, including initialization, resource creation, and status reporting.
 
 ```mermaid
 sequenceDiagram
@@ -189,11 +267,9 @@ sequenceDiagram
 5. **Status Update**: Agent reports status back through separate MQTT topic
 6. **Persistence**: Server stores all state in RDS for API queries
 
----
-
 ## MQTT Topic Structure
 
-Hierarchical topic organization for consumer isolation and message routing.
+The hierarchical topic organization provides consumer isolation and message routing. Each Management Cluster has dedicated topics that enforce strict authorization boundaries.
 
 ```mermaid
 graph TB
@@ -228,16 +304,36 @@ graph TB
 - **Agent publishes to**: `sources/maestro/consumers/management-01/agentevents`
 - **Server subscribes to**: `sources/maestro/consumers/+/agentevents` (wildcard)
 
-**Security:**
+**Topic Security Model:**
 - Each agent has IoT Policy allowing subscribe/receive ONLY on its consumer-specific topic
 - Server has IoT Policy allowing publish to all `sourceevents` topics
-- Topic isolation ensures multi-tenant security
+- Topic isolation ensures multi-tenant security - agents cannot intercept messages for other clusters
+- Wildcard subscriptions (`+`) are restricted to the Maestro Server role only
 
----
+## Implementation Design
 
-## IAM Roles and Cross-Account Setup
+### Maestro Server (Regional Cluster)
+- Runs in Regional Cluster with HTTP (8080) and gRPC (8090) APIs
+- Connects to AWS IoT Core using X.509 certificate authentication
+- Stores resource state in dedicated RDS PostgreSQL database
+- Publishes ManifestWork resources to consumer-specific MQTT topics
+- Subscribes to status update topics from all agents
 
-Detailed IAM role configuration, Pod Identity associations, and cross-account authentication flows.
+### Maestro Agent (Management Cluster)
+- Runs in each Management Cluster (single replica per cluster)
+- Connects to Regional AWS account IoT Core via cross-account IAM permissions
+- Subscribes to consumer-specific topic: `sources/maestro/consumers/{cluster-id}/sourceevents`
+- Applies received Kubernetes resources to local Management Cluster API
+- Reports status back via: `sources/maestro/consumers/{cluster-id}/agentevents`
+- See [MQTT Topic Structure](#mqtt-topic-structure) section for detailed topic organization
+
+### Authentication & Security
+
+The authentication model leverages AWS-native mechanisms for both same-account secret access and cross-account IoT connectivity.
+
+#### IAM Roles and Cross-Account Setup
+
+The following diagram shows detailed IAM role configuration, Pod Identity associations, and cross-account authentication flows.
 
 ```mermaid
 graph TB
@@ -300,9 +396,9 @@ graph TB
     style ASCP_MC fill:#e8f4f8
 ```
 
-### IAM Trust Relationships
+#### IAM Trust Relationships
 
-Detailed flow showing how Pod Identity enables same-account secret access and cross-account IoT authentication.
+This detailed flow shows how Pod Identity enables same-account secret access and cross-account IoT authentication.
 
 ```mermaid
 sequenceDiagram
@@ -334,9 +430,9 @@ sequenceDiagram
     IoT-->>MC: Authenticated MQTT connection (cross-account via IAM)
 ```
 
-### Secret Flow Architecture
+#### Secret Flow Architecture
 
-Shows how secrets flow from Terraform creation through manual transfer to pod consumption.
+This diagram shows how secrets flow from Terraform creation through manual transfer to pod consumption.
 
 ```mermaid
 graph LR
@@ -370,12 +466,15 @@ graph LR
     style MQTT fill:#d4edda
 ```
 
-### Key Components
+#### Key IAM Components
 
-#### Regional Account (123456789012)
+**Regional Account (123456789012)**
 
-**IAM Roles:**
-- `regional-us-east-1-maestro-server` - Maestro Server access to IoT Core + RDS + Secrets Manager (via ASCP CSI Driver)
+**IAM Role:** `regional-us-east-1-maestro-server`
+- Access to IoT Core (connect, publish, subscribe)
+- Access to RDS (connect, read, write)
+- Access to Secrets Manager (GetSecretValue)
+- Mounted via ASCP CSI Driver
 
 **Resources:**
 - AWS IoT Core Things, Certificates, and Policies (for server + all agents)
@@ -395,10 +494,12 @@ graph LR
 
 **Note:** Agent certificates are created in Regional IoT Core but stored in Management account Secrets Manager via manual transfer.
 
-#### Management Account (987654321098)
+**Management Account (987654321098)**
 
-**IAM Roles:**
-- `management-01-maestro-agent` - Created in **Management Account** (same account as cluster)
+**IAM Role:** `management-01-maestro-agent`
+- Created in **Management Account** (same account as cluster)
+- Accesses local Secrets Manager (same-account)
+- Has cross-account IoT permissions to Regional IoT Core
 
 **Resources:**
 - EKS cluster running Maestro Agent
@@ -446,7 +547,7 @@ resource "aws_eks_pod_identity_association" "maestro_agent" {
 
 **Note:** The agent reads secrets from its own account, but has IAM permissions to access IoT Core in the Regional account.
 
-### Authentication Flow Summary
+#### Authentication Flow Summary
 
 1. **Regional Cluster (Same Account)**
    - Maestro Server uses Pod Identity → assumes regional account role (same account)
@@ -458,7 +559,7 @@ resource "aws_eks_pod_identity_association" "maestro_agent" {
    - ASCP CSI Driver mounts secrets from management account Secrets Manager (same account)
    - Agent reads mounted certificate files → connects to Regional IoT Core (cross-account via IAM permissions)
 
-### Why This Design?
+#### Why This Design?
 
 **Centralized Certificate Creation:**
 - All IoT certificates created in one place (regional account IoT Core)
@@ -478,11 +579,14 @@ resource "aws_eks_pod_identity_association" "maestro_agent" {
 - Simple IAM permissions for IoT access (resource-based authorization)
 - Clear operational boundaries between regional and management teams
 
----
+### State Management
+- **CLM as Source of Truth**: All cluster state authoritative in CLM RDS database
+- **Maestro as Distribution Cache**: Maestro RDS database caches published resources for performance
+- **Rebuild Capability**: Maestro cache can be fully reconstructed from CLM if data loss occurs
 
 ## Deployment Workflow
 
-Complete deployment sequence showing manual certificate transfer between accounts.
+The complete deployment sequence shows how Regional and Management infrastructure is provisioned, including the manual certificate transfer process between accounts.
 
 ```mermaid
 sequenceDiagram
@@ -507,7 +611,7 @@ sequenceDiagram
     Note over RegOp,AWS_M: Phase 2: Certificate Extraction
     RegOp->>RegTF: terraform output -json<br/>maestro_agent_certificates
     RegTF-->>RegOp: {"management-01": {<br/>"certificateArn": "...",<br/>"certificatePem": "...",<br/>"privateKey": "...",<br/>"endpoint": "..."}}
-    RegOp->>RegOp: jq '.["management-01"]' > cert.json
+    RegOp->>RegOp: jq '["management-01"]' > cert.json
     RegOp->>RegOp: Encrypt cert.json
 
     Note over RegOp,AWS_M: Phase 3: Secure Transfer
@@ -555,11 +659,9 @@ sequenceDiagram
 - Simplifies secret rotation workflow
 - Each cluster maintains sovereignty over its own secrets
 
----
-
 ## Certificate Transfer Process
 
-Detailed view of secure certificate transfer between Regional and Management operators.
+The following diagram provides a detailed view of secure certificate transfer between Regional and Management operators.
 
 ```mermaid
 graph LR
@@ -615,7 +717,7 @@ graph LR
     style Decrypt fill:#ccffcc
 ```
 
-**Certificate Content:**
+**Certificate Content Structure:**
 ```json
 {
   "certificateArn": "arn:aws:iot:us-east-1:123456789012:cert/abc...",
@@ -627,11 +729,11 @@ graph LR
 }
 ```
 
----
+This structure contains all necessary information for the Management Cluster agent to authenticate with Regional IoT Core.
 
 ## Network Topology
 
-Physical network layout showing VPC isolation and connectivity patterns.
+The following diagram shows the physical network layout, VPC isolation, and connectivity patterns across Regional and Management AWS accounts.
 
 ```mermaid
 graph TB
@@ -716,11 +818,133 @@ graph TB
 - **RDS Isolation**: Database accessible only from Regional EKS cluster security group
 - **Multi-AZ Deployment**: High availability across multiple availability zones
 - **Security**: All traffic encrypted in transit (TLS 1.2+)
+- **No Direct Paths**: Regional and Management clusters communicate ONLY through AWS IoT Core
+- **NAT Gateway Redundancy**: Each availability zone has its own NAT Gateway for resilience
 
----
+This network topology demonstrates the fundamental isolation principle: Regional and Management clusters have no direct network connectivity, relying entirely on AWS IoT Core as the message broker.
+
+## Benefits
+
+**Network Security & Isolation**:
+- Complete network isolation between Regional and Management Clusters (no VPC peering, Transit Gateway, or VPN)
+- Management Clusters in separate AWS accounts maintain full autonomy
+- Reduced attack surface - no direct API exposure between clusters
+
+**Operational Flexibility**:
+- Management Clusters can be provisioned dynamically in any AWS account
+- No network topology changes required when adding new Management Clusters
+- Simplified disaster recovery - Maestro state rebuilds from CLM
+
+**Event-Driven Performance**:
+- Immediate resource propagation (milliseconds vs. seconds with polling)
+- Efficient resource utilization - no continuous polling overhead
+- Reliable delivery with MQTT QoS 1 guarantees
+
+**Strategic Alignment**:
+- Leverages proven Maestro technology from ARO-HCP production deployments
+- Aligns with AWS-native architecture (IoT Core, IAM, Secrets Manager)
+- Foundation for future event-driven workflows beyond resource distribution
+- Compatible with multi-region and multi-cloud expansion strategies
+
+**Scalability & Performance**:
+- **Horizontal Scaling**: Maestro Server runs with multiple replicas (2+) for high availability
+- **Connection Pooling**: Each agent maintains a single persistent MQTT connection (no polling overhead)
+- **Message Batching**: CloudEvent envelope supports batch operations for efficiency
+- **Topic-Based Routing**: AWS IoT Core handles message routing at the broker level
+- **QoS Guarantees**: MQTT QoS 1 ensures at-least-once delivery with minimal latency
+
+**Operational Advantages**:
+- **Observability**: AWS IoT Core provides CloudWatch metrics for connection health, message throughput, and error rates
+- **Auditability**: All MQTT connections and message deliveries logged in CloudTrail
+- **Certificate Rotation**: Manual transfer process enables controlled, auditable certificate lifecycle management
+- **Disaster Recovery**: Regional Maestro RDS can be rebuilt from CLM source of truth
+- **Testing & Validation**: Easy to test with mock MQTT clients for integration testing
+
+## Operational Considerations
+
+### Monitoring & Alerting
+
+**CloudWatch Metrics**:
+- `AWS/IoT/Connect.Success` - Monitor successful MQTT connections
+- `AWS/IoT/PublishIn.Success` - Track message publication rates
+- `AWS/IoT/Subscribe.Success` - Verify agent subscriptions
+- Custom metrics from Maestro Server/Agent for ManifestWork processing
+
+**Health Checks**:
+- Maestro Server: HTTP `/healthz` endpoint on port 8080
+- Maestro Agent: Kubernetes liveness/readiness probes
+- RDS: Automated CloudWatch alarms for connection count, CPU, and storage
+
+### Troubleshooting Guide
+
+**Agent Cannot Connect to IoT Core**:
+1. Verify IAM role has cross-account IoT permissions
+2. Check certificate validity: `openssl x509 -in cert.pem -text -noout`
+3. Validate IoT endpoint: `nslookup <endpoint>.iot.<region>.amazonaws.com`
+4. Review agent logs for authentication errors
+5. Confirm NAT Gateway and Internet Gateway routing
+
+**Messages Not Delivered**:
+1. Check MQTT topic subscriptions match publication topics
+2. Verify IoT Policy allows subscribe/publish on correct topics
+3. Review CloudWatch Logs for IoT Core rule errors
+4. Confirm QoS level matches (should be QoS 1)
+5. Check Maestro Server database connection to RDS
+
+**Certificate Rotation**:
+1. Create new certificate in Regional IoT Core
+2. Extract certificate using Terraform output
+3. Transfer encrypted certificate to Management operator
+4. Update Management Secrets Manager secret
+5. Restart Maestro Agent pods to reload secret
+6. Deactivate old certificate in IoT Core (after 24-hour grace period)
+7. Delete old certificate
+
+### Performance Tuning
+
+- **RDS Instance Sizing**: Start with `db.t4g.micro`, scale to `db.t4g.medium` for 50+ Management Clusters
+- **Connection Limits**: AWS IoT Core supports 100,000 concurrent connections per account (adjust quotas if needed)
+- **Message Throughput**: Default IoT Core message throughput is sufficient for 1000s of ManifestWork operations/minute
+- **Network Bandwidth**: NAT Gateway bandwidth auto-scales; monitor CloudWatch metrics for saturation
+
+### Cost Optimization
+
+- **IoT Core Pricing**: Pay per message published/delivered (~$1 per million messages)
+- **RDS Costs**: Use reserved instances for production Regional clusters (40-60% savings)
+- **Secrets Manager**: $0.40/secret/month - negligible for typical deployments
+- **Data Transfer**: NAT Gateway data transfer charges apply ($0.045/GB outbound)
 
 ## Related Documentation
 
-- [Terraform Modules](../terraform/modules/) - Infrastructure as Code implementation
-  - [maestro-infrastructure](../terraform/modules/maestro-infrastructure/) - Regional cluster resources
-  - [maestro-agent](../terraform/modules/maestro-agent/) - Management cluster resources
+### Terraform Infrastructure Modules
+- **[maestro-infrastructure](../../terraform/modules/maestro-infrastructure/)** - Regional cluster Maestro server infrastructure
+  - IoT Core provisioning (Things, Certificates, Policies)
+  - RDS PostgreSQL database
+  - Secrets Manager configuration
+  - Server IAM roles and Pod Identity associations
+
+- **[maestro-agent](../../terraform/modules/maestro-agent/)** - Management cluster Maestro agent infrastructure
+  - Agent IAM roles with cross-account IoT permissions
+  - Pod Identity associations (same-account)
+  - Helm chart value generation
+
+### Design Decisions
+- **[001-fully-private-eks-bootstrap.md](./001-fully-private-eks-bootstrap.md)** - ECS-based bootstrap strategy for fully private EKS clusters
+- **[maestro-agent-iot-provisioning.md](./maestro-agent-iot-provisioning.md)** - Detailed IoT Core provisioning and certificate management
+
+### External References
+- **[Maestro Project](https://github.com/openshift-online/maestro)** - Upstream Maestro orchestration system
+- **[ARO-HCP](https://github.com/Azure/ARO-HCP)** - Azure Red Hat OpenShift HCP implementation using Maestro
+- **[AWS IoT Core MQTT](https://docs.aws.amazon.com/iot/latest/developerguide/mqtt.html)** - AWS IoT Core MQTT protocol documentation
+- **[AWS Secrets Store CSI Driver](https://docs.aws.amazon.com/secretsmanager/latest/userguide/integrating_csi_driver.html)** - ASCP integration with EKS
+- **[EKS Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html)** - AWS EKS Pod Identity documentation
+
+### Configuration Files
+- **[argocd/config/regional-cluster/maestro/](../../argocd/config/regional-cluster/maestro/)** - Maestro Server Helm chart configurations
+- **[argocd/config/management-cluster/maestro/](../../argocd/config/management-cluster/maestro/)** - Maestro Agent Helm chart configurations
+
+---
+
+**Decision Date**: January 30, 2026
+**Decision Maker**: RRP Team
+**Review Date**: June 30, 2026 (6-month review cycle)
