@@ -11,7 +11,7 @@
 # Application Load Balancer
 # -----------------------------------------------------------------------------
 
-resource "aws_lb" "frontend" {
+resource "aws_lb" "platform" {
   name               = "${var.resource_name_base}-api"
   internal           = true
   load_balancer_type = "application"
@@ -35,7 +35,7 @@ resource "aws_lb" "frontend" {
 # RegisterTargets on target groups tagged with the cluster name.
 # -----------------------------------------------------------------------------
 
-resource "aws_lb_target_group" "frontend" {
+resource "aws_lb_target_group" "platform" {
   name        = "${var.resource_name_base}-api"
   port        = var.target_port
   protocol    = "HTTP"
@@ -64,13 +64,13 @@ resource "aws_lb_target_group" "frontend" {
 # Listener
 # -----------------------------------------------------------------------------
 
-resource "aws_lb_listener" "frontend" {
-  load_balancer_arn = aws_lb.frontend.arn
+resource "aws_lb_listener" "platform" {
+  load_balancer_arn = aws_lb.platform.arn
   port              = 80
   protocol          = "HTTP"
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.frontend.arn
+    target_group_arn = aws_lb_target_group.platform.arn
   }
 }

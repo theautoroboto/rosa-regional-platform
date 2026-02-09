@@ -9,7 +9,7 @@
 
 - The Regional Cluster (RC) is a new EKS-based cluster type, one per region
 - It runs the core regional services:
-  - **Frontend API** (authorization-aware customer-facing API)
+  - **Platform API** (authorization-aware customer-facing API)
   - **CLM** (Cluster Lifecycle Manager - replaces OCM/CS/AMS)
   - **Maestro** (applies resources to Management Clusters via MQTT)
   - **ArgoCD** (GitOps deployment)
@@ -100,7 +100,7 @@ If the MC API is non-responsive, we will have observability alerts to notify SRE
   1. Add region configuration to the Git repository
   2. Regional Cluster Provisioning pipeline runs to provision the Regional Cluster
   3. ArgoCD is installed
-  4. Frontend API, CLM, Maestro, Tekton are then installed via ArgoCD
+  4. Platform API, CLM, Maestro, Tekton are then installed via ArgoCD
   5. The RC will in turn provision Management Clusters as needed via the MC Provisioning pipelines
 
 ### Should we use AWS Landing Zone for region setup?
@@ -127,19 +127,19 @@ If the MC API is non-responsive, we will have observability alerts to notify SRE
 - It consists of:
   - AWS API Gateway (regional endpoint)
   - VPC Link v2 (private connectivity)
-  - Internal ALB (load balancing to Frontend API)
+  - Internal ALB (load balancing to Platform API)
 - Deployed and configured via the Central Control Plane's Terraform pipelines
 - Exposed at `api.<region>.openshift.com`
 
 ### What is VPC Link v2?
 
 - VPC Link v2 is an AWS feature that enables private connectivity between API Gateway and VPC resources
-- Used to connect the public API Gateway to the private Frontend API in the Regional Cluster
+- Used to connect the public API Gateway to the private Platform API in the Regional Cluster
 - Benefits:
   - Traffic stays within AWS network (no public internet transit)
   - Enables private ALB targets
   - Lower latency than VPC Link v1
-- Part of the request flow: API Gateway → VPC Link v2 → Internal ALB → Frontend API
+- Part of the request flow: API Gateway → VPC Link v2 → Internal ALB → Platform API
 
 ### How is PrivateLink used in this architecture?
 

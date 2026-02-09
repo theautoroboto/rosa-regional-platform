@@ -1,20 +1,20 @@
-# Default values for frontend-api
+# Default values for platform-api
 
-frontendApi:
+platformApi:
   # Namespace to deploy into
-  namespace: frontend-api
+  namespace: platform-api
 
   # Service Account configuration
   serviceAccount:
     create: true
-    name: frontend-api-sa
+    name: platform-api-sa
     annotations: {}
 
   # Application configuration
   app:
-    name: frontend-api
+    name: platform-api
     image:
-      repository: quay.io/cdoan0/rosa-regional-frontend-api
+      repository: quay.io/cdoan0/rosa-regional-platform-api
       tag: latest
       pullPolicy: Always
 

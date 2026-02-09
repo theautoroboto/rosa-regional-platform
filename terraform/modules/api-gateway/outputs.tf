@@ -46,17 +46,17 @@ output "vpc_link_arn" {
 
 output "alb_arn" {
   description = "Internal ALB ARN"
-  value       = aws_lb.frontend.arn
+  value       = aws_lb.platform.arn
 }
 
 output "alb_dns_name" {
   description = "Internal ALB DNS name"
-  value       = aws_lb.frontend.dns_name
+  value       = aws_lb.platform.dns_name
 }
 
 output "target_group_arn" {
   description = "Target group ARN for TargetGroupBinding"
-  value       = aws_lb_target_group.frontend.arn
+  value       = aws_lb_target_group.platform.arn
 }
 
 # -----------------------------------------------------------------------------

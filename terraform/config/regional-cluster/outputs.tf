@@ -143,7 +143,7 @@ output "api_target_group_arn" {
 }
 
 output "api_allowed_accounts" {
-  description = "Frontend API allowed accounts (comma-separated account IDs, including current account)"
+  description = "Platform API allowed accounts (comma-separated account IDs, including current account)"
   value       = var.api_additional_allowed_accounts != "" ? "${data.aws_caller_identity.current.account_id},${var.api_additional_allowed_accounts}" : data.aws_caller_identity.current.account_id
 }
 

@@ -60,7 +60,7 @@ spec:
               cluster_type: '{{ .metadata.labels.cluster_type }}'
               environment: '{{ .metadata.labels.environment }}'
               region: '{{ .metadata.labels.region }}'
-            frontendApi:
+            platformApi:
               targetGroup:
                 arn: '{{ .metadata.annotations.api_target_group_arn }}'
               app:

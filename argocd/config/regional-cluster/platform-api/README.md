@@ -1,11 +1,11 @@
-# frontend-api Helm Chart
+# platform-api Helm Chart
 
-Helm chart for the ROSA Regional Frontend API with Envoy sidecar proxy.
+Helm chart for the ROSA Regional Platform API with Envoy sidecar proxy.
 
 ## Overview
 
 This chart deploys:
-- Frontend API application with authorization middleware
+- Platform API application with authorization middleware
 - Envoy sidecar for unified traffic routing
 - Service exposing ports 8080 (Envoy), 8000 (API), 8081 (health), 9090 (metrics)
 - TargetGroupBinding for AWS Application Load Balancer integration
@@ -21,13 +21,13 @@ This chart deploys:
 See [values.yaml](values.yaml) for all configuration options. Key settings:
 
 ```yaml
-frontendApi:
-  namespace: frontend-api
+platformApi:
+  namespace: platform-api
 
   app:
-    name: frontend-api
+    name: platform-api
     image:
-      repository: quay.io/cdoan0/rosa-regional-frontend-api
+      repository: quay.io/cdoan0/rosa-regional-platform-api
       tag: nodb
     args:
       allowedAccounts: "123456789012"  # Comma-separated AWS account IDs
@@ -46,15 +46,15 @@ frontendApi:
 ### Basic Installation
 
 ```bash
-helm install frontend-api ./deployment/helm/rosa-regional-frontend
+helm install platform-api ./deployment/helm/rosa-regional-platform
 ```
 
 ### Production Installation with Custom Values
 
 ```bash
-helm install frontend-api ./deployment/helm/rosa-regional-frontend \
-  --set frontendApi.targetGroup.arn="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/frontend-api/abc123def456" \
-  --set frontendApi.app.args.allowedAccounts="111111111111,222222222222,333333333333"
+helm install platform-api ./deployment/helm/rosa-regional-platform \
+  --set platformApi.targetGroup.arn="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/platform-api/abc123def456" \
+  --set platformApi.app.args.allowedAccounts="111111111111,222222222222,333333333333"
 ```
 
 ### Using a Custom Values File
@@ -62,7 +62,7 @@ helm install frontend-api ./deployment/helm/rosa-regional-frontend \
 Create a `custom-values.yaml`:
 
 ```yaml
-frontendApi:
+platformApi:
   app:
     image:
       tag: "v1.2.3"
@@ -72,7 +72,7 @@ frontendApi:
       logLevel: debug
 
   targetGroup:
-    arn: "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/frontend-api/abc123def456"
+    arn: "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/platform-api/abc123def456"
 
   deployment:
     replicas: 3
@@ -90,28 +90,28 @@ frontendApi:
 Install with custom values:
 
 ```bash
-helm install frontend-api ./deployment/helm/rosa-regional-frontend \
+helm install platform-api ./deployment/helm/rosa-regional-platform \
   -f custom-values.yaml
 ```
 
 ## Upgrading
 
 ```bash
-helm upgrade frontend-api ./deployment/helm/rosa-regional-frontend \
-  --set frontendApi.targetGroup.arn="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/frontend-api/abc123def456" \
-  --set frontendApi.app.args.allowedAccounts="111111111111,222222222222"
+helm upgrade platform-api ./deployment/helm/rosa-regional-platform \
+  --set platformApi.targetGroup.arn="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/platform-api/abc123def456" \
+  --set platformApi.app.args.allowedAccounts="111111111111,222222222222"
 ```
 
 ## Uninstallation
 
 ```bash
-helm uninstall frontend-api
+helm uninstall platform-api
 ```
 
 To also delete the namespace:
 
 ```bash
-kubectl delete namespace frontend-api
+kubectl delete namespace platform-api
 ```
 
 ## Parameters
@@ -120,29 +120,29 @@ kubectl delete namespace frontend-api
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `frontendApi.namespace` | Namespace to deploy into | `frontend-api` |
-| `frontendApi.app.name` | Application name | `frontend-api` |
-| `frontendApi.app.image.repository` | Container image repository | `quay.io/cdoan0/rosa-regional-frontend-api` |
-| `frontendApi.app.image.tag` | Container image tag | `nodb` |
-| `frontendApi.app.args.allowedAccounts` | Comma-separated AWS account IDs | `"123456789012"` |
-| `frontendApi.app.args.maestroUrl` | Maestro service URL | `http://maestro:8000` |
-| `frontendApi.app.args.logLevel` | Log level (debug, info, warn, error) | `info` |
-| `frontendApi.deployment.replicas` | Number of replicas | `1` |
+| `platformApi.namespace` | Namespace to deploy into | `platform-api` |
+| `platformApi.app.name` | Application name | `platform-api` |
+| `platformApi.app.image.repository` | Container image repository | `quay.io/cdoan0/rosa-regional-platform-api` |
+| `platformApi.app.image.tag` | Container image tag | `nodb` |
+| `platformApi.app.args.allowedAccounts` | Comma-separated AWS account IDs | `"123456789012"` |
+| `platformApi.app.args.maestroUrl` | Maestro service URL | `http://maestro:8000` |
+| `platformApi.app.args.logLevel` | Log level (debug, info, warn, error) | `info` |
+| `platformApi.deployment.replicas` | Number of replicas | `1` |
 
 ### Envoy Configuration
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `frontendApi.envoy.enabled` | Enable Envoy sidecar | `true` |
-| `frontendApi.envoy.image.repository` | Envoy image repository | `envoyproxy/envoy` |
-| `frontendApi.envoy.image.tag` | Envoy image tag | `v1.31-latest` |
+| `platformApi.envoy.enabled` | Enable Envoy sidecar | `true` |
+| `platformApi.envoy.image.repository` | Envoy image repository | `envoyproxy/envoy` |
+| `platformApi.envoy.image.tag` | Envoy image tag | `v1.31-latest` |
 
 ### Target Group Configuration
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `frontendApi.targetGroup.arn` | AWS Target Group ARN | `"PLACEHOLDER"` |
-| `frontendApi.targetGroup.targetType` | Target type (ip or instance) | `ip` |
+| `platformApi.targetGroup.arn` | AWS Target Group ARN | `"PLACEHOLDER"` |
+| `platformApi.targetGroup.targetType` | Target type (ip or instance) | `ip` |
 
 ## Architecture
 
@@ -189,29 +189,29 @@ curl -s http://localhost:8080/api/v0/management_clusters \
 
 ### Check pod status
 ```bash
-kubectl get pods -n frontend-api
-kubectl describe pod -n frontend-api <pod-name>
+kubectl get pods -n platform-api
+kubectl describe pod -n platform-api <pod-name>
 ```
 
 ### View logs
 ```bash
 # Application logs
-kubectl logs -n frontend-api <pod-name> -c frontend-api
+kubectl logs -n platform-api <pod-name> -c platform-api
 
 # Envoy logs
-kubectl logs -n frontend-api <pod-name> -c envoy
+kubectl logs -n platform-api <pod-name> -c envoy
 ```
 
 ### Check TargetGroupBinding
 ```bash
-kubectl get targetgroupbinding -n frontend-api
-kubectl describe targetgroupbinding -n frontend-api frontend-api
+kubectl get targetgroupbinding -n platform-api
+kubectl describe targetgroupbinding -n platform-api platform-api
 ```
 
 ### Test health endpoints
 ```bash
 # Port-forward to test locally
-kubectl port-forward -n frontend-api svc/frontend-api 8080:8080
+kubectl port-forward -n platform-api svc/platform-api 8080:8080
 
 # Test via Envoy
 curl http://localhost:8080/v0/live
