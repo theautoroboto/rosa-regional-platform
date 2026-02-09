@@ -245,7 +245,7 @@ This section provides comprehensive validation that both Regional and Management
 
 ```bash
 # Verify the Management Cluster is properly registered
-# Access the Frontend API, and query the registered consumers.
+# Access the Platform API, and query the registered consumers.
 # You can get the gateway api from the regional cluster terraform output
 ✗ awscurl --service execute-api --region $REGION https://$API_GATEWAY_URL/prod/api/v0/management_clusters
 

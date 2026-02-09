@@ -15,7 +15,7 @@ The **ROSA Regional Platform** is a strategic redesign of Red Hat OpenShift Serv
 ### Three-Layer Regional Architecture
 
 1. **Regional Cluster (RC)** - EKS-based cluster running core services:
-   - Frontend API (customer-facing with AWS IAM auth)
+   - Platform API (customer-facing with AWS IAM auth)
    - CLM (Cluster Lifecycle Manager) - single source of truth
    - Maestro - MQTT-based configuration distribution
    - ArgoCD - GitOps deployment

@@ -58,7 +58,7 @@ spec:
           routes that use the default certificate because of the risk of
           connection re-use/coalescing. Routes that do not have their own
           custom certificate will not be HTTP/2 ALPN-enabled on either the
-          frontend or the backend.
+          platform or the backend.
 
           Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
         properties:
@@ -412,8 +412,8 @@ spec:
                   the request. This field may not be changed after creation except by a user with
                   the update routes/custom-host permission.
 
-                  Example: subdomain `frontend` automatically receives the router subdomain
-                  `apps.mycluster.com` to have a full hostname `frontend.apps.mycluster.com`.
+                  Example: subdomain `platform` automatically receives the router subdomain
+                  `apps.mycluster.com` to have a full hostname `platform.apps.mycluster.com`.
                 maxLength: 253
                 pattern: ^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$
                 type: string

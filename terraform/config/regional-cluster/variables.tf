@@ -43,11 +43,11 @@ variable "enable_bastion" {
 }
 
 # =============================================================================
-# Frontend API Variables
+# Platform API Variables
 # =============================================================================
 
 variable "api_additional_allowed_accounts" {
-  description = "Additional AWS account IDs allowed to access the Frontend API (comma-separated). The current account is automatically included."
+  description = "Additional AWS account IDs allowed to access the Platform API (comma-separated). The current account is automatically included."
   type        = string
   default     = ""
 }

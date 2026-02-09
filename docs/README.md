@@ -34,7 +34,7 @@ The architecture consists of three main layers within each region:
 
 The Regional Cluster is an EKS-based cluster that runs the core regional control plane services:
 
-- **Frontend API**: Customer-facing API with AWS IAM-based authorization
+- **Platform API**: Customer-facing API with AWS IAM-based authorization
 - **CLM (Cluster Lifecycle Manager)**: Replaces the legacy OCM/CS/AMS stack; provides declarative cluster lifecycle management
 - **Maestro**: Distributes cluster configurations to Management Clusters using MQTT messaging
 - **ArgoCD**: GitOps deployment for applications and configurations
@@ -82,7 +82,7 @@ The customer-facing API is exposed through AWS infrastructure:
 
 - AWS API Gateway (regional endpoint) at `api.<region>.openshift.com`
 - VPC Link v2 for private connectivity to internal services
-- Internal Application Load Balancer distributing traffic to Frontend API pods
+- Internal Application Load Balancer distributing traffic to Platform API pods
 - Authorization handled through AWS IAM roles and permissions
 
 ### Central Control Plane
@@ -96,13 +96,13 @@ The Central Control Plane runs the Regional Provisioning Pipelines that deploy n
 1. Add region configuration to the Git repository
 2. Regional Cluster Provisioning pipeline automatically provisions the Regional Cluster
 3. ArgoCD is installed on the new Regional Cluster
-4. Core services (Frontend API, CLM, Maestro, Tekton) are deployed via ArgoCD
+4. Core services (Platform API, CLM, Maestro, Tekton) are deployed via ArgoCD
 5. The Regional Cluster provisions initial Management Clusters as needed
 
 ### Customer Cluster Lifecycle
 
 1. Customer requests a cluster through the regional API endpoint
-2. Frontend API authenticates and authorizes the request using AWS IAM
+2. Platform API authenticates and authorizes the request using AWS IAM
 3. CLM creates the declarative cluster specification
 4. Maestro publishes the cluster configuration to the appropriate Management Cluster
 5. The Management Cluster's Maestro agent applies the HostedCluster resources

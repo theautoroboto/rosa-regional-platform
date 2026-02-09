@@ -16,7 +16,7 @@ mdc: true
 
 ✅ [ROSA-666 - Milestone 1 - Deploy a Regional Cluster + Management Cluster](https://issues.redhat.com/browse/ROSA-666) (part of [ROSA-659](https://issues.redhat.com/browse/ROSA-659)).
 
-_A platform engineer can deploy a new region manually, composed of an EKS Regional Cluster (RC) and EKS Management Cluster (MC). They can submit a resource via the Frontend API, and see it applied in the MC via Maestro, and receive status feedback._
+_A platform engineer can deploy a new region manually, composed of an EKS Regional Cluster (RC) and EKS Management Cluster (MC). They can submit a resource via the Platform API, and see it applied in the MC via Maestro, and receive status feedback._
 
 ---
 layout: default

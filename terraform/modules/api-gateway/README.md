@@ -4,7 +4,7 @@ Creates an API Gateway REST API with VPC Link integration to an internal ALB.
 
 This creates the Internal ALB directly in Terraform, instead of relying on `Ingress` in EKS, in order to be able to set up the API Gateway integrations during the Terraform step.
 
-The TargetGroup ARN needs to be available to the ArgoCD's Frontend API helm chart, for it to create a `TargetGroupBinding` pointing at the ALB, in order to register the backend pod IPs with the target group.
+The TargetGroup ARN needs to be available to the ArgoCD's Platform API helm chart, for it to create a `TargetGroupBinding` pointing at the ALB, in order to register the backend pod IPs with the target group.
 
 ## Architecture
 
@@ -38,11 +38,11 @@ to register pod IPs with the target group:
 apiVersion: elbv2.k8s.aws/v1beta1
 kind: TargetGroupBinding
 metadata:
-  name: frontend-api
-  namespace: frontend-api
+  name: platform-api
+  namespace: platform-api
 spec:
   serviceRef:
-    name: frontend-api
+    name: platform-api
     port: 8080
   targetGroupARN: <target_group_arn from terraform output>
   targetType: ip
