@@ -109,7 +109,8 @@ fi
 # Get current AWS identity
 echo "Checking AWS credentials..."
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-REGION=$(aws configure get region 2>/dev/null || echo "us-east-1")
+REGION=$(aws configure get region 2>/dev/null)
+REGION=${REGION:-us-east-1}
 
 echo "✅ Authenticated as:"
 aws sts get-caller-identity
