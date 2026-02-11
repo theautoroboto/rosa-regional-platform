@@ -63,3 +63,21 @@ variable "regional_aws_account_id" {
     error_message = "regional_aws_account_id must be a 12-digit AWS account ID"
   }
 }
+
+# =============================================================================
+# Cross-Account Deployment Variables
+# =============================================================================
+
+variable "target_account_id" {
+  description = "AWS account ID where the management cluster will be deployed (for cross-account assume role)"
+  type        = string
+  validation {
+    condition     = can(regex("^[0-9]{12}$", var.target_account_id))
+    error_message = "target_account_id must be a 12-digit AWS account ID"
+  }
+}
+
+variable "target_region" {
+  description = "AWS region where the management cluster will be deployed"
+  type        = string
+}

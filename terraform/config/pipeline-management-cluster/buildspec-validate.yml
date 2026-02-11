@@ -91,15 +91,6 @@ phases:
         if [ "$BUCKET_REGION" == "None" ] || [ "$BUCKET_REGION" == "null" ] || [ -z "$BUCKET_REGION" ]; then BUCKET_REGION="us-east-1"; fi
         export TF_STATE_REGION=$BUCKET_REGION
 
-        # Generate override.tf for cross-account access
-        echo "Generating override.tf for validation..."
-        echo 'provider "aws" {' > terraform/config/management-cluster/override.tf
-        echo "  region = \"${TARGET_REGION}\"" >> terraform/config/management-cluster/override.tf
-        echo '  assume_role {' >> terraform/config/management-cluster/override.tf
-        echo "    role_arn = \"${ROLE_ARN}\"" >> terraform/config/management-cluster/override.tf
-        echo '  }' >> terraform/config/management-cluster/override.tf
-        echo '}' >> terraform/config/management-cluster/override.tf
-
         # Initialize Terraform
         echo "Initializing Terraform..."
         cd terraform/config/management-cluster
@@ -120,11 +111,12 @@ phases:
         export TF_VAR_repository_branch="${REPOSITORY_BRANCH}"
         export TF_VAR_cluster_id="${CLUSTER_ID:-mgmt-cluster-01}"
         export TF_VAR_regional_aws_account_id="${REGIONAL_AWS_ACCOUNT_ID:-${CENTRAL_ACCOUNT_ID}}"
+        export TF_VAR_target_account_id="${TARGET_ACCOUNT_ID}"
+        export TF_VAR_target_region="${TARGET_REGION}"
 
         echo "Running Terraform plan..."
         if ! terraform plan -out=tfplan; then
             echo "❌ Terraform plan failed"
-            rm -f override.tf
             cd ../../..
             exit 1
         fi
@@ -132,9 +124,6 @@ phases:
         # Save plan summary
         terraform show -no-color tfplan > plan-summary.txt
         echo "✓ Plan summary saved to plan-summary.txt"
-
-        # Cleanup
-        rm -f override.tf
 
         cd ../../..
 

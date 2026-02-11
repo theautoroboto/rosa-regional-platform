@@ -2,8 +2,14 @@
 # Regional Cluster Infrastructure Configuration
 # =============================================================================
 
-# Configure AWS provider
+# Configure AWS provider with cross-account assume role
 provider "aws" {
+  region = var.target_region
+
+  assume_role {
+    role_arn = "arn:aws:iam::${var.target_account_id}:role/OrganizationAccountAccessRole"
+  }
+
   default_tags {
     tags = {
       app-code      = var.app_code

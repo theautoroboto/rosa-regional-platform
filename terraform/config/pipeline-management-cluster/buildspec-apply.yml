@@ -97,18 +97,11 @@ phases:
             export TF_VAR_regional_aws_account_id="${REGIONAL_AWS_ACCOUNT_ID}"
             export TF_VAR_repository_url="${REPOSITORY_URL}"
             export TF_VAR_repository_branch="${REPOSITORY_BRANCH}"
+            export TF_VAR_target_account_id="${MANAGEMENT_ACCOUNT_ID}"
+            export TF_VAR_target_region="${REGION}"
 
             # Skip ArgoCD validation for infra provisioning
             export SKIP_ARGOCD_VALIDATION=true
-
-            # Generate override.tf for provider role assumption
-            echo "Generating override.tf for cross-account access..."
-            echo "provider \"aws\" {" > terraform/config/management-cluster/override.tf
-            echo "  region = \"${REGION}\"" >> terraform/config/management-cluster/override.tf
-            echo "  assume_role {" >> terraform/config/management-cluster/override.tf
-            echo "    role_arn = \"${ROLE_ARN}\"" >> terraform/config/management-cluster/override.tf
-            echo "  }" >> terraform/config/management-cluster/override.tf
-            echo "}" >> terraform/config/management-cluster/override.tf
 
             # Create placeholder Maestro agent secrets in MANAGEMENT account
             echo "Ensuring Maestro agent secrets exist in management account ${MANAGEMENT_ACCOUNT_ID}..."
@@ -185,13 +178,8 @@ phases:
 
             if [ $PROVISION_STATUS -ne 0 ]; then
                 echo "❌ Infrastructure provisioning failed with exit code $PROVISION_STATUS"
-                rm -f terraform/config/management-cluster/override.tf
                 exit $PROVISION_STATUS
             fi
-
-            # Cleanup
-            echo "Cleaning up override.tf..."
-            rm -f terraform/config/management-cluster/override.tf
 
             echo "✅ Infrastructure provisioning complete."
         }

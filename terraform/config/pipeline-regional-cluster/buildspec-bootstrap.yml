@@ -102,13 +102,10 @@ phases:
 
             local ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/OrganizationAccountAccessRole"
 
-            # Create override.tf with ONLY region (no assume_role)
-            # This allows terraform to read state from S3 using central account credentials
-            # The bootstrap script will assume role separately for ECS/EKS access
-            echo "Creating override.tf for state access..."
-            echo 'provider "aws" {' > terraform/config/regional-cluster/override.tf
-            echo "  region = \"${REGION}\"" >> terraform/config/regional-cluster/override.tf
-            echo '}' >> terraform/config/regional-cluster/override.tf
+            # Export Terraform variables for cross-account access
+            # The static provider configuration in main.tf will handle assume_role
+            export TF_VAR_target_account_id="${ACCOUNT_ID}"
+            export TF_VAR_target_region="${REGION}"
 
             # Initialize Terraform with backend config
             export TF_STATE_BUCKET="terraform-state-${CENTRAL_ACCOUNT_ID}"
@@ -169,9 +166,6 @@ phases:
             kubectl get pods -n argocd || echo "ArgoCD pods not yet ready"
 
             # Cleanup
-            echo "Cleaning up..."
-            rm -f terraform/config/regional-cluster/override.tf
-
             unset ASSUME_ROLE_ARN
         }
 

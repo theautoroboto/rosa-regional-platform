@@ -110,14 +110,9 @@ phases:
         # Define role ARN for cross-account access
         ROLE_ARN="arn:aws:iam::${TARGET_ACCOUNT_ID}:role/OrganizationAccountAccessRole"
 
-        # Generate override.tf for cross-account access
-        echo "Generating override.tf for cross-account access..."
-        echo 'provider "aws" {' > terraform/config/management-cluster/override.tf
-        echo "  region = \"${TARGET_REGION}\"" >> terraform/config/management-cluster/override.tf
-        echo '  assume_role {' >> terraform/config/management-cluster/override.tf
-        echo "    role_arn = \"${ROLE_ARN}\"" >> terraform/config/management-cluster/override.tf
-        echo '  }' >> terraform/config/management-cluster/override.tf
-        echo '}' >> terraform/config/management-cluster/override.tf
+        # Export Terraform variables for cross-account access
+        export TF_VAR_target_account_id="${TARGET_ACCOUNT_ID}"
+        export TF_VAR_target_region="${TARGET_REGION}"
 
         # Set Terraform backend config
         export TF_STATE_BUCKET="terraform-state-${CENTRAL_ACCOUNT_ID}"
@@ -143,9 +138,5 @@ phases:
 
         echo "Bootstrapping ArgoCD..."
         scripts/bootstrap-argocd.sh management-cluster "${TARGET_ENVIRONMENT:-integration}" "${TARGET_REGION}"
-
-        # Cleanup
-        echo "Cleaning up..."
-        rm -f terraform/config/management-cluster/override.tf
 
         echo "✅ ArgoCD bootstrap complete!"

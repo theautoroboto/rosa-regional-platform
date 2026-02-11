@@ -91,15 +91,8 @@ phases:
         echo "  Region: ${TARGET_REGION}"
         echo "  Alias: ${TARGET_ALIAS}"
 
-        # Generate override.tf for cross-account role assumption
+        # Define role ARN for cross-account access
         ROLE_ARN="arn:aws:iam::${TARGET_ACCOUNT_ID}:role/OrganizationAccountAccessRole"
-        echo "Generating override.tf for cross-account access to ${TARGET_ACCOUNT_ID}..."
-        echo "provider \"aws\" {" > terraform/config/regional-cluster/override.tf
-        echo "  region = \"${TARGET_REGION}\"" >> terraform/config/regional-cluster/override.tf
-        echo "  assume_role {" >> terraform/config/regional-cluster/override.tf
-        echo "    role_arn = \"${ROLE_ARN}\"" >> terraform/config/regional-cluster/override.tf
-        echo "  }" >> terraform/config/regional-cluster/override.tf
-        echo "}" >> terraform/config/regional-cluster/override.tf
 
         # Get temporary credentials for regional account to cleanup secrets
         echo "Cleaning up any pending secrets in regional account..."
@@ -158,6 +151,8 @@ phases:
         export TF_VAR_repository_url="${CODEBUILD_SOURCE_REPO_URL:-https://github.com/placeholder/repo.git}"
         export TF_VAR_repository_branch="${CODEBUILD_SOURCE_VERSION:-main}"
         export TF_VAR_api_additional_allowed_accounts="${TARGET_ACCOUNT_ID}"
+        export TF_VAR_target_account_id="${TARGET_ACCOUNT_ID}"
+        export TF_VAR_target_region="${TARGET_REGION}"
 
         echo "Terraform variables:"
         echo "  App Code: $TF_VAR_app_code"
@@ -166,9 +161,10 @@ phases:
         echo "  Repository URL: $TF_VAR_repository_url"
         echo "  Repository Branch: $TF_VAR_repository_branch"
         echo "  API Additional Allowed Accounts: $TF_VAR_api_additional_allowed_accounts (regional account)"
+        echo "  Target Account ID: $TF_VAR_target_account_id"
+        echo "  Target Region: $TF_VAR_target_region"
       - make pipeline-provision-regional-infra
       - echo "Regional cluster infrastructure provisioned successfully."
-      - rm -f terraform/config/regional-cluster/override.tf
 
   post_build:
     commands:
