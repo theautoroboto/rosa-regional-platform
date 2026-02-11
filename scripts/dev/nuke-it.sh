@@ -9,7 +9,7 @@
 #   ./nuke-it.sh <AWS_ACCOUNT_ID> [REGION]
 #
 # Example:
-#   ./nuke-it.sh 633630779107 us-east-1
+#   ./nuke-it.sh 633xxxxxx107 us-east-1
 #
 
 set -euo pipefail
@@ -129,9 +129,9 @@ scan_resources() {
         jq -r '.Vpcs[] | select(.IsDefault == false) | "\(.VpcId)|\(.Tags // [] | from_entries | .Name // "No Name")"' \
         > "$TEMP_DIR/vpcs.txt" || true
 
-    # IAM Roles (excluding OrganizationAccountAccessRole and AWS service roles)
+    # IAM Roles (excluding OrganizationAccountAccessRole, AWS service roles, QuickSetup roles, and Qualys)
     aws iam list-roles --output json 2>/dev/null | \
-        jq -r '.Roles[] | select(.RoleName != "OrganizationAccountAccessRole" and (.RoleName | startswith("AWSServiceRole") | not)) | .RoleName' \
+        jq -r '.Roles[] | select(.RoleName != "OrganizationAccountAccessRole" and .RoleName != "QualysDiscovery" and (.RoleName | startswith("AWSServiceRole") | not) and (.RoleName | startswith("AWS-QuickSetup-ResourceExplorerRole-akkay-") | not)) | .RoleName' \
         > "$TEMP_DIR/iam_roles.txt" || true
 
     # S3 Buckets
@@ -382,6 +382,9 @@ delete_eks_clusters() {
     log_section "Deleting EKS Clusters"
 
     while IFS= read -r cluster; do
+        # Skip empty lines
+        [ -z "$cluster" ] && continue
+
         log_info "Deleting EKS cluster: $cluster"
 
         # Delete addons
