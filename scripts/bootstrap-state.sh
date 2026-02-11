@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REGION=${1:-$(aws configure get region 2>/dev/null || echo "us-east-1")}
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --no-cli-pager)
 BUCKET_NAME="terraform-state-${ACCOUNT_ID}"
 
 echo "Bootstrapping Terraform State in $REGION..."
