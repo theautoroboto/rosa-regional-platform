@@ -216,18 +216,11 @@ echo "==================================================="
 echo "✅ Bootstrap Complete!"
 echo "==================================================="
 echo ""
-
-terraform output -raw next_steps
-echo ""
 echo ""
 echo "🔗 GitHub Connection Authorization:"
 echo "   1. Open AWS Console: https://console.aws.amazon.com/codesuite/settings/connections"
 echo "   2. Find connections in PENDING state"
 echo "   3. Click 'Update pending connection' and authorize with GitHub"
-echo ""
-echo "📝 To deploy clusters, create YAML files in your repository:"
-echo "   - Regional:    deploy/<name>/regional.yaml"
-echo "   - Management:  deploy/<name>/management/*.yaml"
 echo ""
 
 cd "${REPO_ROOT}"
