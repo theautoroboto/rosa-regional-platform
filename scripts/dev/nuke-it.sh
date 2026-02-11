@@ -3,7 +3,8 @@
 # nuke-it.sh - Complete AWS Account Infrastructure Destroyer
 #
 # This script destroys all infrastructure in a target AWS account.
-# It assumes the OrganizationAccountAccessRole to perform the cleanup.
+# It first tries to use current AWS credentials. If those don't have access
+# to the target account, it will assume the OrganizationAccountAccessRole.
 #
 # Usage:
 #   ./nuke-it.sh <AWS_ACCOUNT_ID> [REGION]
@@ -83,12 +84,34 @@ check_dependencies() {
     fi
 }
 
+# Check if current credentials have access to target account
+check_current_credentials() {
+    local target_account_id="$1"
+
+    log_info "Checking current credentials..."
+
+    local current_account=$(aws sts get-caller-identity --query 'Account' --output text 2>/dev/null || echo "")
+
+    if [ -z "$current_account" ]; then
+        log_warning "No valid AWS credentials found"
+        return 1
+    fi
+
+    if [ "$current_account" = "$target_account_id" ]; then
+        log_success "Current credentials have access to account $target_account_id"
+        return 0
+    else
+        log_info "Current credentials are for account $current_account (target: $target_account_id)"
+        return 1
+    fi
+}
+
 # Assume role to target account
 assume_role() {
     local account_id="$1"
     local role_arn="arn:aws:iam::${account_id}:role/${ASSUME_ROLE_NAME}"
 
-    log_info "Assuming role: $role_arn"
+    log_info "Attempting to assume role: $role_arn"
 
     if ! aws sts assume-role \
         --role-arn "$role_arn" \
@@ -759,7 +782,8 @@ Examples:
   $0 633630779107 us-west-2
 
 Notes:
-  - Assumes the OrganizationAccountAccessRole in the target account
+  - Tries current AWS credentials first
+  - Falls back to assuming OrganizationAccountAccessRole if needed
   - Ignores CloudTrail and OrganizationAccountAccessRole
   - KMS keys are scheduled for deletion (7 day waiting period)
   - This action is IRREVERSIBLE
@@ -797,8 +821,11 @@ main() {
     # Check dependencies
     check_dependencies
 
-    # Assume role
-    assume_role "$ACCOUNT_ID"
+    # Try current credentials first, then assume role if needed
+    if ! check_current_credentials "$ACCOUNT_ID"; then
+        log_info "Current credentials do not match target account. Attempting to assume role..."
+        assume_role "$ACCOUNT_ID"
+    fi
 
     # Scan resources
     scan_resources "$REGION"
