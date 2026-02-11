@@ -1,7 +1,10 @@
-.PHONY: help terraform-fmt terraform-upgrade terraform-output-management terraform-output-regional provision-management provision-regional apply-infra-management apply-infra-regional provision-maestro-agent-iot-regional provision-maestro-agent-iot-management cleanup-maestro-agent-iot destroy-management destroy-regional build-platform-image test test-e2e
+.PHONY: help terraform-fmt terraform-upgrade terraform-output-management terraform-output-regional bootstrap-central-account provision-management provision-regional apply-infra-management apply-infra-regional provision-maestro-agent-iot-regional provision-maestro-agent-iot-management cleanup-maestro-agent-iot destroy-management destroy-regional test test-e2e
 
 # Default target
 help:
+	@echo "🏗️  Initial Setup:"
+	@echo "  bootstrap-central-account        - Bootstrap central AWS account with Terraform state & pipeline infra"
+	@echo ""
 	@echo "🚀 Cluster Provisioning / Deprovisioning:"
 	@echo "  provision-management             - Provision management cluster environment (infra & argocd bootstrap)"
 	@echo "  provision-regional               - Provision regional cluster environment (infra & argocd bootstrap)"
@@ -16,9 +19,6 @@ help:
 	@echo "  provision-maestro-agent-iot-regional   - Step 1: Provision IoT in regional account"
 	@echo "  provision-maestro-agent-iot-management - Step 2: Create secret in management account"
 	@echo "  cleanup-maestro-agent-iot              - Cleanup IoT resources before re-provisioning"
-	@echo ""
-	@echo "🐳 Platform Image:"
-	@echo "  build-platform-image             - Build and push platform image to ECR"
 	@echo ""
 	@echo "🛠️  Terraform Utilities:"
 	@echo "  terraform-fmt                    - Format all Terraform files"
@@ -60,6 +60,20 @@ terraform-output-regional:
 	@cd terraform/config/regional-cluster && terraform output -json
 
 # =============================================================================
+# Central Account Bootstrap
+# =============================================================================
+
+# Bootstrap central AWS account with Terraform state and pipeline infrastructure
+# Usage: make bootstrap-central-account GITHUB_REPO_NAME=repo-name [GITHUB_REPO_OWNER=owner] [GITHUB_BRANCH=branch]
+# Or: make bootstrap-central-account (interactive mode)
+bootstrap-central-account:
+	@if [ -n "$(GITHUB_REPO_NAME)" ]; then \
+		scripts/bootstrap-central-account.sh $(GITHUB_REPO_OWNER) $(GITHUB_REPO_NAME) $(GITHUB_BRANCH); \
+	else \
+		scripts/bootstrap-central-account.sh; \
+	fi
+
+# =============================================================================
 # Cluster Provisioning/Deprovisioning Targets
 # =============================================================================
 
@@ -81,9 +95,6 @@ provision-management:
 	@cd terraform/config/management-cluster && \
 		terraform init && terraform apply
 	@echo ""
-	@echo "Building platform image (if needed)..."
-	@scripts/build-platform-image.sh
-	@echo ""
 	@echo "Bootstrapping argocd..."
 	scripts/bootstrap-argocd.sh management-cluster
 
@@ -104,9 +115,6 @@ provision-regional:
 	@echo ""
 	@cd terraform/config/regional-cluster && \
 		terraform init && terraform apply
-	@echo ""
-	@echo "Building platform image (if needed)..."
-	@scripts/build-platform-image.sh
 	@echo ""
 	@echo "Bootstrapping argocd..."
 	@scripts/bootstrap-argocd.sh regional-cluster
@@ -130,17 +138,17 @@ require-tf-state-vars:
 	fi
 
 # Pipeline provision for regional cluster infrastructure only (Non-interactive)
-pipeline-provision-regional-infra: require-tf-state-vars
-	@echo "🚀 Provisioning regional cluster infrastructure (Pipeline Mode)..."
-	@scripts/dev/validate-argocd-config.sh regional-cluster
-	@echo "📍 Terraform Directory: terraform/config/regional-cluster"
-	@cd terraform/config/regional-cluster && \
-		terraform init -reconfigure \
-			-backend-config="bucket=$${TF_STATE_BUCKET}" \
-			-backend-config="key=$${TF_STATE_KEY}" \
-			-backend-config="region=$${TF_STATE_REGION}" \
-			-backend-config="use_lockfile=true" && \
-		terraform apply -auto-approve
+# pipeline-provision-regional-infra: require-tf-state-vars
+# 	@echo "🚀 Provisioning regional cluster infrastructure (Pipeline Mode)..."
+# 	@scripts/dev/validate-argocd-config.sh regional-cluster
+# 	@echo "📍 Terraform Directory: terraform/config/regional-cluster"
+# 	@cd terraform/config/regional-cluster && \
+# 		terraform init -reconfigure \
+# 			-backend-config="bucket=$${TF_STATE_BUCKET}" \
+# 			-backend-config="key=$${TF_STATE_KEY}" \
+# 			-backend-config="region=$${TF_STATE_REGION}" \
+# 			-backend-config="use_lockfile=true" && \
+# 		terraform apply -auto-approve
 
 # Pipeline provision for regional cluster (Non-interactive)
 pipeline-provision-regional: require-tf-state-vars
@@ -154,23 +162,21 @@ pipeline-provision-regional: require-tf-state-vars
 			-backend-config="region=$${TF_STATE_REGION}" \
 			-backend-config="use_lockfile=true" && \
 		terraform apply -auto-approve
-	@echo "Building platform image (if needed)..."
-	@scripts/build-platform-image.sh
 	@echo "Bootstrapping argocd..."
 	@scripts/bootstrap-argocd.sh regional-cluster
 
 # Pipeline provision for management cluster infrastructure only (Non-interactive)
-pipeline-provision-management-infra: require-tf-state-vars
-	@echo "🚀 Provisioning management cluster infrastructure (Pipeline Mode)..."
-	@scripts/dev/validate-argocd-config.sh management-cluster
-	@echo "📍 Terraform Directory: terraform/config/management-cluster"
-	@cd terraform/config/management-cluster && \
-		terraform init -reconfigure \
-			-backend-config="bucket=$${TF_STATE_BUCKET}" \
-			-backend-config="key=$${TF_STATE_KEY}" \
-			-backend-config="region=$${TF_STATE_REGION}" \
-			-backend-config="use_lockfile=true" && \
-		terraform apply -auto-approve
+# pipeline-provision-management-infra: require-tf-state-vars
+# 	@echo "🚀 Provisioning management cluster infrastructure (Pipeline Mode)..."
+# 	@scripts/dev/validate-argocd-config.sh management-cluster
+# 	@echo "📍 Terraform Directory: terraform/config/management-cluster"
+# 	@cd terraform/config/management-cluster && \
+# 		terraform init -reconfigure \
+# 			-backend-config="bucket=$${TF_STATE_BUCKET}" \
+# 			-backend-config="key=$${TF_STATE_KEY}" \
+# 			-backend-config="region=$${TF_STATE_REGION}" \
+# 			-backend-config="use_lockfile=true" && \
+# 		terraform apply -auto-approve
 
 # Pipeline provision for management cluster (Non-interactive)
 pipeline-provision-management: require-tf-state-vars
@@ -184,8 +190,6 @@ pipeline-provision-management: require-tf-state-vars
 			-backend-config="region=$${TF_STATE_REGION}" \
 			-backend-config="use_lockfile=true" && \
 		terraform apply -auto-approve
-	@echo "Building platform image (if needed)..."
-	@scripts/build-platform-image.sh
 	@echo "Bootstrapping argocd..."
 	@scripts/bootstrap-argocd.sh management-cluster
 
@@ -298,14 +302,6 @@ cleanup-maestro-agent-iot:
 		exit 1; \
 	fi
 	@./scripts/cleanup-maestro-agent-iot.sh $(MGMT_TFVARS)
-
-# =============================================================================
-# Platform Image
-# =============================================================================
-
-# Build and push the platform container image to ECR (uses current AWS credentials)
-build-platform-image:
-	@scripts/build-platform-image.sh
 
 # =============================================================================
 # Testing Targets
