@@ -581,8 +581,25 @@ delete_s3_buckets() {
     while IFS= read -r bucket; do
         log_info "Deleting S3 bucket: $bucket"
 
-        # Delete all versions and objects
-        aws s3 rm "s3://$bucket" --recursive &>/dev/null || true
+        # Check if bucket has versioning enabled
+        local versioning=$(aws s3api get-bucket-versioning --bucket "$bucket" --query 'Status' --output text 2>/dev/null || echo "Disabled")
+
+        if [ "$versioning" = "Enabled" ] || [ "$versioning" = "Suspended" ]; then
+            log_info "  Bucket has versioning enabled. Removing all versions..."
+
+            # Delete all object versions and delete markers
+            aws s3api list-object-versions --bucket "$bucket" --output json 2>/dev/null | \
+                jq -r '.Versions[]?, .DeleteMarkers[]? | "\(.Key)\t\(.VersionId)"' | \
+                while IFS=$'\t' read -r key version_id; do
+                    if [ -n "$key" ] && [ -n "$version_id" ]; then
+                        aws s3api delete-object --bucket "$bucket" --key "$key" --version-id "$version_id" &>/dev/null || true
+                    fi
+                done
+        else
+            log_info "  Removing all objects..."
+            # Delete all current objects
+            aws s3 rm "s3://$bucket" --recursive &>/dev/null || true
+        fi
 
         # Delete bucket
         aws s3 rb "s3://$bucket" --force &>/dev/null || log_warning "  Failed to delete bucket $bucket"
