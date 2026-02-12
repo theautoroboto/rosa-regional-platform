@@ -85,7 +85,8 @@ resource "aws_ecs_task_definition" "bootstrap" {
 
           echo "Creating/updating cluster identity secret with values:"
           echo "  ENVIRONMENT: $ENVIRONMENT"
-          echo "  REGION: $REGION"
+          echo "  AWS_REGION: $AWS_REGION"
+          echo "  REGION_ALIAS: $REGION_ALIAS"
           echo "  CLUSTER_TYPE: $CLUSTER_TYPE"
           echo "  REPOSITORY_URL: $REPOSITORY_URL"
           echo "  REPOSITORY_BRANCH: $REPOSITORY_BRANCH"
@@ -99,14 +100,15 @@ resource "aws_ecs_task_definition" "bootstrap" {
             labels:
               argocd.argoproj.io/secret-type: cluster
               environment: "$ENVIRONMENT"
-              region: "$REGION"
+              region_alias: "$REGION_ALIAS"
+              aws_region: "$AWS_REGION"
               cluster_type: "$CLUSTER_TYPE"
             annotations:
               git_repo: "$REPOSITORY_URL"
               git_revision: "$REPOSITORY_BRANCH"
               api_target_group_arn: "$API_TARGET_GROUP_ARN"
               dynamodb_prefix: "$CLUSTER_NAME"
-              dynamodb_region: "$REGION"
+              dynamodb_region: "$AWS_REGION"
           type: Opaque
           stringData:
             name: in-cluster
