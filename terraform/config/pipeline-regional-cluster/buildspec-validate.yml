@@ -122,10 +122,64 @@ phases:
             local REGION=$2
             local ALIAS=$3
 
-            echo "---------------------------------------------------"
-            echo "Validating Target: $ALIAS ($ACCOUNT_ID) in $REGION"
+            echo "===================================================="
+            echo "Step 1: Pre-flight Check - Testing Assume Role"
+            echo "===================================================="
+            echo "Target: $ALIAS ($ACCOUNT_ID) in $REGION"
 
             local ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/OrganizationAccountAccessRole"
+
+            # Test assume role capability
+            echo "Testing assume role capability..."
+            echo "Role ARN: $ROLE_ARN"
+
+            if ! ASSUMED_CREDS=$(aws sts assume-role \
+                --role-arn "$ROLE_ARN" \
+                --role-session-name "pipeline-preflight-check" \
+                --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+                --output text 2>&1); then
+                echo "❌ FAILED: Cannot assume role $ROLE_ARN"
+                echo ""
+                echo "Error details:"
+                echo "$ASSUMED_CREDS"
+                echo ""
+                echo "Common causes:"
+                echo "  • OrganizationAccountAccessRole does not exist in target account"
+                echo "  • Trust policy does not allow central account to assume role"
+                echo "  • CodeBuild role lacks sts:AssumeRole permission"
+                echo ""
+                return 1
+            fi
+
+            # Temporarily assume role to verify
+            export AWS_ACCESS_KEY_ID=$(echo $ASSUMED_CREDS | awk '{print $1}')
+            export AWS_SECRET_ACCESS_KEY=$(echo $ASSUMED_CREDS | awk '{print $2}')
+            export AWS_SESSION_TOKEN=$(echo $ASSUMED_CREDS | awk '{print $3}')
+
+            if ! ASSUMED_IDENTITY=$(aws sts get-caller-identity --query 'Account' --output text 2>&1); then
+                echo "❌ FAILED: Can assume role but cannot make API calls"
+                echo "Error: $ASSUMED_IDENTITY"
+                unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+                return 1
+            fi
+
+            if [ "$ASSUMED_IDENTITY" != "$ACCOUNT_ID" ]; then
+                echo "❌ FAILED: Assumed role in wrong account"
+                echo "  Expected: $ACCOUNT_ID"
+                echo "  Got: $ASSUMED_IDENTITY"
+                unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+                return 1
+            fi
+
+            echo "✅ Successfully assumed role in account $ACCOUNT_ID"
+            echo ""
+
+            # Clean up - unset for Terraform to use provider assume_role config
+            unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+
+            echo "===================================================="
+            echo "Step 2: Terraform Validation"
+            echo "===================================================="
 
             export TF_VAR_assume_role_arn=$ROLE_ARN
             export TF_STATE_BUCKET="terraform-state-${ACCOUNT_ID}"
