@@ -28,7 +28,7 @@ if [[ ${#missing_files[@]} -gt 0 ]]; then
     echo ""
     echo "Missing: ${missing_files[*]}"
     echo ""
-    echo "Fix: 1) Add ${ENVIRONMENT}/${REGION_ALIAS} to argocd/config.yaml"
+    echo "Fix: 1) Add ${ENVIRONMENT}/${REGION_ALIAS} to config.yaml"
     echo "     2) Run ./scripts/render.py"
     echo "     3) Commit and push to your target branch"
     exit 1

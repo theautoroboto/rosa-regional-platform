@@ -117,7 +117,7 @@ RUN_TASK_OUTPUT=$(aws ecs run-task \
         {\"name\": \"REPOSITORY_PATH\", \"value\": \"$APPLICATIONSET_PATH\"},
         {\"name\": \"REPOSITORY_BRANCH\", \"value\": \"$REPOSITORY_BRANCH\"},
         {\"name\": \"ENVIRONMENT\", \"value\": \"$ENVIRONMENT\"},
-        {\"name\": \"REGION\", \"value\": \"$AWS_REGION\"},
+        {\"name\": \"AWS_REGION\", \"value\": \"$AWS_REGION\"},
         {\"name\": \"REGION_ALIAS\", \"value\": \"$REGION_ALIAS\"},
         {\"name\": \"CLUSTER_TYPE\", \"value\": \"$CLUSTER_TYPE\"},
         {\"name\": \"API_TARGET_GROUP_ARN\", \"value\": \"$API_TARGET_GROUP_ARN\"}

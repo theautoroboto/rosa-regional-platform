@@ -24,7 +24,8 @@ spec:
       labels:
         cluster_type: '{{ .metadata.labels.cluster_type }}'
         environment: '{{ .metadata.labels.environment }}'
-        region: '{{ .metadata.labels.region }}'
+        region_alias: '{{ .metadata.labels.region_alias }}'
+        aws_region: '{{ .metadata.labels.aws_region }}'
     spec:
       project: default
       destination:
@@ -41,12 +42,12 @@ spec:
         - helm:
             valueFiles:
               - values.yaml
-              - $values/deploy/{{ .metadata.labels.environment }}/{{ .metadata.labels.region }}/argocd/{{ .metadata.labels.cluster_type }}-values.yaml
+              - $values/deploy/{{ .metadata.labels.environment }}/{{ .metadata.labels.region_alias }}/argocd/{{ .metadata.labels.cluster_type }}-values.yaml
             valuesObject:
               global:
                 cluster_type: '{{ .metadata.labels.cluster_type }}'
                 environment: '{{ .metadata.labels.environment }}'
-                region: '{{ .metadata.labels.region }}'
+                aws_region: '{{ .metadata.labels.aws_region }}'
               platformApi:
                 targetGroup:
                   arn: '{{ .metadata.annotations.api_target_group_arn }}'

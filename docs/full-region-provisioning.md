@@ -32,7 +32,7 @@ Example: you want to spin up a development cluster and re-use the existing confi
 
 ### Add Region to Configuration
 
-Edit `argocd/config.yaml` and add your new region following this pattern:
+Edit `config.yaml` and add your new region following this pattern:
 
 ```yaml
 shards:
@@ -65,10 +65,10 @@ You should see `argocd/` and `terraform/` subdirectories with generated configs.
 ### Commit and Push Changes
 
 ```bash
-git add argocd/config.yaml deploy/
+git add config.yaml deploy/
 git commit -m "Add us-west-2 region configuration
 
-- Add us-west-2/integration to argocd/config.yaml
+- Add us-west-2/integration to config.yaml
 - Generate deploy configs (argocd + terraform)
 - Prepare for regional cluster provisioning"
 git push origin <your-branch>

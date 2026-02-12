@@ -48,7 +48,7 @@ Define your region in Git, render the ArgoCD manifests, commit.
 <div class="grid grid-cols-2 gap-4">
 <div>
 
-### 1. Edit [argocd/config.yaml](https://github.com/openshift-online/rosa-regional-platform/blob/main/argocd/config.yaml)
+### 1. Edit [config.yaml](https://github.com/openshift-online/rosa-regional-platform/blob/main/config.yaml)
 
 ```yaml
 shards:
@@ -72,7 +72,7 @@ shards:
 # for the new region based on
 # config.yaml via scripts/render.py
 
-git add argocd/config.yaml deploy/
+git add config.yaml deploy/
 git commit -m "Add us-west-2 region"
 git push
 ```
