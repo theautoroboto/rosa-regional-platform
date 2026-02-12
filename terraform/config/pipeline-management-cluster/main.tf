@@ -26,9 +26,9 @@ locals {
   pipeline_name = "mc-pipe-${local.resource_hash}"  # 20 chars
 }
 
-resource "aws_codestarconnections_connection" "github" {
-  name          = local.github_connection_name
-  provider_type = "GitHub"
+# Use shared GitHub Connection (passed from pipeline-provisioner)
+data "aws_codestarconnections_connection" "github" {
+  arn = var.github_connection_arn
 }
 
 # IAM Role for CodeBuild

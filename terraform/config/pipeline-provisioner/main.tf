@@ -5,10 +5,9 @@ provider "aws" {
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
-# GitHub Connection
-resource "aws_codestarconnections_connection" "github" {
-  name          = "pipeline-provisioner-github"
-  provider_type = "GitHub"
+# Use shared GitHub Connection (created in bootstrap-pipeline)
+data "aws_codestarconnections_connection" "github" {
+  arn = var.github_connection_arn
 }
 
 # IAM Role for CodeBuild
@@ -213,6 +212,10 @@ resource "aws_codebuild_project" "provisioner" {
     environment_variable {
       name  = "TARGET_ENVIRONMENT"
       value = var.environment
+    }
+    environment_variable {
+      name  = "GITHUB_CONNECTION_ARN"
+      value = data.aws_codestarconnections_connection.github.arn
     }
   }
 
