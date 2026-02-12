@@ -75,3 +75,11 @@ shards:
     config_revision:
       management-cluster: "826fa76d08fc2ce87c863196e52d5a4fa9259a82"
       regional-cluster: "826fa76d08fc2ce87c863196e52d5a4fa9259a82"
+
+  - region_alias: "us-east-1"
+    aws_region: "us-east-1"
+    sector: "staging"
+    account_id: "018092638725"
+    management_clusters:
+      - cluster_id: "mc01-{{ region_alias }}"
+        account_id: "633630779107"
