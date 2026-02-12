@@ -96,14 +96,26 @@ if ! command -v terraform &> /dev/null; then
     exit 1
 fi
 
-# Get current AWS identity
+# Get current AWS identity (capture once to avoid duplicate calls)
 echo "Checking AWS credentials..."
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --no-cli-pager)
+if ! AWS_IDENTITY=$(aws sts get-caller-identity --no-cli-pager 2>&1); then
+    echo "❌ Error: Failed to authenticate with AWS"
+    echo "$AWS_IDENTITY"
+    exit 1
+fi
+
+ACCOUNT_ID=$(echo "$AWS_IDENTITY" | jq -r '.Account')
+
+if [[ -z "$ACCOUNT_ID" || ! "$ACCOUNT_ID" =~ ^[0-9]{12}$ ]]; then
+    echo "❌ Error: Invalid AWS account ID: '$ACCOUNT_ID'"
+    exit 1
+fi
+
 REGION=$(aws configure get region 2>/dev/null)
 REGION=${REGION:-us-east-1}
 
 echo "✅ Authenticated as:"
-aws sts get-caller-identity --no-cli-pager
+echo "$AWS_IDENTITY"
 echo ""
 
 # Parse command-line arguments or use environment variables (no interactive prompts)
