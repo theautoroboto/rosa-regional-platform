@@ -198,7 +198,6 @@ echo "✅ Bootstrap Complete!"
 echo "==================================================="
 echo ""
 
-terraform output -raw next_steps
 echo ""
 echo ""
 echo "🔗 GitHub Connection Authorization:"
