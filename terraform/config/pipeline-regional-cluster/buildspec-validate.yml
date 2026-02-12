@@ -63,6 +63,60 @@ phases:
       - echo "Validating Regional Cluster Configurations..."
       - |
         set -euo pipefail
+
+        # Function to ensure state bucket exists with proper security settings
+        ensure_state_bucket() {
+            local BUCKET_NAME=$1
+            local BUCKET_REGION=$2
+            local TARGET_ACCOUNT=$3
+
+            echo "Ensuring state bucket exists: $BUCKET_NAME in account $TARGET_ACCOUNT"
+
+            # Assume role in target account to create bucket
+            TEMP_CREDS=$(aws sts assume-role \
+                --role-arn "arn:aws:iam::${TARGET_ACCOUNT}:role/OrganizationAccountAccessRole" \
+                --role-session-name "terraform-state-bucket-creation" \
+                --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+                --output text)
+
+            export AWS_ACCESS_KEY_ID=$(echo $TEMP_CREDS | awk '{print $1}')
+            export AWS_SECRET_ACCESS_KEY=$(echo $TEMP_CREDS | awk '{print $2}')
+            export AWS_SESSION_TOKEN=$(echo $TEMP_CREDS | awk '{print $3}')
+
+            # Check if bucket exists
+            if ! aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
+                echo "Creating state bucket $BUCKET_NAME in $BUCKET_REGION..."
+
+                if [ "$BUCKET_REGION" == "us-east-1" ]; then
+                    aws s3api create-bucket --bucket "$BUCKET_NAME" --region "$BUCKET_REGION"
+                else
+                    aws s3api create-bucket --bucket "$BUCKET_NAME" --region "$BUCKET_REGION" \
+                        --create-bucket-configuration LocationConstraint="$BUCKET_REGION"
+                fi
+
+                # Enable versioning
+                aws s3api put-bucket-versioning --bucket "$BUCKET_NAME" \
+                    --versioning-configuration Status=Enabled
+
+                # Enable encryption
+                aws s3api put-bucket-encryption --bucket "$BUCKET_NAME" \
+                    --server-side-encryption-configuration \
+                    '{"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]}'
+
+                # Block public access
+                aws s3api put-public-access-block --bucket "$BUCKET_NAME" \
+                    --public-access-block-configuration \
+                    "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+
+                echo "✓ State bucket created and configured"
+            else
+                echo "✓ State bucket already exists"
+            fi
+
+            # Unset assumed role credentials
+            unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+        }
+
         validate_target() {
             local ACCOUNT_ID=$1
             local REGION=$2
@@ -74,13 +128,12 @@ phases:
             local ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/OrganizationAccountAccessRole"
 
             export TF_VAR_assume_role_arn=$ROLE_ARN
-            export TF_STATE_BUCKET="terraform-state-$(aws sts get-caller-identity --query Account --output text)"
+            export TF_STATE_BUCKET="terraform-state-${ACCOUNT_ID}"
             export TF_STATE_KEY="regional-cluster/${ALIAS}.tfstate"
+            export TF_STATE_REGION=$REGION
 
-            # Dynamically detect bucket region
-            BUCKET_REGION=$(aws s3api get-bucket-location --bucket $TF_STATE_BUCKET --query LocationConstraint --output text)
-            if [ "$BUCKET_REGION" == "None" ] || [ "$BUCKET_REGION" == "null" ] || [ -z "$BUCKET_REGION" ]; then BUCKET_REGION="us-east-1"; fi
-            export TF_STATE_REGION=$BUCKET_REGION
+            # Ensure state bucket exists in target account
+            ensure_state_bucket "$TF_STATE_BUCKET" "$TF_STATE_REGION" "$ACCOUNT_ID"
 
             export TF_VAR_region_name=$REGION
             export TF_VAR_app_code="infra"
