@@ -186,6 +186,7 @@ phases:
             export TF_STATE_BUCKET="terraform-state-${MANAGEMENT_ACCOUNT_ID}"
             export TF_STATE_KEY="management-cluster/${ALIAS}.tfstate"
             export TF_STATE_REGION=$REGION
+            export TF_STATE_ASSUME_ROLE_ARN="$ROLE_ARN"
 
             # Ensure state bucket exists in target account
             ensure_state_bucket "$TF_STATE_BUCKET" "$TF_STATE_REGION" "$MANAGEMENT_ACCOUNT_ID"
@@ -202,15 +203,6 @@ phases:
             # Skip ArgoCD validation for infra provisioning
             export SKIP_ARGOCD_VALIDATION=true
 
-            # Generate override.tf for provider role assumption
-            echo "Generating override.tf for cross-account access..."
-            echo "provider \"aws\" {" > terraform/config/management-cluster/override.tf
-            echo "  region = \"${REGION}\"" >> terraform/config/management-cluster/override.tf
-            echo "  assume_role {" >> terraform/config/management-cluster/override.tf
-            echo "    role_arn = \"${ROLE_ARN}\"" >> terraform/config/management-cluster/override.tf
-            echo "  }" >> terraform/config/management-cluster/override.tf
-            echo "}" >> terraform/config/management-cluster/override.tf
-
             echo "===================================================="
             echo "Step 3: Create Maestro Agent Secrets"
             echo "===================================================="
@@ -223,18 +215,17 @@ phases:
             MGMT_SECRET_KEY=$(echo "$CREDS" | jq -r '.Credentials.SecretAccessKey')
             MGMT_SESSION_TOKEN=$(echo "$CREDS" | jq -r '.Credentials.SessionToken')
 
+            # Export credentials for Terraform backend access
+            export AWS_ACCESS_KEY_ID=$MGMT_ACCESS_KEY
+            export AWS_SECRET_ACCESS_KEY=$MGMT_SECRET_KEY
+            export AWS_SESSION_TOKEN=$MGMT_SESSION_TOKEN
+
             for SECRET_NAME in "maestro/agent-cert" "maestro/agent-config"; do
                 # Check if secret exists in management account
-                if ! AWS_ACCESS_KEY_ID=$MGMT_ACCESS_KEY \
-                     AWS_SECRET_ACCESS_KEY=$MGMT_SECRET_KEY \
-                     AWS_SESSION_TOKEN=$MGMT_SESSION_TOKEN \
-                     aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region ${REGION} 2>/dev/null; then
+                if ! aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region ${REGION} 2>/dev/null; then
 
                     echo "Creating placeholder secret: $SECRET_NAME in management account"
-                    if ! CREATE_OUTPUT=$(AWS_ACCESS_KEY_ID=$MGMT_ACCESS_KEY \
-                        AWS_SECRET_ACCESS_KEY=$MGMT_SECRET_KEY \
-                        AWS_SESSION_TOKEN=$MGMT_SESSION_TOKEN \
-                        aws secretsmanager create-secret \
+                    if ! CREATE_OUTPUT=$(aws secretsmanager create-secret \
                             --name "$SECRET_NAME" \
                             --description "Placeholder secret for Maestro agent (created by buildspec)" \
                             --secret-string '{"placeholder":true}' \
@@ -272,9 +263,8 @@ phases:
                 exit $PROVISION_STATUS
             fi
 
-            # Cleanup
-            echo "Cleaning up override.tf..."
-            rm -f terraform/config/management-cluster/override.tf
+            # Unset assumed role credentials
+            unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 
             echo "✅ Infrastructure provisioning complete."
         }

@@ -198,6 +198,7 @@ phases:
         export TF_STATE_BUCKET="terraform-state-${TARGET_ACCOUNT_ID}"
         export TF_STATE_KEY="regional-cluster/${TARGET_ALIAS}.tfstate"
         export TF_STATE_REGION=$TARGET_REGION
+        export TF_STATE_ASSUME_ROLE_ARN="arn:aws:iam::${TARGET_ACCOUNT_ID}:role/OrganizationAccountAccessRole"
 
         # Ensure state bucket exists in target account
         ensure_state_bucket "$TF_STATE_BUCKET" "$TF_STATE_REGION" "$TARGET_ACCOUNT_ID"
@@ -212,19 +213,10 @@ phases:
         echo "  Region: ${TARGET_REGION}"
         echo "  Alias: ${TARGET_ALIAS}"
 
-        # Generate override.tf for cross-account role assumption
+        # Assume role for secret cleanup and Terraform operations
         ROLE_ARN="arn:aws:iam::${TARGET_ACCOUNT_ID}:role/OrganizationAccountAccessRole"
-        echo "Generating override.tf for cross-account access to ${TARGET_ACCOUNT_ID}..."
-        echo "provider \"aws\" {" > terraform/config/regional-cluster/override.tf
-        echo "  region = \"${TARGET_REGION}\"" >> terraform/config/regional-cluster/override.tf
-        echo "  assume_role {" >> terraform/config/regional-cluster/override.tf
-        echo "    role_arn = \"${ROLE_ARN}\"" >> terraform/config/regional-cluster/override.tf
-        echo "  }" >> terraform/config/regional-cluster/override.tf
-        echo "}" >> terraform/config/regional-cluster/override.tf
-
-        # Get temporary credentials for regional account to cleanup secrets
-        echo "Cleaning up any pending secrets in regional account..."
-        echo "Assuming role: ${ROLE_ARN}"
+        echo "Assuming role for cross-account access to ${TARGET_ACCOUNT_ID}..."
+        echo "Role ARN: ${ROLE_ARN}"
         if ! CREDS=$(aws sts assume-role --role-arn "${ROLE_ARN}" --role-session-name "cleanup-secrets" --output json 2>&1); then
             echo "❌ Failed to assume role: ${ROLE_ARN}"
             echo "AWS CLI error output:"
@@ -253,17 +245,16 @@ phases:
 
         echo "✓ Successfully assumed role and extracted credentials"
 
+        # Export credentials for Terraform backend access
+        export AWS_ACCESS_KEY_ID=$REGIONAL_ACCESS_KEY
+        export AWS_SECRET_ACCESS_KEY=$REGIONAL_SECRET_KEY
+        export AWS_SESSION_TOKEN=$REGIONAL_SESSION_TOKEN
+
         # Force delete any secrets that are scheduled for deletion
         for SECRET_NAME in "maestro/server-cert" "maestro/server-config" "maestro/db-credentials"; do
-            if AWS_ACCESS_KEY_ID=$REGIONAL_ACCESS_KEY \
-               AWS_SECRET_ACCESS_KEY=$REGIONAL_SECRET_KEY \
-               AWS_SESSION_TOKEN=$REGIONAL_SESSION_TOKEN \
-               aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region "${TARGET_REGION}" 2>/dev/null | \
+            if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region "${TARGET_REGION}" 2>/dev/null | \
                jq -e '.DeletedDate != null' >/dev/null 2>&1; then
                 echo "Force deleting pending secret: $SECRET_NAME"
-                AWS_ACCESS_KEY_ID=$REGIONAL_ACCESS_KEY \
-                AWS_SECRET_ACCESS_KEY=$REGIONAL_SECRET_KEY \
-                AWS_SESSION_TOKEN=$REGIONAL_SESSION_TOKEN \
                 aws secretsmanager delete-secret \
                     --secret-id "$SECRET_NAME" \
                     --force-delete-without-recovery \
@@ -289,7 +280,7 @@ phases:
         echo "  API Additional Allowed Accounts: $TF_VAR_api_additional_allowed_accounts (regional account)"
       - make pipeline-provision-regional-infra
       - echo "Regional cluster infrastructure provisioned successfully."
-      - rm -f terraform/config/regional-cluster/override.tf
+      - unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 
   post_build:
     commands:

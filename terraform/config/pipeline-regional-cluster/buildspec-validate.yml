@@ -123,19 +123,18 @@ phases:
             local ALIAS=$3
 
             echo "===================================================="
-            echo "Step 1: Pre-flight Check - Testing Assume Role"
+            echo "Validating: $ALIAS ($ACCOUNT_ID) in $REGION"
             echo "===================================================="
-            echo "Target: $ALIAS ($ACCOUNT_ID) in $REGION"
 
             local ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/OrganizationAccountAccessRole"
 
-            # Test assume role capability
-            echo "Testing assume role capability..."
+            # Assume role once for all operations
+            echo "Assuming role for validation operations..."
             echo "Role ARN: $ROLE_ARN"
 
             if ! ASSUMED_CREDS=$(aws sts assume-role \
                 --role-arn "$ROLE_ARN" \
-                --role-session-name "pipeline-preflight-check" \
+                --role-session-name "regional-validation" \
                 --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
                 --output text 2>&1); then
                 echo "❌ FAILED: Cannot assume role $ROLE_ARN"
@@ -151,11 +150,12 @@ phases:
                 return 1
             fi
 
-            # Temporarily assume role to verify
+            # Export assumed role credentials for all subsequent operations
             export AWS_ACCESS_KEY_ID=$(echo $ASSUMED_CREDS | awk '{print $1}')
             export AWS_SECRET_ACCESS_KEY=$(echo $ASSUMED_CREDS | awk '{print $2}')
             export AWS_SESSION_TOKEN=$(echo $ASSUMED_CREDS | awk '{print $3}')
 
+            # Verify credentials work
             if ! ASSUMED_IDENTITY=$(aws sts get-caller-identity --query 'Account' --output text 2>&1); then
                 echo "❌ FAILED: Can assume role but cannot make API calls"
                 echo "Error: $ASSUMED_IDENTITY"
@@ -174,20 +174,42 @@ phases:
             echo "✅ Successfully assumed role in account $ACCOUNT_ID"
             echo ""
 
-            # Clean up - unset for Terraform to use provider assume_role config
-            unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
-
-            echo "===================================================="
-            echo "Step 2: Terraform Validation"
-            echo "===================================================="
-
+            # Set Terraform backend and variable configuration
             export TF_VAR_assume_role_arn=$ROLE_ARN
             export TF_STATE_BUCKET="terraform-state-${ACCOUNT_ID}"
             export TF_STATE_KEY="regional-cluster/${ALIAS}.tfstate"
             export TF_STATE_REGION=$REGION
 
-            # Ensure state bucket exists in target account
-            ensure_state_bucket "$TF_STATE_BUCKET" "$TF_STATE_REGION" "$ACCOUNT_ID"
+            # Ensure state bucket exists (will use current credentials)
+            echo "Ensuring Terraform state bucket exists..."
+            if ! aws s3api head-bucket --bucket "$TF_STATE_BUCKET" 2>/dev/null; then
+                echo "Creating state bucket $TF_STATE_BUCKET..."
+
+                if [ "$TF_STATE_REGION" == "us-east-1" ]; then
+                    aws s3api create-bucket --bucket "$TF_STATE_BUCKET" --region "$TF_STATE_REGION"
+                else
+                    aws s3api create-bucket --bucket "$TF_STATE_BUCKET" --region "$TF_STATE_REGION" \
+                        --create-bucket-configuration LocationConstraint="$TF_STATE_REGION"
+                fi
+
+                # Enable versioning
+                aws s3api put-bucket-versioning --bucket "$TF_STATE_BUCKET" \
+                    --versioning-configuration Status=Enabled
+
+                # Enable encryption
+                aws s3api put-bucket-encryption --bucket "$TF_STATE_BUCKET" \
+                    --server-side-encryption-configuration \
+                    '{"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]}'
+
+                # Block public access
+                aws s3api put-public-access-block --bucket "$TF_STATE_BUCKET" \
+                    --public-access-block-configuration \
+                    "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+
+                echo "✓ State bucket created and configured"
+            else
+                echo "✓ State bucket already exists"
+            fi
 
             export TF_VAR_region_name=$REGION
             export TF_VAR_app_code="infra"
@@ -197,11 +219,11 @@ phases:
             export TF_VAR_repository_branch="${GITHUB_BRANCH:-main}"
             export TF_VAR_api_additional_allowed_accounts="$ACCOUNT_ID"
 
-            # Run terraform operations in subshell to ensure directory isolation
-            # If any command fails, subshell exits but parent directory is preserved
+            # Run terraform operations in subshell (credentials already set above)
+            echo "Running Terraform validation..."
             (
-                echo "Initializing Terraform..."
                 cd terraform/config/regional-cluster
+
                 terraform init \
                     -reconfigure \
                     -backend-config="bucket=$TF_STATE_BUCKET" \
@@ -209,16 +231,19 @@ phases:
                     -backend-config="region=$TF_STATE_REGION" \
                     -backend-config="use_lockfile=true"
 
-                echo "Validating Terraform configuration..."
                 terraform validate
 
-                echo "Running Terraform plan..."
                 terraform plan -out=tfplan
 
-                # Save plan summary
                 terraform show -no-color tfplan > plan-summary.txt
-                echo "Plan summary saved to plan-summary.txt"
+                echo "✓ Plan summary saved to plan-summary.txt"
             )
+
+            # Cleanup - unset assumed role credentials
+            unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+
+            echo "✅ Validation complete for $ALIAS"
+            echo ""
         }
 
         # Process Manual Overrides if present

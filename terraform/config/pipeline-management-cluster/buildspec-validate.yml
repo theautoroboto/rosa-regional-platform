@@ -141,17 +141,20 @@ phases:
         # Ensure state bucket exists in target account
         ensure_state_bucket "$TF_STATE_BUCKET" "$TF_STATE_REGION" "$TARGET_ACCOUNT_ID"
 
-        # Generate override.tf for cross-account access
-        echo "Generating override.tf for validation..."
-        echo 'provider "aws" {' > terraform/config/management-cluster/override.tf
-        echo "  region = \"${TARGET_REGION}\"" >> terraform/config/management-cluster/override.tf
-        echo '  assume_role {' >> terraform/config/management-cluster/override.tf
-        echo "    role_arn = \"${ROLE_ARN}\"" >> terraform/config/management-cluster/override.tf
-        echo '  }' >> terraform/config/management-cluster/override.tf
-        echo '}' >> terraform/config/management-cluster/override.tf
+        # Assume role for Terraform operations (backend will use these credentials)
+        echo "Assuming role for Terraform backend and provider access..."
+        ASSUMED_CREDS=$(aws sts assume-role \
+            --role-arn "${ROLE_ARN}" \
+            --role-session-name "terraform-operations" \
+            --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+            --output text)
+
+        export AWS_ACCESS_KEY_ID=$(echo $ASSUMED_CREDS | awk '{print $1}')
+        export AWS_SECRET_ACCESS_KEY=$(echo $ASSUMED_CREDS | awk '{print $2}')
+        export AWS_SESSION_TOKEN=$(echo $ASSUMED_CREDS | awk '{print $3}')
 
         # Initialize Terraform
-        echo "Initializing Terraform..."
+        echo "Initializing Terraform with assumed role credentials..."
         cd terraform/config/management-cluster
         terraform init -reconfigure \
             -backend-config="bucket=${TF_STATE_BUCKET}" \
@@ -183,10 +186,10 @@ phases:
         terraform show -no-color tfplan > plan-summary.txt
         echo "✓ Plan summary saved to plan-summary.txt"
 
-        # Cleanup
-        rm -f override.tf
-
         cd ../../..
+
+        # Cleanup - unset assumed role credentials
+        unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 
   post_build:
     commands:
