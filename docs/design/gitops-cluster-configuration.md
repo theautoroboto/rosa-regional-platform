@@ -30,7 +30,7 @@ The ROSA Regional Platform implements a GitOps cluster configuration system usin
 
 The matrix creates the cartesian product: 1 cluster × N applications = N Applications for that cluster.
 
-**Cluster Identity Secret**: Each cluster has a Kubernetes secret that serves as its identity, containing labels (cluster_type, environment, region) and annotations (git repository, revision) that ApplicationSets use to determine what and how to deploy.
+**Cluster Identity Secret**: Each cluster has a Kubernetes secret that serves as its identity, containing labels (cluster_type, environment, region_alias, aws_region) and annotations (git repository, revision) that ApplicationSets use to determine what and how to deploy.
 
 ### GitOps Configuration Flow
 
@@ -63,7 +63,7 @@ Each cluster uses a **rendered ApplicationSet** that's customized per environmen
 
 **Integration Environment (Live Config)**:
 ```yaml
-# argocd/rendered/integration/eu-west-1/management-cluster-manifests/applicationset.yaml
+# deploy/integration/eu-west-1/argocd/management-cluster-manifests/applicationset.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -92,7 +92,7 @@ spec:
           helm:
             valueFiles:
               - values.yaml  # Chart defaults
-              - $values/argocd/rendered/{{ .metadata.labels.environment }}/{{ .metadata.labels.region }}/{{ .metadata.labels.cluster_type }}-values.yaml
+              - $values/deploy/{{ .metadata.labels.environment }}/{{ .metadata.labels.region_alias }}/argocd/{{ .metadata.labels.cluster_type }}-values.yaml
           repoURL: '{{ .metadata.annotations.git_repo }}'
           targetRevision: '{{ .metadata.annotations.git_revision }}'  # From cluster secret
 
@@ -104,7 +104,7 @@ spec:
 
 **Staging/Production (Hash-Pinned Config)**:
 ```yaml
-# argocd/rendered/staging/eu-west-1/management-cluster-manifests/applicationset.yaml
+# deploy/staging/eu-west-1/argocd/management-cluster-manifests/applicationset.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -133,7 +133,7 @@ spec:
           helm:
             valueFiles:
               - values.yaml  # Chart defaults from pinned commit
-              - $values/argocd/rendered/{{ .metadata.labels.environment }}/{{ .metadata.labels.region }}/{{ .metadata.labels.cluster_type }}-values.yaml
+              - $values/deploy/{{ .metadata.labels.environment }}/{{ .metadata.labels.region_alias }}/argocd/{{ .metadata.labels.cluster_type }}-values.yaml
           repoURL: '{{ .metadata.annotations.git_repo }}'
           targetRevision: 826fa76d08fc2ce87c863196e52d5a4fa9259a82  # Pinned commit hash
 
@@ -164,7 +164,7 @@ spec:
 Helm charts use a simple two-layer configuration system:
 
 1. **Chart Defaults**: Each chart defines default values in `argocd/config/*/values.yaml`
-2. **Rendered Overrides**: Region/environment-specific values from `argocd/rendered/` take precedence
+2. **Rendered Overrides**: Region/environment-specific values from `deploy/<env>/<region_alias>/argocd/` override defaults
 
 ```yaml
 # ApplicationSet uses both sources
@@ -173,7 +173,7 @@ sources:
     helm:
       valueFiles:
         - values.yaml  # Chart defaults
-        - $values/argocd/rendered/{{ .environment }}/{{ .region }}/management-cluster-values.yaml  # Overrides
+        - $values/deploy/{{ .environment }}/{{ .region_alias }}/argocd/management-cluster-values.yaml  # Overrides
   - ref: values  # Rendered overrides source
     repoURL: https://github.com/openshift-online/rosa-platform
     targetRevision: HEAD
@@ -238,20 +238,23 @@ The architecture enables sophisticated deployment patterns through sector config
 # Sector progression example
 shards:
   # Integration: Always HEAD for rapid development
-  - region: "us-east-1"
-    environment: "integration"
+  - region_alias: "us-east-1"
+    aws_region: "us-east-1"
+    sector: "integration"
     # No config_revision = follows HEAD of repository
 
   # Staging: Pinned commits for QA validation
-  - region: "eu-west-1"
-    environment: "staging"
+  - region_alias: "eu-west-1"
+    aws_region: "eu-west-1"
+    sector: "staging"
     config_revision:
       management-cluster: "826fa76d08fc2ce87c863196e52d5a4fa9259a82"
       regional-cluster: "826fa76d08fc2ce87c863196e52d5a4fa9259a82"
 
   # Production: Promoted commits with explicit approval
-  - region: "eu-west-1"
-    environment: "production"
+  - region_alias: "eu-west-1"
+    aws_region: "eu-west-1"
+    sector: "production"
     config_revision:
       management-cluster: "7f8a9b2c15e4d3c6f9a8b7e6d5c4b3a2f1e0d9c8"
       regional-cluster: "7f8a9b2c15e4d3c6f9a8b7e6d5c4b3a2f1e0d9c8"
@@ -396,7 +399,7 @@ spec:
 
 
 ### 3. ApplicationSet with Dynamic Paths
-**Approach**: ECS task installs ArgoCD, creates cluster secret for cluster identity with labels/annotations (region, env, cluster name, repository, revision), creates application that points at a static ApplicationSet which uses cluster secret labels to point at the right charts based on cluster type, and uses region specific values created through render script.
+**Approach**: ECS task installs ArgoCD, creates cluster secret for cluster identity with labels/annotations (region_alias, aws_region, env, cluster name, repository, revision), creates application that points at a static ApplicationSet which uses cluster secret labels to point at the right charts based on cluster type, and uses region specific values created through render script.
 
 ```mermaid
 sequenceDiagram
@@ -410,7 +413,7 @@ sequenceDiagram
 
     Render->>Git: Generate rendered values for regions
     ECS->>ArgoCD: Install ArgoCD
-    ECS->>Secret: Create cluster secret with labels/annotations (region, env, repo, revision)
+    ECS->>Secret: Create cluster secret with labels/annotations (region_alias, aws_region, env, repo, revision)
     ECS->>ArgoCD: Create Application pointing to static ApplicationSet
     ArgoCD->>AppSet: Pull ApplicationSet definition
     AppSet->>Secret: Read cluster labels/annotations for identity
@@ -430,7 +433,8 @@ metadata:
     argocd.argoproj.io/secret-type: cluster
     cluster_type: management-cluster
     environment: staging
-    region: us-west-1
+    region_alias: us-west-1
+    aws_region: us-west-1
   annotations:
     cluster_name: management-cluster-us-west-1-staging
     git_repo: https://github.com/openshift-online/rosa-platform
@@ -471,7 +475,7 @@ spec:
         helm:
           valueFiles:
             - values.yaml
-            - ../../../rendered/{{ .metadata.labels.environment }}/{{ .metadata.labels.region }}/management-cluster-values.yaml
+            - ../../../rendered/{{ .metadata.labels.environment }}/{{ .metadata.labels.region_alias }}/management-cluster-values.yaml
 ```
 
 **Pros**:

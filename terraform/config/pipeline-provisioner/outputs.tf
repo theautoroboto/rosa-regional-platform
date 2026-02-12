@@ -19,7 +19,7 @@ output "github_connection_arn" {
 
 output "github_connection_status" {
   description = "Status of the GitHub connection (requires manual authorization)"
-  value       = "PENDING - Navigate to AWS Console > Developer Tools > Connections to authorize"
+  value       = aws_codestarconnections_connection.github.connection_status
 }
 
 output "provisioner_role_arn" {
@@ -40,3 +40,4 @@ output "deployment_region" {
   description = "AWS Region where pipeline provisioner is deployed"
   value       = data.aws_region.current.id
 }
+
