@@ -141,6 +141,50 @@ phases:
       - |
         set -euo pipefail
 
+        # Function to assume role and export credentials with error handling
+        assume_role_and_export_creds() {
+            local ROLE_ARN=$1
+            local SESSION_NAME=$2
+
+            echo "Assuming role: $ROLE_ARN"
+
+            # Capture both stdout and stderr
+            local TEMP_FILE=$(mktemp)
+            if ! TEMP_CREDS=$(aws sts assume-role \
+                --role-arn "$ROLE_ARN" \
+                --role-session-name "$SESSION_NAME" \
+                --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+                --output text 2>"$TEMP_FILE"); then
+                echo "ERROR: Failed to assume role $ROLE_ARN" >&2
+                echo "AWS CLI error output:" >&2
+                cat "$TEMP_FILE" >&2
+                rm -f "$TEMP_FILE"
+                return 1
+            fi
+            rm -f "$TEMP_FILE"
+
+            # Validate credentials are not empty
+            if [ -z "$TEMP_CREDS" ]; then
+                echo "ERROR: Received empty credentials from assume-role for $ROLE_ARN" >&2
+                return 1
+            fi
+
+            # Export credentials
+            export AWS_ACCESS_KEY_ID=$(echo $TEMP_CREDS | awk '{print $1}')
+            export AWS_SECRET_ACCESS_KEY=$(echo $TEMP_CREDS | awk '{print $2}')
+            export AWS_SESSION_TOKEN=$(echo $TEMP_CREDS | awk '{print $3}')
+
+            # Validate all three parts are present
+            if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$AWS_SESSION_TOKEN" ]; then
+                echo "ERROR: Failed to parse credentials from assume-role output for $ROLE_ARN" >&2
+                echo "Credentials format may be invalid" >&2
+                return 1
+            fi
+
+            echo "Successfully assumed role: $ROLE_ARN"
+            return 0
+        }
+
         # Function to ensure state bucket exists with proper security settings
         ensure_state_bucket() {
             local BUCKET_NAME=$1
@@ -150,15 +194,12 @@ phases:
             echo "Ensuring state bucket exists: $BUCKET_NAME in account $TARGET_ACCOUNT"
 
             # Assume role in target account to create bucket
-            TEMP_CREDS=$(aws sts assume-role \
-                --role-arn "arn:aws:iam::${TARGET_ACCOUNT}:role/OrganizationAccountAccessRole" \
-                --role-session-name "terraform-state-bucket-creation" \
-                --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
-                --output text)
-
-            export AWS_ACCESS_KEY_ID=$(echo $TEMP_CREDS | awk '{print $1}')
-            export AWS_SECRET_ACCESS_KEY=$(echo $TEMP_CREDS | awk '{print $2}')
-            export AWS_SESSION_TOKEN=$(echo $TEMP_CREDS | awk '{print $3}')
+            if ! assume_role_and_export_creds \
+                "arn:aws:iam::${TARGET_ACCOUNT}:role/OrganizationAccountAccessRole" \
+                "terraform-state-bucket-creation"; then
+                echo "ERROR: Cannot proceed without valid credentials for account $TARGET_ACCOUNT" >&2
+                return 1
+            fi
 
             # Check if bucket exists
             if ! aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
