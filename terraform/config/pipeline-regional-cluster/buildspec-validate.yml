@@ -252,8 +252,12 @@ phases:
             validate_target "$TARGET_ACCOUNT_ID" "$TARGET_REGION" "$TARGET_ALIAS"
         fi
 
-        # Process JSON Files
-        for file in deploy/*/*/terraform/regional.json; do
+        # Process JSON Files filtered by environment
+        # Default to integration if TARGET_ENVIRONMENT not set
+        FILTER_ENVIRONMENT="${TARGET_ENVIRONMENT:-integration}"
+        echo "Filtering regional configurations for environment: $FILTER_ENVIRONMENT"
+
+        for file in deploy/${FILTER_ENVIRONMENT}/*/terraform/regional.json; do
             [ -e "$file" ] || continue
 
             ACCOUNT_ID=$(jq -r '.account_id // ""' "$file")

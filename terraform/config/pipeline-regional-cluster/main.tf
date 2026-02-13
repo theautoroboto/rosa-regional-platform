@@ -240,6 +240,10 @@ resource "aws_codebuild_project" "regional_validate" {
       name  = "TARGET_ALIAS"
       value = var.target_alias
     }
+    environment_variable {
+      name  = "TARGET_ENVIRONMENT"
+      value = var.target_environment
+    }
   }
 
   source {
@@ -299,6 +303,10 @@ resource "aws_codebuild_project" "regional_apply" {
     environment_variable {
       name  = "COST_CENTER"
       value = var.cost_center
+    }
+    environment_variable {
+      name  = "TARGET_ENVIRONMENT"
+      value = var.target_environment
     }
   }
 
@@ -371,20 +379,21 @@ resource "aws_codepipeline" "central_pipeline" {
     type     = "S3"
   }
 
-  trigger {
-    provider_type = "CodeStarSourceConnection"
-    git_configuration {
-      source_action_name = "Source"
-      push {
-        branches {
-          includes = [var.github_branch]
-        }
-        file_paths {
-          includes = ["deploy/**", "terraform/config/pipeline-regional-cluster/**", "terraform/config/pipeline-management-cluster/**"]
-        }
-      }
-    }
-  }
+  # TODO: REVERT AFTER TESTING - Temporarily disabled to allow all commits to trigger
+  # trigger {
+  #   provider_type = "CodeStarSourceConnection"
+  #   git_configuration {
+  #     source_action_name = "Source"
+  #     push {
+  #       branches {
+  #         includes = [var.github_branch]
+  #       }
+  #       file_paths {
+  #         includes = ["deploy/**", "terraform/config/pipeline-regional-cluster/**", "terraform/config/pipeline-management-cluster/**"]
+  #       }
+  #     }
+  #   }
+  # }
 
   stage {
     name = "Source"

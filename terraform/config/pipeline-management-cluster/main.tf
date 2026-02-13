@@ -392,20 +392,21 @@ resource "aws_codepipeline" "regional_pipeline" {
     type     = "S3"
   }
 
-  trigger {
-    provider_type = "CodeStarSourceConnection"
-    git_configuration {
-      source_action_name = "Source"
-      push {
-        branches {
-          includes = [var.github_branch]
-        }
-        file_paths {
-          includes = ["deploy/*/${local.name_suffix}/terraform/management/**", "terraform/config/pipeline-management-cluster/**"]
-        }
-      }
-    }
-  }
+  # TODO: REVERT AFTER TESTING - Temporarily disabled to allow all commits to trigger
+  # trigger {
+  #   provider_type = "CodeStarSourceConnection"
+  #   git_configuration {
+  #     source_action_name = "Source"
+  #     push {
+  #       branches {
+  #         includes = [var.github_branch]
+  #       }
+  #       file_paths {
+  #         includes = ["deploy/*/${local.name_suffix}/terraform/management/**", "terraform/config/pipeline-management-cluster/**"]
+  #       }
+  #     }
+  #   }
+  # }
 
   stage {
     name = "Source"
