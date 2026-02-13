@@ -154,8 +154,8 @@ phases:
                 echo "✓ State bucket already exists"
             fi
 
-            # Unset assumed role credentials
-            unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+            # Note: Credentials remain set for Terraform to use for S3 backend access
+            echo "✓ Credentials configured for Terraform operations"
         }
 
         # Validate required environment variables
