@@ -125,14 +125,13 @@ phases:
         for region_dir in deploy/${TARGET_ENV}/*/; do
             [ -d "$region_dir" ] || continue
 
-            # Extract environment and region_alias from directory path
-            # e.g., deploy/integration/us-east-1/ -> ENV_NAME=integration, REGION_ALIAS=us-east-1
+            # Extract region_alias from directory path
+            # e.g., deploy/staging/us-east-1/ -> REGION_ALIAS=us-east-1
             REGION_ALIAS=$(basename "$region_dir")
-            ENV_NAME=$(basename "$(dirname "$region_dir")")
-            REGION_NAME="${ENV_NAME}-${REGION_ALIAS}"
+            REGION_NAME="${TARGET_ENV}-${REGION_ALIAS}"
 
             echo "=========================================="
-            echo "Processing: $ENV_NAME / $REGION_ALIAS"
+            echo "Processing: $TARGET_ENV / $REGION_ALIAS"
             echo "=========================================="
 
             # 1. Check for regional.json in this region
@@ -146,9 +145,9 @@ phases:
                 TARGET_ACCOUNT_ID=$(jq -r '.account_id // ""' "$REGIONAL_CONFIG")
                 TARGET_ALIAS=$(jq -r '.alias // ""' "$REGIONAL_CONFIG")
 
-                # Extract terraform vars with defaults
+                # Extract terraform vars with defaults (use TARGET_ENVIRONMENT as service_phase default)
                 APP_CODE=$(jq -r '.app_code // "infra"' "$REGIONAL_CONFIG")
-                SERVICE_PHASE=$(jq -r '.service_phase // "dev"' "$REGIONAL_CONFIG")
+                SERVICE_PHASE=$(jq -r '.service_phase // "'"${TARGET_ENV}"'"' "$REGIONAL_CONFIG")
                 COST_CENTER=$(jq -r '.cost_center // "000"' "$REGIONAL_CONFIG")
 
                 echo "  Target Region: $TARGET_REGION"
@@ -208,9 +207,9 @@ phases:
                     TARGET_ACCOUNT_ID=$(jq -r '.account_id // ""' "$mc_config")
                     TARGET_ALIAS=$(jq -r '.alias // ""' "$mc_config")
 
-                    # Extract terraform vars with defaults
+                    # Extract terraform vars with defaults (use TARGET_ENVIRONMENT as service_phase default)
                     APP_CODE=$(jq -r '.app_code // "infra"' "$mc_config")
-                    SERVICE_PHASE=$(jq -r '.service_phase // "dev"' "$mc_config")
+                    SERVICE_PHASE=$(jq -r '.service_phase // "'"${TARGET_ENV}"'"' "$mc_config")
                     COST_CENTER=$(jq -r '.cost_center // "000"' "$mc_config")
                     CLUSTER_ID=$(jq -r '.cluster_id // ""' "$mc_config")
                     REGIONAL_AWS_ACCOUNT_ID=$(jq -r '.regional_aws_account_id // ""' "$mc_config")
