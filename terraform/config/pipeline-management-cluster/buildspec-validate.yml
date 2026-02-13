@@ -153,6 +153,12 @@ phases:
         export AWS_SECRET_ACCESS_KEY=$(echo $ASSUMED_CREDS | awk '{print $2}')
         export AWS_SESSION_TOKEN=$(echo $ASSUMED_CREDS | awk '{print $3}')
 
+        # Build and push platform container image
+        echo "Building and pushing platform container image..."
+        chmod +x scripts/build-platform-image.sh
+        scripts/build-platform-image.sh
+        echo ""
+
         # Create placeholder secrets if they don't exist (required for terraform plan)
         echo "Ensuring Maestro agent placeholder secrets exist..."
         for SECRET_NAME in "maestro/agent-cert" "maestro/agent-config"; do
