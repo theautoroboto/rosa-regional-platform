@@ -100,27 +100,6 @@ phases:
 
         # Determine which environment to process
         TARGET_ENV="${TARGET_ENVIRONMENT:-staging}"
-<<<<<<< process-new-config
-        echo "=========================================="
-        echo "Pipeline Provisioner Configuration"
-        echo "=========================================="
-        echo "TARGET_ENVIRONMENT: ${TARGET_ENVIRONMENT:-<not set>}"
-        echo "Using environment: $TARGET_ENV"
-        echo "Looking for files in: deploy/${TARGET_ENV}/*/terraform/"
-        echo ""
-
-        # Debug: Show what files exist
-        echo "Available deploy directories:"
-        ls -la deploy/ || echo "  No deploy directory found"
-        echo ""
-
-        if [ -d "deploy/${TARGET_ENV}" ]; then
-            echo "Files in deploy/${TARGET_ENV}:"
-            find "deploy/${TARGET_ENV}" -name "*.json" 2>/dev/null || echo "  No JSON files found"
-        else
-            echo "⚠️  Directory deploy/${TARGET_ENV} does not exist!"
-        fi
-=======
 
         # Validate and sanitize TARGET_ENV to prevent path traversal and injection
         if [[ -z "$TARGET_ENV" ]]; then
@@ -176,7 +155,6 @@ phases:
         fi
 
         echo "Found ${#region_dirs[@]} region(s) in environment '${TARGET_ENV}'"
->>>>>>> main
         echo ""
 
         # Process each region_alias directory in the target environment

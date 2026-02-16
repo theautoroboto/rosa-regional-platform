@@ -37,3 +37,8 @@ variable "github_connection_arn" {
   }
 >>>>>>> main
 }
+
+variable "github_connection_arn" {
+  type        = string
+  description = "ARN of the shared GitHub CodeStar connection"
+}

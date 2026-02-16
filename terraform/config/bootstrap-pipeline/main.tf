@@ -14,18 +14,10 @@ resource "aws_codestarconnections_connection" "github_shared" {
 module "pipeline_provisioner" {
   source = "../pipeline-provisioner"
 
-<<<<<<< process-new-config
   github_repo_owner     = var.github_repo_owner
   github_repo_name      = var.github_repo_name
   github_branch         = var.github_branch
   region                = var.region
   environment           = var.environment
   github_connection_arn = aws_codestarconnections_connection.github_shared.arn
-=======
-  github_repo_owner = var.github_repo_owner
-  github_repo_name  = var.github_repo_name
-  github_branch     = var.github_branch
-  region            = var.region
-  environment       = var.environment
->>>>>>> main
 }
