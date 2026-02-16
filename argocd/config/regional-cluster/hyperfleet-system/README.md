@@ -109,22 +109,13 @@ kubectl get pods -n hyperfleet-system
 # hyperfleet-adapter-xxx            1/1     Running
 
 # Test API health
-kubectl port-forward -n hyperfleet-system svc/hyperfleet-api 8080:8080
-curl http://localhost:8080/healthz
+kubectl port-forward -n hyperfleet-system svc/hyperfleet-api 8000:8000
+curl http://localhost:8000/healthz
 
 # View logs
 kubectl logs -n hyperfleet-system -l app.kubernetes.io/name=hyperfleet-api
 kubectl logs -n hyperfleet-system -l app.kubernetes.io/name=hyperfleet-sentinel
 kubectl logs -n hyperfleet-system -l app.kubernetes.io/name=hyperfleet-adapter
-```
-
-## End-to-End Test
-
-```bash
-# 1. Create a cluster via API
-kubectl port-forward -n hyperfleet-system svc/hyperfleet-api 8000:8000 &
-
-curl -X POST http://localhost:8000/api/hyperfleet/v1/clusters \
   -H "Content-Type: application/json" \
   -d '{
     "kind": "Cluster",

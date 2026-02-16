@@ -120,16 +120,20 @@ spec:
         - name: adapter-config
           projected:
             sources:
+              {{- if .Values.adapterConfig.create }}
               - configMap:
                   name: {{ include "hyperfleet-adapter.adapterConfigMapName" . }}
                   items:
                     - key: adapter-config.yaml
                       path: adapter-config.yaml
+              {{- end }}
+              {{- if .Values.adapterTaskConfig.create }}
               - configMap:
                   name: {{ include "hyperfleet-adapter.adapterTaskConfigMapName" . }}
                   items:
                     - key: task-config.yaml
                       path: task-config.yaml
+              {{- end }}
         - name: broker-config
           configMap:
             name: {{ include "hyperfleet-adapter.brokerConfigMapName" . }}
