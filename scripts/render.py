@@ -475,6 +475,8 @@ def cleanup_stale_files(shards: List[Dict[str, Any]], deploy_dir: Path) -> None:
         deploy_dir: Path to the deploy output directory
     """
     if not deploy_dir.exists():
+    if not deploy_dir.exists():
+        print("deploy_dir does not exist")
         return
 
     # Build a set of valid shard paths (environment/region_alias)
