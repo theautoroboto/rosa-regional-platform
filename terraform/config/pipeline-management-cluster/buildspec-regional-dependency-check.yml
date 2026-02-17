@@ -1,0 +1,146 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  install:
+    commands:
+      - echo "Installing dependencies..."
+      - yum install -y jq
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Regional Pipeline Dependency Check"
+      - echo "=========================================="
+      - |
+        set -euo pipefail
+
+        # Validate required environment variables
+        if [[ -z "${REGIONAL_AWS_ACCOUNT_ID:-}" || -z "${TARGET_REGION:-}" || -z "${TARGET_ALIAS:-}" ]]; then
+            echo "❌ ERROR: Required environment variables not set"
+            echo "   REGIONAL_AWS_ACCOUNT_ID: ${REGIONAL_AWS_ACCOUNT_ID:-not set}"
+            echo "   TARGET_REGION: ${TARGET_REGION:-not set}"
+            echo "   TARGET_ALIAS: ${TARGET_ALIAS:-not set}"
+            exit 1
+        fi
+
+        echo "Configuration:"
+        echo "  Regional Account: ${REGIONAL_AWS_ACCOUNT_ID}"
+        echo "  Target Region: ${TARGET_REGION}"
+        echo "  Target Alias: ${TARGET_ALIAS}"
+        echo ""
+
+  build:
+    commands:
+      - echo "Checking regional cluster pipeline status..."
+      - |
+        set -euo pipefail
+
+        # Calculate the regional pipeline name using the same hash algorithm
+        # This matches the pattern in pipeline-regional-cluster/main.tf
+        RESOURCE_HASH=$(echo -n "regional-${TARGET_ALIAS}-${REGIONAL_AWS_ACCOUNT_ID}" | md5sum | cut -c1-12)
+        REGIONAL_PIPELINE_NAME="rc-pipe-${RESOURCE_HASH}"
+
+        echo "Regional pipeline name: ${REGIONAL_PIPELINE_NAME}"
+        echo ""
+
+        # Check if we're in the same account as regional cluster
+        CURRENT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+        echo "Current account: ${CURRENT_ACCOUNT}"
+
+        # Determine if we need to assume role for cross-account access
+        if [ "$CURRENT_ACCOUNT" != "$REGIONAL_AWS_ACCOUNT_ID" ]; then
+            echo "Cross-account access needed. Assuming role in regional account..."
+            ROLE_ARN="arn:aws:iam::${REGIONAL_AWS_ACCOUNT_ID}:role/OrganizationAccountAccessRole"
+
+            TEMP_CREDS=$(aws sts assume-role \
+                --role-arn "$ROLE_ARN" \
+                --role-session-name "mgmt-pipeline-check-${TARGET_ALIAS}" \
+                --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+                --output text)
+
+            export AWS_ACCESS_KEY_ID=$(echo "$TEMP_CREDS" | awk '{print $1}')
+            export AWS_SECRET_ACCESS_KEY=$(echo "$TEMP_CREDS" | awk '{print $2}')
+            export AWS_SESSION_TOKEN=$(echo "$TEMP_CREDS" | awk '{print $3}')
+
+            echo "✓ Assumed role in regional account"
+        else
+            echo "✓ Same account - using current credentials"
+        fi
+        echo ""
+
+        # Maximum number of checks (30 checks * 30 seconds = 15 minutes max wait)
+        MAX_CHECKS=30
+        CHECK_INTERVAL=30
+        CHECK_COUNT=0
+
+        while [ $CHECK_COUNT -lt $MAX_CHECKS ]; do
+            CHECK_COUNT=$((CHECK_COUNT + 1))
+            echo "Check ${CHECK_COUNT}/${MAX_CHECKS}: Querying pipeline state..."
+
+            # Get pipeline state
+            PIPELINE_STATE=$(aws codepipeline get-pipeline-state \
+                --name "${REGIONAL_PIPELINE_NAME}" \
+                --region "${TARGET_REGION}" \
+                --output json 2>&1 || echo '{"error": "failed"}')
+
+            if echo "$PIPELINE_STATE" | grep -q '"error"'; then
+                echo "⚠️  Warning: Unable to query regional pipeline. Error:"
+                echo "$PIPELINE_STATE"
+                echo ""
+                echo "Pipeline may not exist yet. Waiting ${CHECK_INTERVAL} seconds..."
+                sleep $CHECK_INTERVAL
+                continue
+            fi
+
+            # Extract Maestro-IoT stage status
+            MAESTRO_IOT_STATUS=$(echo "$PIPELINE_STATE" | jq -r '.stageStates[] | select(.stageName == "Provision-Maestro-IoT") | .latestExecution.status // "NotStarted"')
+
+            echo "Maestro-IoT stage status: ${MAESTRO_IOT_STATUS}"
+
+            case "$MAESTRO_IOT_STATUS" in
+                "Succeeded")
+                    echo "✅ Regional cluster Maestro-IoT step has completed successfully!"
+                    echo "Management cluster can proceed with provisioning."
+                    exit 0
+                    ;;
+                "InProgress")
+                    echo "⏳ Maestro-IoT step is still in progress. Waiting ${CHECK_INTERVAL} seconds..."
+                    ;;
+                "Failed")
+                    echo "❌ ERROR: Regional cluster Maestro-IoT step has failed!"
+                    echo "Management cluster cannot proceed until this is resolved."
+                    exit 1
+                    ;;
+                "NotStarted")
+                    echo "⏳ Maestro-IoT step has not started yet. Waiting ${CHECK_INTERVAL} seconds..."
+                    ;;
+                *)
+                    echo "⚠️  Unknown status: ${MAESTRO_IOT_STATUS}. Waiting ${CHECK_INTERVAL} seconds..."
+                    ;;
+            esac
+
+            echo ""
+
+            if [ $CHECK_COUNT -lt $MAX_CHECKS ]; then
+                sleep $CHECK_INTERVAL
+            fi
+        done
+
+        echo "❌ ERROR: Timeout waiting for regional cluster Maestro-IoT step to complete"
+        echo "Waited for $((MAX_CHECKS * CHECK_INTERVAL)) seconds without success."
+        echo "Please check the regional cluster pipeline status manually:"
+        echo "  Pipeline: ${REGIONAL_PIPELINE_NAME}"
+        echo "  Region: ${TARGET_REGION}"
+        echo "  Account: ${REGIONAL_AWS_ACCOUNT_ID}"
+        exit 1
+
+  post_build:
+    commands:
+      - echo "Regional pipeline dependency check complete."
+
+artifacts:
+  files:
+    - '**/*'

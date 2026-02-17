@@ -16,13 +16,14 @@ locals {
   account_suffix = substr(data.aws_caller_identity.current.account_id, -8, 8)
 
   # Resource naming patterns (all under 32 chars)
-  artifact_bucket_name   = "rc-${local.resource_hash}-${local.account_suffix}" # 24 chars
-  codebuild_role_name    = "rc-cb-${local.resource_hash}"                      # 18 chars
-  codepipeline_role_name = "rc-cp-${local.resource_hash}"                      # 18 chars
-  validate_project_name  = "rc-val-${local.resource_hash}"                     # 19 chars
-  apply_project_name     = "rc-app-${local.resource_hash}"                     # 19 chars
-  bootstrap_project_name = "rc-boot-${local.resource_hash}"                    # 21 chars
-  pipeline_name          = "rc-pipe-${local.resource_hash}"                    # 20 chars
+  artifact_bucket_name     = "rc-${local.resource_hash}-${local.account_suffix}" # 24 chars
+  codebuild_role_name      = "rc-cb-${local.resource_hash}"                      # 18 chars
+  codepipeline_role_name   = "rc-cp-${local.resource_hash}"                      # 18 chars
+  validate_project_name    = "rc-val-${local.resource_hash}"                     # 19 chars
+  apply_project_name       = "rc-app-${local.resource_hash}"                     # 19 chars
+  maestro_iot_project_name = "rc-miot-${local.resource_hash}"                    # 21 chars
+  bootstrap_project_name   = "rc-boot-${local.resource_hash}"                    # 21 chars
+  pipeline_name            = "rc-pipe-${local.resource_hash}"                    # 20 chars
 }
 
 # Use shared GitHub Connection (passed from pipeline-provisioner)
@@ -139,6 +140,7 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
         Resource = [
           aws_codebuild_project.regional_validate.arn,
           aws_codebuild_project.regional_apply.arn,
+          aws_codebuild_project.regional_maestro_iot.arn,
           aws_codebuild_project.regional_bootstrap.arn
         ]
       }
@@ -308,6 +310,54 @@ resource "aws_codebuild_project" "regional_apply" {
   }
 }
 
+# CodeBuild Project - Maestro Agent IoT Provisioning
+resource "aws_codebuild_project" "regional_maestro_iot" {
+  name          = local.maestro_iot_project_name
+  service_role  = aws_iam_role.codebuild_role.arn
+  build_timeout = 30
+
+  artifacts {
+    type = "CODEPIPELINE"
+  }
+
+  environment {
+    compute_type                = "BUILD_GENERAL1_SMALL"
+    image                       = "aws/codebuild/amazonlinux2-x86_64-standard:4.0"
+    type                        = "LINUX_CONTAINER"
+    image_pull_credentials_type = "CODEBUILD"
+
+    environment_variable {
+      name  = "TARGET_ACCOUNT_ID"
+      value = var.target_account_id
+    }
+    environment_variable {
+      name  = "TARGET_REGION"
+      value = var.target_region
+    }
+    environment_variable {
+      name  = "TARGET_ALIAS"
+      value = var.target_alias
+    }
+    environment_variable {
+      name  = "APP_CODE"
+      value = var.app_code
+    }
+    environment_variable {
+      name  = "SERVICE_PHASE"
+      value = var.service_phase
+    }
+    environment_variable {
+      name  = "COST_CENTER"
+      value = var.cost_center
+    }
+  }
+
+  source {
+    type      = "CODEPIPELINE"
+    buildspec = "terraform/config/pipeline-regional-cluster/buildspec-maestro-agent-iot.yml"
+  }
+}
+
 # CodeBuild Project - Bootstrap ArgoCD
 resource "aws_codebuild_project" "regional_bootstrap" {
   name          = local.bootstrap_project_name
@@ -447,6 +497,24 @@ resource "aws_codepipeline" "central_pipeline" {
   }
 
   stage {
+    name = "Provision-Maestro-IoT"
+
+    action {
+      name             = "ProvisionMaestroIoT"
+      category         = "Build"
+      owner            = "AWS"
+      provider         = "CodeBuild"
+      input_artifacts  = ["apply_output"]
+      output_artifacts = ["maestro_iot_output"]
+      version          = "1"
+
+      configuration = {
+        ProjectName = aws_codebuild_project.regional_maestro_iot.name
+      }
+    }
+  }
+
+  stage {
     name = "Bootstrap-ArgoCD"
 
     action {
@@ -454,7 +522,7 @@ resource "aws_codepipeline" "central_pipeline" {
       category         = "Build"
       owner            = "AWS"
       provider         = "CodeBuild"
-      input_artifacts  = ["apply_output"]
+      input_artifacts  = ["maestro_iot_output"]
       output_artifacts = ["bootstrap_output"]
       version          = "1"
 

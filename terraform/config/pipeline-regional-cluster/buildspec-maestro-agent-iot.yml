@@ -1,0 +1,303 @@
+version: 0.2
+
+env:
+  shell: bash
+  exported-variables:
+    - CENTRAL_ACCOUNT_ID
+    - TF_STATE_REGION
+    - TARGET_AWS_ACCESS_KEY_ID
+    - TARGET_AWS_SECRET_ACCESS_KEY
+    - TARGET_AWS_SESSION_TOKEN
+    - SAVE_AWS_ACCESS_KEY_ID
+    - SAVE_AWS_SECRET_ACCESS_KEY
+    - SAVE_AWS_SESSION_TOKEN
+    - TF_VAR_target_account_id
+    - TF_VAR_target_alias
+
+phases:
+  install:
+    commands:
+      - echo "Installing dependencies..."
+      - yum install -y unzip python3 jq gnupg2
+      - pip3 install boto3 pyyaml
+      - echo "Installing Terraform..."
+      - |
+        set -euo pipefail
+        TF_VERSION="1.14.3"
+        TF_PACKAGE="terraform_${TF_VERSION}_linux_amd64.zip"
+        TF_BASE_URL="https://releases.hashicorp.com/terraform/${TF_VERSION}"
+
+        # Download Terraform package and verification files
+        echo "Downloading Terraform ${TF_VERSION}..."
+        curl -sSfO "${TF_BASE_URL}/${TF_PACKAGE}"
+        curl -sSfO "${TF_BASE_URL}/terraform_${TF_VERSION}_SHA256SUMS"
+        curl -sSfO "${TF_BASE_URL}/terraform_${TF_VERSION}_SHA256SUMS.sig"
+
+        # Import HashiCorp GPG key
+        echo "Importing HashiCorp GPG key..."
+        gpg --batch --keyserver keyserver.ubuntu.com --recv-keys \
+          C874011F0AB405110D02105534365D9472D7468F || \
+        gpg --batch --keyserver keys.openpgp.org --recv-keys \
+          C874011F0AB405110D02105534365D9472D7468F || \
+        gpg --batch --keyserver pgp.mit.edu --recv-keys \
+          C874011F0AB405110D02105534365D9472D7468F
+
+        # Verify GPG signature on SHA256SUMS
+        echo "Verifying GPG signature..."
+        if ! gpg --batch --verify "terraform_${TF_VERSION}_SHA256SUMS.sig" "terraform_${TF_VERSION}_SHA256SUMS"; then
+          echo "❌ GPG signature verification failed"
+          exit 1
+        fi
+        echo "✓ GPG signature verified"
+
+        # Verify checksum of Terraform package
+        echo "Verifying SHA256 checksum..."
+        if ! grep "${TF_PACKAGE}" "terraform_${TF_VERSION}_SHA256SUMS" | sha256sum -c -; then
+          echo "❌ Checksum verification failed"
+          exit 1
+        fi
+        echo "✓ Checksum verified"
+
+        # Install Terraform
+        echo "Installing Terraform..."
+        unzip -o "${TF_PACKAGE}" -d /tmp/tf-bin
+        mv /tmp/tf-bin/terraform /usr/local/bin/
+
+        # Cleanup
+        rm -f "${TF_PACKAGE}" "terraform_${TF_VERSION}_SHA256SUMS" "terraform_${TF_VERSION}_SHA256SUMS.sig"
+
+        terraform version
+        echo "✓ Terraform installation verified"
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Pre-flight Setup"
+      - echo "=========================================="
+      - |
+        set -euo pipefail
+
+        # Validate required environment variables
+        if [[ -z "${TARGET_ACCOUNT_ID:-}" || -z "${TARGET_REGION:-}" || -z "${TARGET_ALIAS:-}" ]]; then
+            echo "❌ ERROR: Required environment variables not set"
+            echo "   TARGET_ACCOUNT_ID: ${TARGET_ACCOUNT_ID:-not set}"
+            echo "   TARGET_REGION: ${TARGET_REGION:-not set}"
+            echo "   TARGET_ALIAS: ${TARGET_ALIAS:-not set}"
+            exit 1
+        fi
+
+        # Get central account ID BEFORE assuming role
+        CENTRAL_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        export CENTRAL_ACCOUNT_ID
+
+        # Detect S3 state bucket region BEFORE assuming role
+        TF_STATE_BUCKET="terraform-state-${CENTRAL_ACCOUNT_ID}"
+        BUCKET_REGION=$(aws s3api get-bucket-location --bucket "$TF_STATE_BUCKET" --region us-east-1 --query LocationConstraint --output text)
+        if [ "$BUCKET_REGION" == "None" ] || [ "$BUCKET_REGION" == "null" ] || [ -z "$BUCKET_REGION" ]; then BUCKET_REGION="us-east-1"; fi
+        export TF_STATE_REGION=$BUCKET_REGION
+
+        echo "Configuration:"
+        echo "  Central Account: $CENTRAL_ACCOUNT_ID"
+        echo "  Target Account: $TARGET_ACCOUNT_ID"
+        echo "  Target Region: $TARGET_REGION"
+        echo "  Target Alias: $TARGET_ALIAS"
+        echo "  State Bucket Region: $TF_STATE_REGION"
+        echo ""
+
+        # Save central account credentials before assuming role
+        export SAVE_AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}"
+        export SAVE_AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}"
+        export SAVE_AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}"
+
+        # Assume role for target account operations (if needed)
+        if [ "$TARGET_ACCOUNT_ID" != "$CENTRAL_ACCOUNT_ID" ]; then
+            ROLE_ARN="arn:aws:iam::${TARGET_ACCOUNT_ID}:role/OrganizationAccountAccessRole"
+            echo "Assuming role for target account operations: $ROLE_ARN"
+
+            if ! TEMP_CREDS=$(aws sts assume-role \
+                --role-arn "$ROLE_ARN" \
+                --role-session-name "pipeline-maestro-iot-${TARGET_ALIAS}" \
+                --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+                --output text 2>&1); then
+                echo "❌ ERROR: Failed to assume role $ROLE_ARN"
+                echo "Error: $TEMP_CREDS"
+                exit 1
+            fi
+
+            # Store assumed credentials for use in build phase
+            export TARGET_AWS_ACCESS_KEY_ID=$(echo "$TEMP_CREDS" | awk '{print $1}')
+            export TARGET_AWS_SECRET_ACCESS_KEY=$(echo "$TEMP_CREDS" | awk '{print $2}')
+            export TARGET_AWS_SESSION_TOKEN=$(echo "$TEMP_CREDS" | awk '{print $3}')
+
+            # Verify the assumed role credentials work
+            ASSUMED_ACCOUNT=$(AWS_ACCESS_KEY_ID="$TARGET_AWS_ACCESS_KEY_ID" \
+                              AWS_SECRET_ACCESS_KEY="$TARGET_AWS_SECRET_ACCESS_KEY" \
+                              AWS_SESSION_TOKEN="$TARGET_AWS_SESSION_TOKEN" \
+                              aws sts get-caller-identity --query Account --output text)
+            if [ "$ASSUMED_ACCOUNT" != "$TARGET_ACCOUNT_ID" ]; then
+                echo "❌ ERROR: Assumed wrong account. Expected $TARGET_ACCOUNT_ID, got $ASSUMED_ACCOUNT"
+                exit 1
+            fi
+
+            echo "✅ Assumed role in account $TARGET_ACCOUNT_ID"
+        else
+            echo "✅ Target account same as central - using current credentials"
+            export TARGET_AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}"
+            export TARGET_AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}"
+            export TARGET_AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}"
+        fi
+        echo ""
+
+        # Pass target account to Terraform
+        export TF_VAR_target_account_id="${TARGET_ACCOUNT_ID}"
+        export TF_VAR_target_alias="${TARGET_ALIAS}"
+
+  build:
+    commands:
+      - echo "Provisioning Maestro Agent IoT Resources in Regional Account..."
+      - |
+        set -euo pipefail
+
+        provision_maestro_iot() {
+            local ACCOUNT_ID=$1
+            local REGION=$2
+            local ALIAS=$3
+
+            echo "---------------------------------------------------"
+            echo "Provisioning Maestro IoT: $ALIAS ($ACCOUNT_ID) in $REGION"
+            echo "  Central Account: ${CENTRAL_ACCOUNT_ID}"
+            echo ""
+
+            # Switch to target account credentials for IoT provisioning
+            echo "Using target account credentials for IoT provisioning..."
+            export AWS_ACCESS_KEY_ID="${TARGET_AWS_ACCESS_KEY_ID}"
+            export AWS_SECRET_ACCESS_KEY="${TARGET_AWS_SECRET_ACCESS_KEY}"
+            export AWS_SESSION_TOKEN="${TARGET_AWS_SESSION_TOKEN}"
+            export AWS_REGION="${REGION}"
+
+            # Verify we're in the correct account
+            CURRENT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+            echo "Current account: $CURRENT_ACCOUNT (target: $ACCOUNT_ID)"
+            if [ "$CURRENT_ACCOUNT" != "$ACCOUNT_ID" ]; then
+                echo "❌ ERROR: Wrong account context. Expected $ACCOUNT_ID, got $CURRENT_ACCOUNT"
+                exit 1
+            fi
+            echo ""
+
+            # Create management cluster tfvars path based on target_alias
+            # This follows the pattern: deploy/${environment}/${region_alias}/terraform/management/terraform.tfvars
+            # For now, we'll use a simplified approach and create a temporary tfvars file
+            MGMT_TFVARS_PATH="$(mktemp -d)/${ALIAS}-mgmt.tfvars"
+
+            echo "Creating temporary management cluster tfvars..."
+            cat > "$MGMT_TFVARS_PATH" <<EOF
+cluster_id        = "${ALIAS}-mgmt-01"
+app_code          = "${APP_CODE:-infra}"
+service_phase     = "${SERVICE_PHASE:-dev}"
+cost_center       = "${COST_CENTER:-000}"
+EOF
+
+            echo "✓ Temporary tfvars created at: $MGMT_TFVARS_PATH"
+            cat "$MGMT_TFVARS_PATH"
+            echo ""
+
+            # Run the provisioning script in non-interactive mode
+            echo "Running Maestro Agent IoT provisioning script..."
+            cd "${CODEBUILD_SRC_DIR}"
+
+            # Modify the script to run non-interactively
+            export TF_IN_AUTOMATION=true
+
+            # Navigate to terraform directory
+            TERRAFORM_DIR="${CODEBUILD_SRC_DIR}/terraform/config/maestro-agent-iot-provisioning"
+            cd "$TERRAFORM_DIR"
+
+            # Extract cluster_id from tfvars
+            CLUSTER_ID=$(grep "^cluster_id" "$MGMT_TFVARS_PATH" | sed -E 's/^[^=]+=[[:space:]]*"([^"]+)".*/\1/')
+            APP_CODE=$(grep "^app_code" "$MGMT_TFVARS_PATH" | sed -E 's/^[^=]+=[[:space:]]*"([^"]+)".*/\1/')
+            SERVICE_PHASE=$(grep "^service_phase" "$MGMT_TFVARS_PATH" | sed -E 's/^[^=]+=[[:space:]]*"([^"]+)".*/\1/')
+            COST_CENTER=$(grep "^cost_center" "$MGMT_TFVARS_PATH" | sed -E 's/^[^=]+=[[:space:]]*"([^"]+)".*/\1/')
+
+            echo "Extracted configuration:"
+            echo "  Cluster ID: $CLUSTER_ID"
+            echo "  App Code: $APP_CODE"
+            echo "  Service Phase: $SERVICE_PHASE"
+            echo "  Cost Center: $COST_CENTER"
+            echo ""
+
+            # Generate terraform.tfvars
+            cat > terraform.tfvars <<EOF
+management_cluster_id = "${CLUSTER_ID}"
+app_code              = "${APP_CODE}"
+service_phase         = "${SERVICE_PHASE}"
+cost_center           = "${COST_CENTER}"
+mqtt_topic_prefix     = "sources/maestro/consumers"
+EOF
+
+            echo "Initializing Terraform..."
+            terraform init -upgrade
+
+            echo "Running Terraform plan..."
+            terraform plan -out=tfplan
+
+            echo "Applying Terraform configuration..."
+            terraform apply -auto-approve tfplan
+            rm -f tfplan
+
+            echo "✅ IoT resources provisioned in regional account"
+            echo ""
+
+            # Extract and save certificate data
+            echo "Extracting certificate and configuration data..."
+            AGENT_CERT=$(terraform output -json agent_cert)
+            AGENT_CONFIG=$(terraform output -json agent_config)
+
+            if [ -z "$AGENT_CERT" ] || [ "$AGENT_CERT" == "null" ]; then
+                echo "❌ ERROR: Failed to extract agent certificate from Terraform output"
+                exit 1
+            fi
+
+            if [ -z "$AGENT_CONFIG" ] || [ "$AGENT_CONFIG" == "null" ]; then
+                echo "❌ ERROR: Failed to extract agent configuration from Terraform output"
+                exit 1
+            fi
+
+            # Create output directory in codebuild artifacts
+            OUTPUT_DIR="${CODEBUILD_SRC_DIR}/.maestro-certs/${CLUSTER_ID}"
+            mkdir -p "$OUTPUT_DIR"
+
+            # Write certificate data
+            CERT_FILE="${OUTPUT_DIR}/agent_cert.json"
+            echo "$AGENT_CERT" > "$CERT_FILE"
+            chmod 600 "$CERT_FILE"
+
+            # Write configuration data
+            CONFIG_FILE="${OUTPUT_DIR}/agent_config.json"
+            echo "$AGENT_CONFIG" > "$CONFIG_FILE"
+            chmod 644 "$CONFIG_FILE"
+
+            echo "✓ Certificate saved to: ${CERT_FILE}"
+            echo "✓ Configuration saved to: ${CONFIG_FILE}"
+            echo ""
+
+            echo "✅ Maestro Agent IoT provisioning complete for ${CLUSTER_ID}"
+        }
+
+        # Use pipeline configuration
+        if [[ -n "$TARGET_ACCOUNT_ID" && -n "$TARGET_REGION" && -n "$TARGET_ALIAS" ]]; then
+            echo "Using pipeline configuration (TARGET_* variables)"
+            provision_maestro_iot "$TARGET_ACCOUNT_ID" "$TARGET_REGION" "$TARGET_ALIAS"
+        else
+            echo "ERROR: TARGET_* variables not set. This pipeline should be created by the provisioner."
+            exit 1
+        fi
+
+  post_build:
+    commands:
+      - echo "Maestro Agent IoT provisioning complete."
+      - echo "Certificate artifacts are ready for management cluster."
+
+artifacts:
+  files:
+    - '.maestro-certs/**/*'
+  name: maestro-iot-artifacts

@@ -13,6 +13,11 @@ output "pipeline_arn" {
   value       = aws_codepipeline.regional_pipeline.arn
 }
 
+output "codebuild_regional_check_name" {
+  description = "Name of the regional dependency check CodeBuild project"
+  value       = aws_codebuild_project.regional_dependency_check.name
+}
+
 output "codebuild_validate_name" {
   description = "Name of the CodeBuild validate project"
   value       = aws_codebuild_project.management_validate.name

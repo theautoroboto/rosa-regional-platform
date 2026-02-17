@@ -23,6 +23,11 @@ output "codebuild_apply_name" {
   value       = aws_codebuild_project.regional_apply.name
 }
 
+output "codebuild_maestro_iot_name" {
+  description = "Name of the Maestro IoT CodeBuild project"
+  value       = aws_codebuild_project.regional_maestro_iot.name
+}
+
 output "codebuild_bootstrap_name" {
   description = "Name of the bootstrap CodeBuild project"
   value       = aws_codebuild_project.regional_bootstrap.name
@@ -31,4 +36,9 @@ output "codebuild_bootstrap_name" {
 output "artifact_bucket" {
   description = "S3 bucket used for pipeline artifacts"
   value       = aws_s3_bucket.pipeline_artifact.id
+}
+
+output "maestro_iot_stage_name" {
+  description = "Name of the Maestro IoT pipeline stage"
+  value       = "Provision-Maestro-IoT"
 }
