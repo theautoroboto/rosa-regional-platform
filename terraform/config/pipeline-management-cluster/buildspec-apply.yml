@@ -190,7 +190,7 @@ phases:
 
         # Run Infrastructure Provision (without ArgoCD bootstrap)
         echo "Running Infrastructure Provisioning..."
-        make pipeline-provision-management-infra
+        make pipeline-provision-management
         PROVISION_STATUS=$?
 
         if [ $PROVISION_STATUS -ne 0 ]; then
