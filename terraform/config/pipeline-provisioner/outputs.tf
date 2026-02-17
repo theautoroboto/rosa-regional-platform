@@ -27,6 +27,16 @@ output "provisioner_role_arn" {
   value       = aws_iam_role.codebuild_role.arn
 }
 
+output "image_builder_project_name" {
+  description = "Name of the image builder CodeBuild project"
+  value       = aws_codebuild_project.image_builder.name
+}
+
+output "image_builder_project_arn" {
+  description = "ARN of the image builder CodeBuild project"
+  value       = aws_codebuild_project.image_builder.arn
+}
+
 # =============================================================================
 # General Information
 # =============================================================================
