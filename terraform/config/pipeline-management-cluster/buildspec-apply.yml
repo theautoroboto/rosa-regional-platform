@@ -92,12 +92,17 @@ phases:
         echo "Target Region: $TARGET_REGION"
         echo "Target Alias: $TARGET_ALIAS"
 
-        # Assume role for AWS CLI operations (secret creation) AND Terraform
-        # NOTE: We keep manual assume role here because this buildspec uses AWS CLI
-        # to create secrets in the target account before Terraform runs
+        # Save central account credentials before assuming role
+        # These will be restored later for Terraform backend access
+        SAVE_AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}"
+        SAVE_AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}"
+        SAVE_AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}"
+
+        # Prepare target account credentials for Secrets Manager and ECR operations
+        # NOTE: We assume role only for target account operations, then restore central creds for Terraform
         if [ "$TARGET_ACCOUNT_ID" != "$CENTRAL_ACCOUNT_ID" ]; then
             ROLE_ARN="arn:aws:iam::${TARGET_ACCOUNT_ID}:role/OrganizationAccountAccessRole"
-            echo "Assuming role: $ROLE_ARN"
+            echo "Assuming role for target account operations: $ROLE_ARN"
 
             if ! TEMP_CREDS=$(aws sts assume-role \
                 --role-arn "$ROLE_ARN" \
@@ -109,21 +114,28 @@ phases:
                 exit 1
             fi
 
-            # Export credentials for AWS CLI and Terraform
-            export AWS_ACCESS_KEY_ID=$(echo "$TEMP_CREDS" | awk '{print $1}')
-            export AWS_SECRET_ACCESS_KEY=$(echo "$TEMP_CREDS" | awk '{print $2}')
-            export AWS_SESSION_TOKEN=$(echo "$TEMP_CREDS" | awk '{print $3}')
+            # Store assumed credentials for use in build phase (target account operations)
+            export TARGET_AWS_ACCESS_KEY_ID=$(echo "$TEMP_CREDS" | awk '{print $1}')
+            export TARGET_AWS_SECRET_ACCESS_KEY=$(echo "$TEMP_CREDS" | awk '{print $2}')
+            export TARGET_AWS_SESSION_TOKEN=$(echo "$TEMP_CREDS" | awk '{print $3}')
 
-            # Verify
-            ASSUMED_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+            # Verify the assumed role credentials work
+            ASSUMED_ACCOUNT=$(AWS_ACCESS_KEY_ID="$TARGET_AWS_ACCESS_KEY_ID" \
+                              AWS_SECRET_ACCESS_KEY="$TARGET_AWS_SECRET_ACCESS_KEY" \
+                              AWS_SESSION_TOKEN="$TARGET_AWS_SESSION_TOKEN" \
+                              aws sts get-caller-identity --query Account --output text)
             if [ "$ASSUMED_ACCOUNT" != "$TARGET_ACCOUNT_ID" ]; then
-                echo "❌ ERROR: Assumed wrong account"
+                echo "❌ ERROR: Assumed wrong account. Expected $TARGET_ACCOUNT_ID, got $ASSUMED_ACCOUNT"
                 exit 1
             fi
 
-            echo "✅ Assumed role in account $TARGET_ACCOUNT_ID"
+            echo "✅ Assumed role in account $TARGET_ACCOUNT_ID (credentials saved for target operations)"
         else
-            echo "✅ Target account same as central - using current credentials"
+            echo "✅ Target account same as central - using current credentials for both operations"
+            # For same-account deployments, use current credentials for both
+            export TARGET_AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}"
+            export TARGET_AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}"
+            export TARGET_AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}"
         fi
         echo ""
 
@@ -152,6 +164,7 @@ phases:
         export TF_VAR_regional_aws_account_id="${REGIONAL_AWS_ACCOUNT_ID:-${CENTRAL_ACCOUNT_ID}}"
         export TF_VAR_repository_url="${REPOSITORY_URL}"
         export TF_VAR_repository_branch="${REPOSITORY_BRANCH}"
+        export TF_VAR_target_account_id="${TARGET_ACCOUNT_ID}"
 
         # Skip ArgoCD validation for infra provisioning
         export SKIP_ARGOCD_VALIDATION=true
@@ -160,15 +173,21 @@ phases:
         echo "Ensuring Maestro agent secrets exist in account ${TARGET_ACCOUNT_ID}..."
 
         for SECRET_NAME in "maestro/agent-cert" "maestro/agent-config"; do
-            # Check if secret exists
-            if ! aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region ${TARGET_REGION} 2>/dev/null; then
+            # Check if secret exists (using target account credentials)
+            if ! AWS_ACCESS_KEY_ID="$TARGET_AWS_ACCESS_KEY_ID" \
+                 AWS_SECRET_ACCESS_KEY="$TARGET_AWS_SECRET_ACCESS_KEY" \
+                 AWS_SESSION_TOKEN="$TARGET_AWS_SESSION_TOKEN" \
+                 aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region ${TARGET_REGION} 2>/dev/null; then
 
                 echo "Creating placeholder secret: $SECRET_NAME"
-                if ! CREATE_OUTPUT=$(aws secretsmanager create-secret \
-                    --name "$SECRET_NAME" \
-                    --description "Placeholder secret for Maestro agent (created by buildspec)" \
-                    --secret-string '{"placeholder":true}' \
-                    --region ${TARGET_REGION} 2>&1); then
+                if ! CREATE_OUTPUT=$(AWS_ACCESS_KEY_ID="$TARGET_AWS_ACCESS_KEY_ID" \
+                                     AWS_SECRET_ACCESS_KEY="$TARGET_AWS_SECRET_ACCESS_KEY" \
+                                     AWS_SESSION_TOKEN="$TARGET_AWS_SESSION_TOKEN" \
+                                     aws secretsmanager create-secret \
+                                     --name "$SECRET_NAME" \
+                                     --description "Placeholder secret for Maestro agent (created by buildspec)" \
+                                     --secret-string '{"placeholder":true}' \
+                                     --region ${TARGET_REGION} 2>&1); then
 
                     # Check if failure is due to secret already existing (race condition)
                     if echo "$CREATE_OUTPUT" | grep -q "ResourceExistsException"; then
@@ -187,11 +206,25 @@ phases:
         done
 
         echo "Maestro agent placeholder secrets verified"
+        echo ""
+
+        # Restore central account credentials for Terraform backend access
+        echo "Restoring central account credentials for Terraform backend access..."
+        export AWS_ACCESS_KEY_ID="${SAVE_AWS_ACCESS_KEY_ID}"
+        export AWS_SECRET_ACCESS_KEY="${SAVE_AWS_SECRET_ACCESS_KEY}"
+        export AWS_SESSION_TOKEN="${SAVE_AWS_SESSION_TOKEN}"
+
+        # Verify we're back to central account
+        CURRENT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+        echo "Current account: $CURRENT_ACCOUNT (central: $CENTRAL_ACCOUNT_ID)"
+        echo ""
 
         # Run Infrastructure Provision (without ArgoCD bootstrap)
         echo "Running Infrastructure Provisioning..."
+        set +e
         make pipeline-provision-management
         PROVISION_STATUS=$?
+        set -e
 
         if [ $PROVISION_STATUS -ne 0 ]; then
             echo "❌ Infrastructure provisioning failed with exit code $PROVISION_STATUS"
@@ -200,8 +233,11 @@ phases:
 
         echo "✅ Infrastructure provisioning complete."
 
-        # Build and push platform image
+        # Build and push platform image (needs target account credentials for ECR access)
         echo "Building platform image..."
+        AWS_ACCESS_KEY_ID="$TARGET_AWS_ACCESS_KEY_ID" \
+        AWS_SECRET_ACCESS_KEY="$TARGET_AWS_SECRET_ACCESS_KEY" \
+        AWS_SESSION_TOKEN="$TARGET_AWS_SESSION_TOKEN" \
         make build-platform-image
 
   post_build:

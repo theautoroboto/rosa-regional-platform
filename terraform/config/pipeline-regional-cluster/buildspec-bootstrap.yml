@@ -2,6 +2,17 @@ version: 0.2
 
 env:
   shell: bash
+  exported-variables:
+    - CENTRAL_ACCOUNT_ID
+    - TF_STATE_REGION
+    - TARGET_AWS_ACCESS_KEY_ID
+    - TARGET_AWS_SECRET_ACCESS_KEY
+    - TARGET_AWS_SESSION_TOKEN
+    - SAVE_AWS_ACCESS_KEY_ID
+    - SAVE_AWS_SECRET_ACCESS_KEY
+    - SAVE_AWS_SESSION_TOKEN
+    - TF_VAR_target_account_id
+    - TF_VAR_target_alias
 
 phases:
   install:
@@ -119,10 +130,17 @@ phases:
         echo "  State Bucket Region: $TF_STATE_REGION"
         echo ""
 
-        # Only assume role if target account differs from central account
+        # Save central account credentials before assuming role
+        # These will be restored later for Terraform backend access
+        export SAVE_AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}"
+        export SAVE_AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}"
+        export SAVE_AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}"
+
+        # Prepare target account credentials for target-specific operations (ECR, ECS, EKS)
+        # NOTE: We assume role only for target account operations, then restore central creds for Terraform
         if [ "$TARGET_ACCOUNT_ID" != "$CENTRAL_ACCOUNT_ID" ]; then
             ROLE_ARN="arn:aws:iam::${TARGET_ACCOUNT_ID}:role/OrganizationAccountAccessRole"
-            echo "Assuming role: $ROLE_ARN"
+            echo "Assuming role for target account operations: $ROLE_ARN"
 
             if ! TEMP_CREDS=$(aws sts assume-role \
                 --role-arn "$ROLE_ARN" \
@@ -134,22 +152,28 @@ phases:
                 exit 1
             fi
 
-            # Export credentials for use in all subsequent phases
-            export AWS_ACCESS_KEY_ID=$(echo "$TEMP_CREDS" | awk '{print $1}')
-            export AWS_SECRET_ACCESS_KEY=$(echo "$TEMP_CREDS" | awk '{print $2}')
-            export AWS_SESSION_TOKEN=$(echo "$TEMP_CREDS" | awk '{print $3}')
+            # Store assumed credentials for use in build phase (target account operations)
+            export TARGET_AWS_ACCESS_KEY_ID=$(echo "$TEMP_CREDS" | awk '{print $1}')
+            export TARGET_AWS_SECRET_ACCESS_KEY=$(echo "$TEMP_CREDS" | awk '{print $2}')
+            export TARGET_AWS_SESSION_TOKEN=$(echo "$TEMP_CREDS" | awk '{print $3}')
 
-            # Verify credentials work
-            ASSUMED_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+            # Verify the assumed role credentials work
+            ASSUMED_ACCOUNT=$(AWS_ACCESS_KEY_ID="$TARGET_AWS_ACCESS_KEY_ID" \
+                              AWS_SECRET_ACCESS_KEY="$TARGET_AWS_SECRET_ACCESS_KEY" \
+                              AWS_SESSION_TOKEN="$TARGET_AWS_SESSION_TOKEN" \
+                              aws sts get-caller-identity --query Account --output text)
             if [ "$ASSUMED_ACCOUNT" != "$TARGET_ACCOUNT_ID" ]; then
                 echo "❌ ERROR: Assumed wrong account. Expected $TARGET_ACCOUNT_ID, got $ASSUMED_ACCOUNT"
                 exit 1
             fi
 
-            echo "✅ Successfully assumed role in account $TARGET_ACCOUNT_ID"
-            echo "✅ All subsequent operations will use target account credentials"
+            echo "✅ Assumed role in account $TARGET_ACCOUNT_ID (credentials saved for target operations)"
         else
-            echo "✅ Target account same as central - using current credentials"
+            echo "✅ Target account same as central - using current credentials for both operations"
+            # For same-account deployments, use current credentials for both
+            export TARGET_AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}"
+            export TARGET_AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}"
+            export TARGET_AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}"
         fi
         echo ""
 
@@ -157,8 +181,11 @@ phases:
         export TF_VAR_target_account_id="${TARGET_ACCOUNT_ID}"
         export TF_VAR_target_alias="${TARGET_ALIAS}"
 
-        # Build platform image (uses assumed target account credentials to push to target ECR)
+        # Build platform image (uses target account credentials to push to target ECR)
         echo "Building platform image (if needed)..."
+        AWS_ACCESS_KEY_ID="$TARGET_AWS_ACCESS_KEY_ID" \
+        AWS_SECRET_ACCESS_KEY="$TARGET_AWS_SECRET_ACCESS_KEY" \
+        AWS_SESSION_TOKEN="$TARGET_AWS_SESSION_TOKEN" \
         ./scripts/build-platform-image.sh
         echo ""
 
@@ -173,8 +200,18 @@ phases:
 
             echo "---------------------------------------------------"
             echo "Bootstrapping ArgoCD: $ALIAS ($ACCOUNT_ID) in $REGION"
-            echo "  Using assumed role credentials from pre_build phase"
             echo "  Central Account (for S3 state): ${CENTRAL_ACCOUNT_ID}"
+            echo ""
+
+            # Restore central account credentials for Terraform backend access
+            echo "Restoring central account credentials for Terraform backend access..."
+            export AWS_ACCESS_KEY_ID="${SAVE_AWS_ACCESS_KEY_ID}"
+            export AWS_SECRET_ACCESS_KEY="${SAVE_AWS_SECRET_ACCESS_KEY}"
+            export AWS_SESSION_TOKEN="${SAVE_AWS_SESSION_TOKEN}"
+
+            # Verify we're back to central account
+            CURRENT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+            echo "Current account: $CURRENT_ACCOUNT (central: $CENTRAL_ACCOUNT_ID)"
             echo ""
 
             # Configure Terraform region via environment variable (HashiCorp recommended approach)
@@ -191,7 +228,7 @@ phases:
             echo "  Region: $TF_STATE_REGION"
             echo ""
 
-            echo "Initializing Terraform..."
+            echo "Initializing Terraform (uses central account credentials for S3 backend)..."
             (
                 cd terraform/config/regional-cluster
                 terraform init -reconfigure \
@@ -201,8 +238,8 @@ phases:
                     -backend-config="use_lockfile=true"
             )
 
-            # No need to set ASSUME_ROLE_ARN - we're already running with target account credentials
-            # The bootstrap script will use the current AWS credentials
+            # Bootstrap ArgoCD
+            # The script reads terraform outputs with central creds, then assumes role internally for ECS/EKS
 
             echo "Validating ArgoCD configuration..."
             ./scripts/dev/validate-argocd-config.sh regional-cluster
@@ -236,13 +273,22 @@ phases:
             export REGION_ALIAS="${ALIAS}"
             export AWS_REGION="${REGION}"
 
+            # Set ASSUME_ROLE_ARN for cross-account bootstrap (if needed)
+            # The script will read terraform outputs with current (central) creds,
+            # then assume this role for ECS/EKS operations
+            if [ "$ACCOUNT_ID" != "$CENTRAL_ACCOUNT_ID" ]; then
+                export ASSUME_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/OrganizationAccountAccessRole"
+                echo "Bootstrap will assume role for target account operations: $ASSUME_ROLE_ARN"
+            fi
+
             echo "Bootstrap environment configuration:"
             echo "  ENVIRONMENT: ${ENVIRONMENT}"
             echo "  REGION_ALIAS: ${REGION_ALIAS}"
             echo "  AWS_REGION: ${AWS_REGION}"
             echo ""
 
-            # Call bootstrap script with cluster type argument
+            # Call bootstrap script with central account credentials (for terraform output reading)
+            # The script will internally assume ASSUME_ROLE_ARN for ECS/EKS operations
             ./scripts/bootstrap-argocd.sh regional-cluster 2>&1 | tee /tmp/bootstrap.log
             BOOTSTRAP_EXIT_CODE=${PIPESTATUS[0]}
 

@@ -161,6 +161,7 @@ phases:
         export TF_VAR_repository_branch="${REPOSITORY_BRANCH}"
         export TF_VAR_cluster_id="${CLUSTER_ID:-mgmt-cluster-01}"
         export TF_VAR_regional_aws_account_id="${REGIONAL_AWS_ACCOUNT_ID:-${CENTRAL_ACCOUNT_ID}}"
+        export TF_VAR_target_account_id="${TARGET_ACCOUNT_ID}"
 
         # Create placeholder Maestro agent secrets in target account (using assumed credentials from pre_build)
         echo "Ensuring Maestro agent secrets exist in account ${TARGET_ACCOUNT_ID}..."
