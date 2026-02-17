@@ -76,10 +76,10 @@ variable "cluster_id" {
 }
 
 variable "regional_aws_account_id" {
-  description = "AWS account ID where the regional cluster and IoT Core are hosted"
+  description = "AWS account ID where the regional cluster and IoT Core are hosted. Can be a 12-digit account ID or an SSM parameter reference (ssm:/path/to/parameter)"
   type        = string
   validation {
-    condition     = can(regex("^[0-9]{12}$", var.regional_aws_account_id))
-    error_message = "regional_aws_account_id must be a 12-digit AWS account ID"
+    condition     = can(regex("^([0-9]{12}|ssm:.+)$", var.regional_aws_account_id))
+    error_message = "regional_aws_account_id must be a 12-digit AWS account ID or an SSM parameter reference starting with 'ssm:'"
   }
 }

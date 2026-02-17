@@ -1,3 +1,44 @@
+# =============================================================================
+# Provider Configuration
+# =============================================================================
+
+# Default provider without role assumption (used for SSM parameter resolution)
+# This provider uses the current credentials to read SSM parameters
+provider "aws" {
+  alias  = "default"
+  region = var.region
+}
+
+# =============================================================================
+# SSM Parameter Resolution
+# =============================================================================
+
+# Conditionally fetch account ID from SSM if var starts with "ssm:"
+# Uses the default provider (no role assumption) to read SSM parameters
+data "aws_ssm_parameter" "target_account_id" {
+  provider = aws.default
+  count    = var.target_account_id != "" && startswith(var.target_account_id, "ssm:") ? 1 : 0
+  name     = trimprefix(var.target_account_id, "ssm:")
+}
+
+data "aws_ssm_parameter" "regional_aws_account_id" {
+  provider = aws.default
+  count    = startswith(var.regional_aws_account_id, "ssm:") ? 1 : 0
+  name     = trimprefix(var.regional_aws_account_id, "ssm:")
+}
+
+locals {
+  # Resolve target_account_id: SSM parameter, plain value, or empty string
+  resolved_target_account_id = var.target_account_id == "" ? "" : (
+    startswith(var.target_account_id, "ssm:") ? data.aws_ssm_parameter.target_account_id[0].value : var.target_account_id
+  )
+
+  # Resolve regional_aws_account_id: SSM parameter or plain value
+  resolved_regional_aws_account_id = startswith(var.regional_aws_account_id, "ssm:") ? data.aws_ssm_parameter.regional_aws_account_id[0].value : var.regional_aws_account_id
+}
+
+# Main provider with conditional role assumption for cross-account deployment
+# This provider is used for all resource provisioning
 provider "aws" {
   region = var.region
 
@@ -6,10 +47,10 @@ provider "aws" {
   # Backend (state) uses default CodeBuild credentials (central account)
   # Provider (resources) uses assumed role credentials (target account)
   dynamic "assume_role" {
-    for_each = var.target_account_id != "" ? [1] : []
+    for_each = local.resolved_target_account_id != "" ? [1] : []
     content {
-      role_arn     = "arn:aws:iam::${var.target_account_id}:role/OrganizationAccountAccessRole"
-      session_name = "terraform-management-${var.target_alias}"
+      role_arn     = "arn:aws:iam::${local.resolved_target_account_id}:role/OrganizationAccountAccessRole"
+      session_name = "terraform-management-${var.target_alias != "" ? var.target_alias : "default"}"
     }
   }
 
@@ -84,6 +125,6 @@ module "maestro_agent" {
   source = "../../modules/maestro-agent"
 
   cluster_id              = var.cluster_id
-  regional_aws_account_id = var.regional_aws_account_id
+  regional_aws_account_id = local.resolved_regional_aws_account_id
   eks_cluster_name        = module.management_cluster.cluster_name
 }
