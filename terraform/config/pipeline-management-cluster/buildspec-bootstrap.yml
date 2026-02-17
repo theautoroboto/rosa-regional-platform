@@ -205,16 +205,19 @@ phases:
         # No need to set ASSUME_ROLE_ARN - already using target account credentials
         echo "Bootstrapping ArgoCD..."
 
-        # Validate all required environment variables are set
-        if [[ -z "$ENVIRONMENT" ]]; then
+        # Initialize ENVIRONMENT with safe fallbacks (handles both ENVIRONMENT and TARGET_ENVIRONMENT)
+        ENVIRONMENT="${ENVIRONMENT:-${TARGET_ENVIRONMENT:-}}"
+
+        # Validate all required environment variables are set (using safe parameter expansion)
+        if [[ -z "${ENVIRONMENT:-}" ]]; then
             echo "❌ ERROR: ENVIRONMENT variable not set"
             exit 1
         fi
-        if [[ -z "$TARGET_ALIAS" ]]; then
+        if [[ -z "${TARGET_ALIAS:-}" ]]; then
             echo "❌ ERROR: TARGET_ALIAS variable not set"
             exit 1
         fi
-        if [[ -z "$TARGET_REGION" ]]; then
+        if [[ -z "${TARGET_REGION:-}" ]]; then
             echo "❌ ERROR: TARGET_REGION variable not set"
             exit 1
         fi

@@ -221,15 +221,18 @@ phases:
 
             echo "Bootstrapping ArgoCD..."
 
-            # Validate all required environment variables are set
-            if [[ -z "$ENVIRONMENT" ]]; then
+            # Initialize ENVIRONMENT with safe fallbacks (handles both ENVIRONMENT and TARGET_ENVIRONMENT)
+            local ENV_VALUE="${ENVIRONMENT:-${TARGET_ENVIRONMENT:-}}"
+
+            # Validate all required environment variables are set (using safe parameter expansion)
+            if [[ -z "${ENV_VALUE:-}" ]]; then
                 echo "❌ ERROR: ENVIRONMENT variable not set"
                 exit 1
             fi
 
             # Export standardized environment variables for bootstrap script
             # The script expects: ENVIRONMENT, REGION_ALIAS, AWS_REGION
-            export ENVIRONMENT="${ENVIRONMENT}"
+            export ENVIRONMENT="${ENV_VALUE}"
             export REGION_ALIAS="${ALIAS}"
             export AWS_REGION="${REGION}"
 
