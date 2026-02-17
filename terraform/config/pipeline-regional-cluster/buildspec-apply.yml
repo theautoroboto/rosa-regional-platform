@@ -58,100 +58,75 @@ phases:
         terraform version
         echo "✓ Terraform installation verified"
 
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Pre-flight Setup"
+      - echo "=========================================="
+      - |
+        set -euo pipefail
+
+        # Validate required environment variables
+        if [[ -z "$TARGET_ACCOUNT_ID" || -z "$TARGET_REGION" || -z "$TARGET_ALIAS" ]]; then
+            echo "❌ ERROR: Required environment variables not set"
+            echo "   TARGET_ACCOUNT_ID: ${TARGET_ACCOUNT_ID:-not set}"
+            echo "   TARGET_REGION: ${TARGET_REGION:-not set}"
+            echo "   TARGET_ALIAS: ${TARGET_ALIAS:-not set}"
+            exit 1
+        fi
+
+        # Get central account ID for state bucket
+        CENTRAL_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        export CENTRAL_ACCOUNT_ID
+
+        # Detect S3 state bucket region (bucket is in central account)
+        TF_STATE_BUCKET="terraform-state-${CENTRAL_ACCOUNT_ID}"
+        BUCKET_REGION=$(aws s3api get-bucket-location --bucket "$TF_STATE_BUCKET" --region us-east-1 --query LocationConstraint --output text)
+        if [ "$BUCKET_REGION" == "None" ] || [ "$BUCKET_REGION" == "null" ] || [ -z "$BUCKET_REGION" ]; then BUCKET_REGION="us-east-1"; fi
+        export TF_STATE_REGION=$BUCKET_REGION
+
+        echo "Configuration:"
+        echo "  Central Account: $CENTRAL_ACCOUNT_ID"
+        echo "  Target Account: $TARGET_ACCOUNT_ID"
+        echo "  Target Region: $TARGET_REGION"
+        echo "  Target Alias: $TARGET_ALIAS"
+        echo "  State Bucket Region: $TF_STATE_REGION"
+        echo ""
+
+        # Pass target account to Terraform - provider will handle assume role
+        export TF_VAR_target_account_id="${TARGET_ACCOUNT_ID}"
+        export TF_VAR_target_alias="${TARGET_ALIAS}"
+
+        if [ "$TARGET_ACCOUNT_ID" != "$CENTRAL_ACCOUNT_ID" ]; then
+            echo "✅ Terraform will assume OrganizationAccountAccessRole in account $TARGET_ACCOUNT_ID"
+        else
+            echo "✅ Deploying to central account - no role assumption needed"
+        fi
+        echo ""
+
   build:
     commands:
       - echo "Provisioning Regional Cluster Infrastructure..."
       - |
-        # Validate required environment variables
-        if [[ -z "$TARGET_ACCOUNT_ID" || -z "$TARGET_REGION" || -z "$TARGET_ALIAS" ]]; then
-            echo "❌ ERROR: Required environment variables not set"
-            echo "   TARGET_ACCOUNT_ID: ${TARGET_ACCOUNT_ID}"
-            echo "   TARGET_REGION: ${TARGET_REGION}"
-            echo "   TARGET_ALIAS: ${TARGET_ALIAS}"
-            exit 1
-        fi
+        set -euo pipefail
 
-        # Set Terraform backend configuration variables (stored in CENTRAL account)
-        CENTRAL_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        echo "Deploying to account: ${TARGET_ACCOUNT_ID}"
+        echo "  Region: ${TARGET_REGION}"
+        echo "  Alias: ${TARGET_ALIAS}"
+        echo ""
+
+        # Configure Terraform backend (state in central account, region detected in pre_build)
         export TF_STATE_BUCKET="terraform-state-${CENTRAL_ACCOUNT_ID}"
         export TF_STATE_KEY="regional-cluster/${TARGET_ALIAS}.tfstate"
 
-        # Dynamically detect bucket region
-        BUCKET_REGION=$(aws s3api get-bucket-location --bucket $TF_STATE_BUCKET --query LocationConstraint --output text)
-        if [ "$BUCKET_REGION" == "None" ] || [ "$BUCKET_REGION" == "null" ] || [ -z "$BUCKET_REGION" ]; then BUCKET_REGION="us-east-1"; fi
-        export TF_STATE_REGION=$BUCKET_REGION
-
-        echo "Using Terraform state (stored in central account):"
-        echo "  Bucket: $TF_STATE_BUCKET"
+        echo "Terraform backend:"
+        echo "  Bucket: $TF_STATE_BUCKET (central account: $CENTRAL_ACCOUNT_ID)"
         echo "  Key: $TF_STATE_KEY"
         echo "  Region: $TF_STATE_REGION"
+        echo ""
 
-        # Regional cluster is deployed to TARGET_ACCOUNT_ID (regional account)
-        echo "Deploying regional cluster to account: ${TARGET_ACCOUNT_ID}"
-        echo "  Region: ${TARGET_REGION}"
-        echo "  Alias: ${TARGET_ALIAS}"
-
-        # Generate override.tf for cross-account role assumption
-        ROLE_ARN="arn:aws:iam::${TARGET_ACCOUNT_ID}:role/OrganizationAccountAccessRole"
-        echo "Generating override.tf for cross-account access to ${TARGET_ACCOUNT_ID}..."
-        echo "provider \"aws\" {" > terraform/config/regional-cluster/override.tf
-        echo "  region = \"${TARGET_REGION}\"" >> terraform/config/regional-cluster/override.tf
-        echo "  assume_role {" >> terraform/config/regional-cluster/override.tf
-        echo "    role_arn = \"${ROLE_ARN}\"" >> terraform/config/regional-cluster/override.tf
-        echo "  }" >> terraform/config/regional-cluster/override.tf
-        echo "}" >> terraform/config/regional-cluster/override.tf
-
-        # Get temporary credentials for regional account to cleanup secrets
-        echo "Cleaning up any pending secrets in regional account..."
-        echo "Assuming role: ${ROLE_ARN}"
-        if ! CREDS=$(aws sts assume-role --role-arn "${ROLE_ARN}" --role-session-name "cleanup-secrets" --output json 2>&1); then
-            echo "❌ Failed to assume role: ${ROLE_ARN}"
-            echo "AWS CLI error output:"
-            echo "$CREDS"
-            exit 1
-        fi
-
-        # Validate credentials were returned
-        if ! echo "$CREDS" | jq -e '.Credentials' >/dev/null 2>&1; then
-            echo "❌ Role assumption succeeded but credentials not found in response"
-            echo "Role ARN: ${ROLE_ARN}"
-            echo "Response:"
-            echo "$CREDS"
-            exit 1
-        fi
-
-        REGIONAL_ACCESS_KEY=$(echo "$CREDS" | jq -r '.Credentials.AccessKeyId')
-        REGIONAL_SECRET_KEY=$(echo "$CREDS" | jq -r '.Credentials.SecretAccessKey')
-        REGIONAL_SESSION_TOKEN=$(echo "$CREDS" | jq -r '.Credentials.SessionToken')
-
-        # Final validation that credentials are not null/empty
-        if [[ -z "$REGIONAL_ACCESS_KEY" || "$REGIONAL_ACCESS_KEY" == "null" ]]; then
-            echo "❌ Failed to extract valid credentials from assume-role response"
-            exit 1
-        fi
-
-        echo "✓ Successfully assumed role and extracted credentials"
-
-        # Force delete any secrets that are scheduled for deletion
-        for SECRET_NAME in "maestro/server-cert" "maestro/server-config" "maestro/db-credentials"; do
-            if AWS_ACCESS_KEY_ID=$REGIONAL_ACCESS_KEY \
-               AWS_SECRET_ACCESS_KEY=$REGIONAL_SECRET_KEY \
-               AWS_SESSION_TOKEN=$REGIONAL_SESSION_TOKEN \
-               aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region "${TARGET_REGION}" 2>/dev/null | \
-               jq -e '.DeletedDate != null' >/dev/null 2>&1; then
-                echo "Force deleting pending secret: $SECRET_NAME"
-                AWS_ACCESS_KEY_ID=$REGIONAL_ACCESS_KEY \
-                AWS_SECRET_ACCESS_KEY=$REGIONAL_SECRET_KEY \
-                AWS_SESSION_TOKEN=$REGIONAL_SESSION_TOKEN \
-                aws secretsmanager delete-secret \
-                    --secret-id "$SECRET_NAME" \
-                    --force-delete-without-recovery \
-                    --region "${TARGET_REGION}" || echo "Could not delete $SECRET_NAME (may not exist)"
-            fi
-        done
-        echo "Secret cleanup complete"
-
-        # Set Terraform variables for regional cluster
+        # Set Terraform variables
+        export TF_VAR_region="${TARGET_REGION}"
         export TF_VAR_app_code="${APP_CODE}"
         export TF_VAR_service_phase="${SERVICE_PHASE}"
         export TF_VAR_cost_center="${COST_CENTER}"
@@ -160,15 +135,17 @@ phases:
         export TF_VAR_api_additional_allowed_accounts="${TARGET_ACCOUNT_ID}"
 
         echo "Terraform variables:"
+        echo "  Region: $TF_VAR_region"
+        echo "  Target Account: $TF_VAR_target_account_id (Terraform will assume role if cross-account)"
+        echo "  Target Alias: $TF_VAR_target_alias"
         echo "  App Code: $TF_VAR_app_code"
         echo "  Service Phase: $TF_VAR_service_phase"
         echo "  Cost Center: $TF_VAR_cost_center"
         echo "  Repository URL: $TF_VAR_repository_url"
         echo "  Repository Branch: $TF_VAR_repository_branch"
-        echo "  API Additional Allowed Accounts: $TF_VAR_api_additional_allowed_accounts (regional account)"
+        echo "  API Additional Allowed Accounts: $TF_VAR_api_additional_allowed_accounts"
       - make pipeline-provision-regional-infra
       - echo "Regional cluster infrastructure provisioned successfully."
-      - rm -f terraform/config/regional-cluster/override.tf
 
   post_build:
     commands:
