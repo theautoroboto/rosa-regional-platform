@@ -200,6 +200,14 @@ phases:
 
         echo "✅ Infrastructure provisioning complete."
 
+        # Build and push platform image
+        echo "Building platform image..."
+        make build-platform-image
+
+        # Bootstrap ArgoCD
+        echo "Bootstrapping ArgoCD..."
+        scripts/bootstrap-argocd.sh management-cluster
+
   post_build:
     commands:
       - echo "Infrastructure deployment complete."
