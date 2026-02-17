@@ -68,8 +68,14 @@ resource "aws_iam_role_policy" "codebuild_policy" {
           "codestar-connections:*",
           "iam:*",
           "s3:*",
-          "ssm:GetParameter",
-          "secretsmanager:GetSecretValue"
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:PutImage"
         ]
         Resource = "*"
       }
@@ -198,6 +204,7 @@ resource "aws_codebuild_project" "provisioner" {
     image                       = "aws/codebuild/amazonlinux2-x86_64-standard:4.0"
     type                        = "LINUX_CONTAINER"
     image_pull_credentials_type = "CODEBUILD"
+    privileged_mode             = true
 
     environment_variable {
       name  = "GITHUB_REPO_OWNER"

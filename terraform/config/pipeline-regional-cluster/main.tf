@@ -68,7 +68,6 @@ resource "aws_iam_role_policy" "codebuild_policy" {
           "apigateway:*",
           "iot:*",
           "rds:*",
-          "ssm:*",
           "secretsmanager:*",
           "elasticloadbalancing:*",
           "autoscaling:*",
@@ -213,9 +212,10 @@ resource "aws_codebuild_project" "regional_validate" {
 
   environment {
     compute_type                = "BUILD_GENERAL1_SMALL"
-    image                       = "aws/codebuild/amazonlinux2-x86_64-standard:4.0"
+    image                       = var.build_image
     type                        = "LINUX_CONTAINER"
     image_pull_credentials_type = "CODEBUILD"
+    privileged_mode             = true
 
     environment_variable {
       name  = "GITHUB_REPO_OWNER"
@@ -261,9 +261,10 @@ resource "aws_codebuild_project" "regional_apply" {
 
   environment {
     compute_type                = "BUILD_GENERAL1_SMALL"
-    image                       = "aws/codebuild/amazonlinux2-x86_64-standard:4.0"
+    image                       = var.build_image
     type                        = "LINUX_CONTAINER"
     image_pull_credentials_type = "CODEBUILD"
+    privileged_mode             = true
 
     environment_variable {
       name  = "GITHUB_REPO_OWNER"
@@ -321,9 +322,10 @@ resource "aws_codebuild_project" "regional_bootstrap" {
 
   environment {
     compute_type                = "BUILD_GENERAL1_SMALL"
-    image                       = "aws/codebuild/amazonlinux2-x86_64-standard:4.0"
+    image                       = var.build_image
     type                        = "LINUX_CONTAINER"
     image_pull_credentials_type = "CODEBUILD"
+    privileged_mode             = true
 
     environment_variable {
       name  = "GITHUB_REPO_OWNER"

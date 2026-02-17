@@ -71,6 +71,26 @@ phases:
         echo "Using state bucket: $TF_STATE_BUCKET"
         echo "Using lockfile-based state locking"
 
+        # Build Platform Image
+        echo "Building Platform Image..."
+        make build-platform-image
+
+        # Find the platform ECR repository
+        ECR_URL=$(aws ecr describe-repositories \
+          --query "repositories[?ends_with(repositoryName, '/platform')].repositoryUri | [0]" \
+          --output text)
+
+        # Compute image tag (sha256 of Dockerfile)
+        DOCKERFILE="terraform/modules/platform-image/Dockerfile"
+        if command -v sha256sum &>/dev/null; then
+          IMAGE_TAG=$(sha256sum "$DOCKERFILE" | cut -c1-12)
+        else
+          IMAGE_TAG=$(shasum -a 256 "$DOCKERFILE" | cut -c1-12)
+        fi
+
+        BUILD_IMAGE_URI="${ECR_URL}:${IMAGE_TAG}"
+        echo "Using Build Image: $BUILD_IMAGE_URI"
+
         # Helper function: Retry terraform apply with exponential backoff
         retry_terraform_apply() {
             local state_key="$1"
@@ -96,22 +116,6 @@ phases:
                     fi
                 fi
             done
-        }
-
-        # Helper function: Resolve account ID from SSM or Secrets Manager
-        resolve_account_id() {
-            local val="$1"
-            if [[ "$val" == ssm:* ]]; then
-                local param_name="${val#ssm:}"
-                echo "Resolving account ID from SSM: $param_name" >&2
-                aws ssm get-parameter --name "$param_name" --with-decryption --query Parameter.Value --output text
-            elif [[ "$val" == secretsmanager:* ]]; then
-                local secret_name="${val#secretsmanager:}"
-                echo "Resolving account ID from Secrets Manager: $secret_name" >&2
-                aws secretsmanager get-secret-value --secret-id "$secret_name" --query SecretString --output text
-            else
-                echo "$val"
-            fi
         }
 
         # Determine which environment to process (prefer existing, fall back to TARGET_ENVIRONMENT, then staging)
@@ -218,7 +222,7 @@ phases:
                     -backend-config="use_lockfile=true"
 
                 # Build terraform apply command with variables
-                TF_VARS="-var=github_repo_owner=${GITHUB_REPO_OWNER} -var=github_repo_name=${GITHUB_REPO_NAME} -var=github_branch=${GITHUB_BRANCH} -var=region=${AWS_REGION}"
+                TF_VARS="-var=github_repo_owner=${GITHUB_REPO_OWNER} -var=github_repo_name=${GITHUB_REPO_NAME} -var=github_branch=${GITHUB_BRANCH} -var=region=${AWS_REGION} -var=build_image=${BUILD_IMAGE_URI}"
                 [ -n "$GITHUB_CONNECTION_ARN" ] && TF_VARS="$TF_VARS -var=github_connection_arn=${GITHUB_CONNECTION_ARN}"
                 [ -n "$TARGET_ACCOUNT_ID" ] && TF_VARS="$TF_VARS -var=target_account_id=${TARGET_ACCOUNT_ID}"
                 [ -n "$AWS_REGION" ] && TF_VARS="$TF_VARS -var=target_region=${AWS_REGION}"
@@ -287,7 +291,7 @@ phases:
                         -backend-config="use_lockfile=true"
 
                     # Build terraform apply command with variables
-                    TF_VARS="-var=github_repo_owner=${GITHUB_REPO_OWNER} -var=github_repo_name=${GITHUB_REPO_NAME} -var=github_branch=${GITHUB_BRANCH} -var=region=${AWS_REGION}"
+                    TF_VARS="-var=github_repo_owner=${GITHUB_REPO_OWNER} -var=github_repo_name=${GITHUB_REPO_NAME} -var=github_branch=${GITHUB_BRANCH} -var=region=${AWS_REGION} -var=build_image=${BUILD_IMAGE_URI}"
                     [ -n "$GITHUB_CONNECTION_ARN" ] && TF_VARS="$TF_VARS -var=github_connection_arn=${GITHUB_CONNECTION_ARN}"
                     [ -n "$TARGET_ACCOUNT_ID" ] && TF_VARS="$TF_VARS -var=target_account_id=${TARGET_ACCOUNT_ID}"
                     [ -n "$AWS_REGION" ] && TF_VARS="$TF_VARS -var=target_region=${AWS_REGION}"

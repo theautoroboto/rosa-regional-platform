@@ -7,6 +7,7 @@ ARG K9S_VERSION=v0.32.5
 ARG STERN_VERSION=1.30.0
 ARG YQ_VERSION=v4.44.3
 ARG OC_VERSION=4.16.0
+ARG TERRAFORM_VERSION=1.14.3
 
 # Install base packages
 RUN microdnf install -y \
@@ -21,6 +22,8 @@ RUN microdnf install -y \
       procps-ng \
       bind-utils \
       shadow-utils \
+      python3 \
+      python3-pip \
       postgresql && \
     microdnf clean all && \
     rm -rf /var/cache/yum
@@ -61,7 +64,19 @@ RUN curl -sL "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/${OC_VER
     chmod +x /usr/local/bin/oc && \
     rm -f /tmp/kubectl /tmp/README.md
 
-# Run as non-root
-RUN mkdir -p /opt/platform && chown 65534:65534 /opt/platform
-ENV HOME=/opt/platform
-USER 65534
+# Install Terraform
+RUN curl -sL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" -o "/tmp/terraform.zip" && \
+    unzip /tmp/terraform.zip -d /usr/local/bin/ && \
+    rm -f /tmp/terraform.zip
+
+# Install Docker CLI (for CodeBuild usage)
+RUN curl -sL "https://download.docker.com/linux/static/stable/x86_64/docker-24.0.5.tgz" -o "/tmp/docker.tgz" && \
+    tar -xz -C /tmp -f /tmp/docker.tgz && \
+    mv /tmp/docker/docker /usr/local/bin/docker && \
+    chmod +x /usr/local/bin/docker && \
+    rm -rf /tmp/docker /tmp/docker.tgz
+
+# Run as root (required for CodeBuild Docker access and typical CI/CD operations)
+# Previous configuration used user 65534 (nobody), but removed to support CI/CD use cases
+ENV HOME=/root
+WORKDIR /root

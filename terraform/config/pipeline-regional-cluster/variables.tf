@@ -19,6 +19,11 @@ variable "github_connection_arn" {
   description = "ARN of the shared GitHub CodeStar connection"
 }
 
+variable "build_image" {
+  type        = string
+  description = "Docker image for CodeBuild"
+}
+
 variable "region" {
   type        = string
   description = "AWS Region for the Pipeline"
