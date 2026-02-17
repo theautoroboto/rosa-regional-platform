@@ -93,7 +93,7 @@ phases:
         set -euo pipefail
 
         # Validate required environment variables
-        if [[ -z "$TARGET_ACCOUNT_ID" || -z "$TARGET_REGION" || -z "$TARGET_ALIAS" ]]; then
+        if [[ -z "${TARGET_ACCOUNT_ID:-}" || -z "${TARGET_REGION:-}" || -z "${TARGET_ALIAS:-}" ]]; then
             echo "❌ ERROR: Required environment variables not set"
             echo "   TARGET_ACCOUNT_ID: ${TARGET_ACCOUNT_ID:-not set}"
             echo "   TARGET_REGION: ${TARGET_REGION:-not set}"

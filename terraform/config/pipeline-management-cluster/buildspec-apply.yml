@@ -80,11 +80,11 @@ phases:
         echo ""
 
         # Validate required environment variables
-        if [[ -z "$TARGET_ACCOUNT_ID" || -z "$TARGET_REGION" || -z "$TARGET_ALIAS" ]]; then
+        if [[ -z "${TARGET_ACCOUNT_ID:-}" || -z "${TARGET_REGION:-}" || -z "${TARGET_ALIAS:-}" ]]; then
             echo "❌ ERROR: Required environment variables not set"
-            echo "   TARGET_ACCOUNT_ID: ${TARGET_ACCOUNT_ID}"
-            echo "   TARGET_REGION: ${TARGET_REGION}"
-            echo "   TARGET_ALIAS: ${TARGET_ALIAS}"
+            echo "   TARGET_ACCOUNT_ID: ${TARGET_ACCOUNT_ID:-}"
+            echo "   TARGET_REGION: ${TARGET_REGION:-}"
+            echo "   TARGET_ALIAS: ${TARGET_ALIAS:-}"
             exit 1
         fi
 
