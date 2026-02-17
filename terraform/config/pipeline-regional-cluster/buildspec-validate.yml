@@ -151,8 +151,15 @@ phases:
             REGION=$(jq -r '.region // ""' "$file")
             ALIAS=$(jq -r '.alias // ""' "$file")
 
+            # Skip if any required field is missing
             if [[ -z "$ACCOUNT_ID" || -z "$REGION" || -z "$ALIAS" ]]; then
-                echo "Skipping invalid config in $file (missing account_id, region, or alias)"
+                echo "Skipping $file (missing account_id, region, or alias)"
+                continue
+            fi
+
+            # Skip if account_id is not a valid 12-digit AWS account ID
+            if [[ ! "$ACCOUNT_ID" =~ ^[0-9]{12}$ ]]; then
+                echo "Skipping $file (invalid account_id: $ACCOUNT_ID - must be 12 digits)"
                 continue
             fi
 
