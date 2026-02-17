@@ -70,22 +70,6 @@ resource "aws_iam_role_policy" "codebuild_policy" {
           "s3:*"
         ]
         Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ecr:GetAuthorizationToken",
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage",
-          "ecr:PutImage",
-          "ecr:InitiateLayerUpload",
-          "ecr:UploadLayerPart",
-          "ecr:CompleteLayerUpload",
-          "ecr:DescribeRepositories",
-          "ecr:DescribeImages"
-        ]
-        Resource = "*"
       }
     ]
   })
@@ -142,10 +126,7 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
           "codebuild:BatchGetBuilds",
           "codebuild:StartBuild"
         ]
-        Resource = [
-          aws_codebuild_project.image_builder.arn,
-          aws_codebuild_project.provisioner.arn
-        ]
+        Resource = aws_codebuild_project.provisioner.arn
       }
     ]
   })
@@ -198,30 +179,6 @@ resource "aws_s3_bucket_public_access_block" "pipeline_artifact" {
   ignore_public_acls      = true
   block_public_policy     = true
   restrict_public_buckets = true
-}
-
-# CodeBuild Project - Platform Image Builder
-resource "aws_codebuild_project" "image_builder" {
-  name          = "pipeline-provisioner-image-builder"
-  service_role  = aws_iam_role.codebuild_role.arn
-  build_timeout = 30
-
-  artifacts {
-    type = "CODEPIPELINE"
-  }
-
-  environment {
-    compute_type                = "BUILD_GENERAL1_SMALL"
-    image                       = "aws/codebuild/amazonlinux2-x86_64-standard:4.0"
-    type                        = "LINUX_CONTAINER"
-    image_pull_credentials_type = "CODEBUILD"
-    privileged_mode             = true # Required for Docker builds
-  }
-
-  source {
-    type      = "CODEPIPELINE"
-    buildspec = "terraform/config/pipeline-provisioner/buildspec-image.yml"
-  }
 }
 
 # CodeBuild Project - Pipeline Provisioner
@@ -293,8 +250,7 @@ resource "aws_codepipeline" "provisioner" {
             "deploy/${var.environment}/*/terraform/regional.json",
             "deploy/${var.environment}/*/terraform/management/*.json",
             "terraform/config/pipeline-regional-cluster/**",
-            "terraform/config/pipeline-management-cluster/**",
-            "terraform/modules/platform-image/Dockerfile"
+            "terraform/config/pipeline-management-cluster/**"
           ]
         }
       }
@@ -322,24 +278,6 @@ resource "aws_codepipeline" "provisioner" {
   }
 
   stage {
-    name = "BuildImage"
-
-    action {
-      name             = "BuildPlatformImage"
-      category         = "Build"
-      owner            = "AWS"
-      provider         = "CodeBuild"
-      input_artifacts  = ["source_output"]
-      output_artifacts = ["image_output"]
-      version          = "1"
-
-      configuration = {
-        ProjectName = aws_codebuild_project.image_builder.name
-      }
-    }
-  }
-
-  stage {
     name = "Provision"
 
     action {
@@ -347,7 +285,7 @@ resource "aws_codepipeline" "provisioner" {
       category         = "Build"
       owner            = "AWS"
       provider         = "CodeBuild"
-      input_artifacts  = ["image_output"]
+      input_artifacts  = ["source_output"]
       output_artifacts = ["provision_output"]
       version          = "1"
 
