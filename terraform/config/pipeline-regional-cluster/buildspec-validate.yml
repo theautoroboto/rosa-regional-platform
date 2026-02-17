@@ -143,7 +143,9 @@ phases:
         # Process Manual Overrides if present
         if [[ -n "$TARGET_ACCOUNT_ID" && -n "$TARGET_REGION" && -n "$TARGET_ALIAS" ]]; then
             echo "Detected Manual Configuration Override."
-            validate_target "$TARGET_ACCOUNT_ID" "$TARGET_REGION" "$TARGET_ALIAS"
+            # Resolve SSM parameter if needed
+            RESOLVED_ACCOUNT_ID=$(resolve_account_id "$TARGET_ACCOUNT_ID")
+            validate_target "$RESOLVED_ACCOUNT_ID" "$TARGET_REGION" "$TARGET_ALIAS"
         fi
 
         # Process JSON Files
