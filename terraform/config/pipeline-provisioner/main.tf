@@ -70,6 +70,22 @@ resource "aws_iam_role_policy" "codebuild_policy" {
           "s3:*"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:PutImage",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:DescribeRepositories",
+          "ecr:DescribeImages"
+        ]
+        Resource = "*"
       }
     ]
   })

@@ -58,11 +58,6 @@ phases:
         terraform version
         echo "✓ Terraform installation verified"
 
-  pre_build:
-    commands:
-      - echo "Building platform image..."
-      - make build-platform-image
-
   build:
     commands:
       - echo "Provisioning Pipelines from deploy/ directory structure..."

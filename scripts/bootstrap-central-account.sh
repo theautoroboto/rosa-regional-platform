@@ -200,6 +200,16 @@ terraform apply tfplan
 
 echo ""
 echo "==================================================="
+echo "Step 3: Building Platform Image"
+echo "==================================================="
+
+cd "${REPO_ROOT}"
+
+echo "Building and pushing platform image to ECR..."
+"${REPO_ROOT}/scripts/build-platform-image.sh"
+
+echo ""
+echo "==================================================="
 echo "✅ Bootstrap Complete!"
 echo "==================================================="
 echo ""
