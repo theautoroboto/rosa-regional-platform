@@ -127,8 +127,6 @@ phases:
         fi
         echo ""
 
-        # Pass target account to Terraform for consistency
-        export TF_VAR_target_account_id="${TARGET_ACCOUNT_ID}"
         export TF_VAR_target_alias="${TARGET_ALIAS}"
 
   build:
