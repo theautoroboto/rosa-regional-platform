@@ -6,7 +6,9 @@ CLUSTER_TYPE="${1:-}"
 
 # Set defaults from environment variables
 ENVIRONMENT="${ENVIRONMENT:-integration}"
-REGION_ALIAS="${REGION_ALIAS:-$(aws configure get region)}"
+# Prefer existing REGION_ALIAS, then AWS CLI, then default (handles empty CLI output)
+AWS_CLI_REGION=$(aws configure get region 2>/dev/null || true)
+REGION_ALIAS="${REGION_ALIAS:-${AWS_CLI_REGION:-us-east-1}}"
 AWS_REGION="${AWS_REGION:-$REGION_ALIAS}"
 
 if [[ -z "$CLUSTER_TYPE" ]]; then
