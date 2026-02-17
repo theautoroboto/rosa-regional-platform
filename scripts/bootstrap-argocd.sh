@@ -109,6 +109,8 @@ echo "Bootstrapping ArgoCD on cluster: $CLUSTER_NAME"
 
 # Run ECS task
 echo "Starting ECS task..."
+# Capture output and exit code separately to handle errors properly with set -e
+set +e
 RUN_TASK_OUTPUT=$(aws ecs run-task \
   --cluster "$ECS_CLUSTER_ARN" \
   --task-definition "$TASK_DEFINITION_ARN" \
@@ -131,9 +133,11 @@ RUN_TASK_OUTPUT=$(aws ecs run-task \
       ]
     }]
   }" 2>&1)
+RUN_TASK_EXIT_CODE=$?
+set -e
 
 # Check if run-task succeeded
-if echo "$RUN_TASK_OUTPUT" | grep -q '"failures":\s*\[\]'; then
+if [[ $RUN_TASK_EXIT_CODE -eq 0 ]] && echo "$RUN_TASK_OUTPUT" | grep -q '"failures":\s*\[\]'; then
   echo "ECS task created successfully."
   TASK_ARN=$(echo "$RUN_TASK_OUTPUT" | jq -r '.task.taskArn // .tasks[0].taskArn // empty')
   if [[ -z "$TASK_ARN" || "$TASK_ARN" == "null" ]]; then

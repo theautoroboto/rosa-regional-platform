@@ -146,7 +146,6 @@ phases:
         echo "  API Additional Allowed Accounts: $TF_VAR_api_additional_allowed_accounts"
       - make pipeline-provision-regional
       - make build-platform-image
-      - scripts/bootstrap-argocd.sh regional-cluster
       - echo "Regional cluster provisioned successfully."
 
   post_build:
