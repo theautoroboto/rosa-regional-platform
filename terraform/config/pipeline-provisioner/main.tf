@@ -67,7 +67,9 @@ resource "aws_iam_role_policy" "codebuild_policy" {
           "codebuild:*",
           "codestar-connections:*",
           "iam:*",
-          "s3:*"
+          "s3:*",
+          "ssm:GetParameter",
+          "secretsmanager:GetSecretValue"
         ]
         Resource = "*"
       }

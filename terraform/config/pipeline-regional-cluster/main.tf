@@ -68,6 +68,7 @@ resource "aws_iam_role_policy" "codebuild_policy" {
           "apigateway:*",
           "iot:*",
           "rds:*",
+          "ssm:*",
           "secretsmanager:*",
           "elasticloadbalancing:*",
           "autoscaling:*",
