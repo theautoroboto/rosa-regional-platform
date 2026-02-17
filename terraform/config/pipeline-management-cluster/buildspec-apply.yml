@@ -148,8 +148,8 @@ phases:
         export TF_VAR_app_code="${APP_CODE}"
         export TF_VAR_service_phase="${SERVICE_PHASE}"
         export TF_VAR_cost_center="${COST_CENTER}"
-        export TF_VAR_cluster_id="${CLUSTER_ID}"
-        export TF_VAR_regional_aws_account_id="${REGIONAL_AWS_ACCOUNT_ID}"
+        export TF_VAR_cluster_id="${CLUSTER_ID:-mgmt-cluster-01}"
+        export TF_VAR_regional_aws_account_id="${REGIONAL_AWS_ACCOUNT_ID:-${CENTRAL_ACCOUNT_ID}}"
         export TF_VAR_repository_url="${REPOSITORY_URL}"
         export TF_VAR_repository_branch="${REPOSITORY_BRANCH}"
 
