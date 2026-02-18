@@ -60,114 +60,54 @@ phases:
 
   pre_build:
     commands:
-      - echo "=========================================="
-      - echo "Pre-flight Setup"
-      - echo "=========================================="
-      - |
-        set -euo pipefail
-
-        # Get central account ID for state bucket
-        CENTRAL_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-        export CENTRAL_ACCOUNT_ID
-        echo "Central Account: $CENTRAL_ACCOUNT_ID"
-
-        # Detect S3 state bucket region (bucket is in central account)
-        TF_STATE_BUCKET="terraform-state-${CENTRAL_ACCOUNT_ID}"
-        BUCKET_REGION=$(aws s3api get-bucket-location --bucket "$TF_STATE_BUCKET" --region us-east-1 --query LocationConstraint --output text)
-        if [ "$BUCKET_REGION" == "None" ] || [ "$BUCKET_REGION" == "null" ] || [ -z "$BUCKET_REGION" ]; then BUCKET_REGION="us-east-1"; fi
-        export TF_STATE_REGION=$BUCKET_REGION
-        echo "State Bucket Region: $TF_STATE_REGION"
-        echo ""
-
-        # Validate required environment variables
-        if [[ -z "${TARGET_ACCOUNT_ID:-}" || -z "${TARGET_REGION:-}" || -z "${TARGET_ALIAS:-}" ]]; then
-            echo "❌ ERROR: Required environment variables not set"
-            echo "   TARGET_ACCOUNT_ID: ${TARGET_ACCOUNT_ID:-}"
-            echo "   TARGET_REGION: ${TARGET_REGION:-}"
-            echo "   TARGET_ALIAS: ${TARGET_ALIAS:-}"
-            exit 1
-        fi
-
-        echo "Target Account: $TARGET_ACCOUNT_ID"
-        echo "Target Region: $TARGET_REGION"
-        echo "Target Alias: $TARGET_ALIAS"
-
-        # Save central account credentials before assuming role
-        # These will be restored later for Terraform backend access
-        SAVE_AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}"
-        SAVE_AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}"
-        SAVE_AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}"
-
-        # Prepare target account credentials for Secrets Manager and ECR operations
-        # NOTE: We assume role only for target account operations, then restore central creds for Terraform
-        if [ "$TARGET_ACCOUNT_ID" != "$CENTRAL_ACCOUNT_ID" ]; then
-            ROLE_ARN="arn:aws:iam::${TARGET_ACCOUNT_ID}:role/OrganizationAccountAccessRole"
-            echo "Assuming role for target account operations: $ROLE_ARN"
-
-            if ! TEMP_CREDS=$(aws sts assume-role \
-                --role-arn "$ROLE_ARN" \
-                --role-session-name "pipeline-apply-${TARGET_ALIAS}" \
-                --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
-                --output text 2>&1); then
-                echo "❌ ERROR: Failed to assume role $ROLE_ARN"
-                echo "Error: $TEMP_CREDS"
-                exit 1
-            fi
-
-            # Store assumed credentials for use in build phase (target account operations)
-            export TARGET_AWS_ACCESS_KEY_ID=$(echo "$TEMP_CREDS" | awk '{print $1}')
-            export TARGET_AWS_SECRET_ACCESS_KEY=$(echo "$TEMP_CREDS" | awk '{print $2}')
-            export TARGET_AWS_SESSION_TOKEN=$(echo "$TEMP_CREDS" | awk '{print $3}')
-
-            # Verify the assumed role credentials work
-            ASSUMED_ACCOUNT=$(AWS_ACCESS_KEY_ID="$TARGET_AWS_ACCESS_KEY_ID" \
-                              AWS_SECRET_ACCESS_KEY="$TARGET_AWS_SECRET_ACCESS_KEY" \
-                              AWS_SESSION_TOKEN="$TARGET_AWS_SESSION_TOKEN" \
-                              aws sts get-caller-identity --query Account --output text)
-            if [ "$ASSUMED_ACCOUNT" != "$TARGET_ACCOUNT_ID" ]; then
-                echo "❌ ERROR: Assumed wrong account. Expected $TARGET_ACCOUNT_ID, got $ASSUMED_ACCOUNT"
-                exit 1
-            fi
-
-            echo "✅ Assumed role in account $TARGET_ACCOUNT_ID (credentials saved for target operations)"
-        else
-            echo "✅ Target account same as central - using current credentials for both operations"
-            # For same-account deployments, use current credentials for both
-            export TARGET_AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}"
-            export TARGET_AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}"
-            export TARGET_AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}"
-        fi
-        echo ""
+      - source scripts/pipeline-common/setup-apply-preflight.sh
+      - source scripts/pipeline-common/assume-target-role.sh "target account operations"
 
   build:
     commands:
-      - echo "Processing Management Cluster Configurations..."
+      - echo "=========================================="
+      - echo "Provisioning Management Cluster Infrastructure"
+      - echo "=========================================="
       - |
         set -euo pipefail
 
-        echo "Using credentials from pre_build phase"
-        echo "  Current identity: $(aws sts get-caller-identity --query Arn --output text)"
+        echo "Deploying to account: ${TARGET_ACCOUNT_ID}"
+        echo "  Region: ${TARGET_REGION}"
+        echo "  Alias: ${TARGET_ALIAS}"
         echo ""
 
-        # Export Variables for Makefile / Terraform Backend
-        # State is stored in the Central Account, but we use the Management Alias in the key
+        # Configure Terraform backend (state in central account, region detected in pre_build)
         export TF_STATE_BUCKET="terraform-state-${CENTRAL_ACCOUNT_ID}"
         export TF_STATE_KEY="management-cluster/${TARGET_ALIAS}.tfstate"
 
+        echo "Terraform backend:"
+        echo "  Bucket: $TF_STATE_BUCKET (central account: $CENTRAL_ACCOUNT_ID)"
+        echo "  Key: $TF_STATE_KEY"
+        echo "  Region: $TF_STATE_REGION"
+        echo ""
 
-        # Export Terraform Variables for Management Cluster
+        # Set Terraform variables
         export TF_VAR_region="${TARGET_REGION}"
         export TF_VAR_app_code="${APP_CODE}"
         export TF_VAR_service_phase="${SERVICE_PHASE}"
         export TF_VAR_cost_center="${COST_CENTER}"
         export TF_VAR_cluster_id="${CLUSTER_ID:-mgmt-cluster-01}"
         export TF_VAR_regional_aws_account_id="${REGIONAL_AWS_ACCOUNT_ID:-${CENTRAL_ACCOUNT_ID}}"
-        export TF_VAR_repository_url="${REPOSITORY_URL}"
-        export TF_VAR_repository_branch="${REPOSITORY_BRANCH}"
+        export TF_VAR_repository_url="${CODEBUILD_SOURCE_REPO_URL:-${REPOSITORY_URL}}"
+        export TF_VAR_repository_branch="${CODEBUILD_SOURCE_VERSION:-${REPOSITORY_BRANCH}}"
         export TF_VAR_target_account_id="${TARGET_ACCOUNT_ID}"
 
-        # Skip ArgoCD validation for infra provisioning
-        export SKIP_ARGOCD_VALIDATION=true
+        echo "Terraform variables:"
+        echo "  Region: $TF_VAR_region"
+        echo "  Target Account: $TF_VAR_target_account_id"
+        echo "  Cluster ID: $TF_VAR_cluster_id"
+        echo "  Regional AWS Account: $TF_VAR_regional_aws_account_id"
+        echo "  App Code: $TF_VAR_app_code"
+        echo "  Service Phase: $TF_VAR_service_phase"
+        echo "  Cost Center: $TF_VAR_cost_center"
+        echo "  Repository URL: $TF_VAR_repository_url"
+        echo "  Repository Branch: $TF_VAR_repository_branch"
+        echo ""
 
         # Create placeholder Maestro agent secrets in target account (using assumed credentials from pre_build)
         echo "Ensuring Maestro agent secrets exist in account ${TARGET_ACCOUNT_ID}..."
@@ -232,13 +172,7 @@ phases:
         fi
 
         echo "✅ Infrastructure provisioning complete."
-
-        # Build and push platform image (needs target account credentials for ECR access)
-        echo "Building platform image..."
-        AWS_ACCESS_KEY_ID="$TARGET_AWS_ACCESS_KEY_ID" \
-        AWS_SECRET_ACCESS_KEY="$TARGET_AWS_SECRET_ACCESS_KEY" \
-        AWS_SESSION_TOKEN="$TARGET_AWS_SESSION_TOKEN" \
-        make build-platform-image
+        echo "✅ Management cluster provisioned successfully."
 
   post_build:
     commands:
