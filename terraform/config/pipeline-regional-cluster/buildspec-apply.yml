@@ -98,8 +98,10 @@ phases:
         export TF_VAR_app_code="${APP_CODE}"
         export TF_VAR_service_phase="${SERVICE_PHASE}"
         export TF_VAR_cost_center="${COST_CENTER}"
-        export TF_VAR_repository_url="${CODEBUILD_SOURCE_REPO_URL:-${REPOSITORY_URL}}"
-        export TF_VAR_repository_branch="${CODEBUILD_SOURCE_VERSION:-${REPOSITORY_BRANCH}}"
+        # Use CODEBUILD_SOURCE_REPO_URL if set, otherwise fall back to REPOSITORY_URL
+        # Two-step approach needed because nested parameter expansion doesn't work with set -u
+        export TF_VAR_repository_url="${CODEBUILD_SOURCE_REPO_URL:-${REPOSITORY_URL:-}}"
+        export TF_VAR_repository_branch="${CODEBUILD_SOURCE_VERSION:-${REPOSITORY_BRANCH:-}}"
         export TF_VAR_api_additional_allowed_accounts="${TARGET_ACCOUNT_ID}"
 
         echo "Terraform variables:"
