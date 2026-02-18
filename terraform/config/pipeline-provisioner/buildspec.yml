@@ -58,20 +58,6 @@ phases:
         terraform version
         echo "✓ Terraform installation verified"
 
-  pre_build:
-    commands:
-      - echo "=========================================="
-      - echo "Building Platform Image"
-      - echo "=========================================="
-      - |
-        set -euo pipefail
-        # Build platform image in central account
-        # This image will be used by bootstrap pipelines
-        echo "Building platform image for central account..."
-        make build-platform-image
-        echo "✓ Platform image built successfully"
-        echo ""
-
   build:
     commands:
       - echo "Provisioning Pipelines from deploy/ directory structure..."
