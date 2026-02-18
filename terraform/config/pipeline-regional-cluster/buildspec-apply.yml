@@ -119,6 +119,10 @@ phases:
         echo "  Repository Branch: $TF_VAR_repository_branch"
         echo "  API Additional Allowed Accounts: $TF_VAR_api_additional_allowed_accounts"
         echo ""
+
+        # Export required environment variables for Makefile target
+        export REGION_ALIAS="${TARGET_ALIAS}"
+        export ENVIRONMENT="${ENVIRONMENT:-staging}"
       - make pipeline-provision-regional
       - echo "✅ Regional cluster provisioned successfully."
 

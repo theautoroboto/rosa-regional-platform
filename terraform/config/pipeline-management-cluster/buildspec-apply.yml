@@ -167,6 +167,11 @@ phases:
 
         # Run Infrastructure Provision (without ArgoCD bootstrap)
         echo "Running Infrastructure Provisioning..."
+
+        # Export required environment variables for Makefile target
+        export REGION_ALIAS="${TARGET_ALIAS}"
+        export ENVIRONMENT="${ENVIRONMENT:-staging}"
+
         set +e
         make pipeline-provision-management
         PROVISION_STATUS=$?
