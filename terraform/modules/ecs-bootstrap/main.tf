@@ -8,12 +8,6 @@ locals {
 # Current AWS region information
 data "aws_region" "current" {}
 
-# ECS Service-Linked Role
-# AWS automatically creates the AWSServiceRoleForECS service-linked role when you
-# create an ECS cluster or service for the first time. We don't need to explicitly
-# create it, as attempting to do so will fail if it already exists (one per account).
-# Reference: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/using-service-linked-roles.html
-
 # ECS Cluster for bootstrap tasks
 resource "aws_ecs_cluster" "bootstrap" {
   name = "${var.resource_name_base}-bootstrap"
