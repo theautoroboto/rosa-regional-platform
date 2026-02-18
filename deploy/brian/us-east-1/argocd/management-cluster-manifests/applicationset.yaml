@@ -5,8 +5,8 @@
 # - Edit config.yaml for config_revision references
 # - Then run: scripts/render.py
 #
-# Cluster Type: regional-cluster
-# Shard: us-east-1 (staging)
+# Cluster Type: management-cluster
+# Shard: us-east-1 (brian)
 # Config Revision: metadata.annotations.git_revision
 # Generated: render.py
 #
