@@ -14,9 +14,12 @@ variable "target_account_id" {
 }
 
 variable "target_alias" {
-  description = "Alias for the target deployment (used for role session naming)"
+  description = "Alias for the target deployment (used for resource naming and role session identification in CloudTrail)"
   type        = string
-  default     = ""
+  validation {
+    condition     = can(regex("^[a-z0-9-]+$", var.target_alias))
+    error_message = "target_alias must contain only lowercase letters, numbers, and hyphens"
+  }
 }
 
 variable "app_code" {

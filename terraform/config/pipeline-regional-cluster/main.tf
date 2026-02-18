@@ -300,6 +300,14 @@ resource "aws_codebuild_project" "regional_apply" {
       name  = "COST_CENTER"
       value = var.cost_center
     }
+    environment_variable {
+      name  = "REPOSITORY_URL"
+      value = var.repository_url
+    }
+    environment_variable {
+      name  = "REPOSITORY_BRANCH"
+      value = var.repository_branch
+    }
   }
 
   source {

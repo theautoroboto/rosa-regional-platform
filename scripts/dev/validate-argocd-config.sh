@@ -6,19 +6,19 @@ CLUSTER_TYPE="${1:-}"
 
 # Set defaults from environment variables
 ENVIRONMENT="${ENVIRONMENT:-integration}"
-# Prefer existing REGION_ALIAS, then AWS CLI, then default (handles empty CLI output)
-AWS_CLI_REGION=$(aws configure get region 2>/dev/null || true)
-REGION_ALIAS="${REGION_ALIAS:-${AWS_CLI_REGION:-us-east-1}}"
+REGION_ALIAS="${REGION_ALIAS:-}"
 
-if [[ -z "$CLUSTER_TYPE" ]]; then
-    echo "Usage: ENVIRONMENT=<env> REGION_ALIAS=<alias> $0 <cluster-type>"
+if [[ -z "$CLUSTER_TYPE" || -z "$REGION_ALIAS" ]]; then
+    echo "Usage: ENVIRONMENT=<env> REGION_ALIAS=<region-alias> $0 <cluster-type>"
     echo ""
     echo "Arguments:"
     echo "  cluster-type: management-cluster or regional-cluster"
     echo ""
-    echo "Environment variables (with defaults):"
+    echo "Required environment variables:"
+    echo "  REGION_ALIAS: The region alias from config.yaml (e.g., us-east-1, us-east-1-fedramp)"
+    echo ""
+    echo "Optional environment variables:"
     echo "  ENVIRONMENT (default: integration)"
-    echo "  REGION_ALIAS (default: current AWS CLI region or us-east-1)"
     exit 1
 fi
 
