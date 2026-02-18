@@ -174,7 +174,7 @@ phases:
         AWS_ACCESS_KEY_ID="$TARGET_AWS_ACCESS_KEY_ID" \
         AWS_SECRET_ACCESS_KEY="$TARGET_AWS_SECRET_ACCESS_KEY" \
         AWS_SESSION_TOKEN="$TARGET_AWS_SESSION_TOKEN" \
-        ./scripts/build-platform-image.sh
+        make build-platform-image
         echo ""
 
   build:
