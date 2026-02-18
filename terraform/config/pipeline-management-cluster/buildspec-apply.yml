@@ -188,8 +188,6 @@ phases:
   post_build:
     commands:
       - echo "Infrastructure deployment complete."
-      - echo "ArgoCD bootstrap will run in the next pipeline stage."
-
 artifacts:
   files:
     - '**/*'

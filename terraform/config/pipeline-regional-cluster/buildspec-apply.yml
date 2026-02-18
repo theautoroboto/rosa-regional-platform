@@ -123,18 +123,14 @@ phases:
         # Export required environment variables for Makefile target
         export REGION_ALIAS="${TARGET_ALIAS}"
         export ENVIRONMENT="${ENVIRONMENT:-staging}"
-      - make pipeline-provision-regional
-      - echo "✅ Regional cluster provisioned successfully."
+
+        # Run provisioning (in same shell to preserve exports)
+        make pipeline-provision-regional
+        echo "✅ Regional cluster provisioned successfully."
 
   post_build:
     commands:
       - echo "Infrastructure deployment complete."
-      - |
-        if [ -f terraform/config/regional-cluster/outputs.json ]; then
-          echo "=== Terraform Outputs ==="
-          cat terraform/config/regional-cluster/outputs.json
-        fi
-
 artifacts:
   files:
     - '**/*'
