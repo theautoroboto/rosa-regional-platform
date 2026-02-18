@@ -113,3 +113,16 @@ shards:
     management_clusters:
       - cluster_id: "mc01-{{ region_alias }}"
         account_id: "ssm:/infra/staging/us-east-1/mc01/account_id"
+
+  - region_alias: "fedramp-us-east-2"
+    aws_region: "us-east-2"
+    sector: "brian"
+    account_id: "ssm:/infra/staging/us-east-2/account_id"
+    terraform_vars:
+      account_id: "{{ account_id }}"
+      region: "{{ aws_region }}"
+      alias: "regional-{{region_alias}}"
+      region_alias: "{{ region_alias }}"
+    management_clusters:
+      - cluster_id: "mc01-{{ region_alias }}"
+        account_id: "ssm:/infra/staging/us-east-2/mc01/account_id"
