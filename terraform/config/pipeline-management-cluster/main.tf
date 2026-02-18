@@ -208,6 +208,17 @@ resource "aws_iam_role_policy" "codebuild_policy" {
           "logs:UntagLogGroup"
         ]
         Resource = "*"
+      },
+      # SSM - For resolving account IDs from Parameter Store
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters"
+        ]
+        Resource = [
+          "arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:parameter/infra/*"
+        ]
       }
     ]
   })
