@@ -16,9 +16,9 @@
 #   CENTRAL_ACCOUNT_ID  - Central AWS account ID
 #
 # Exports:
-#   SAVE_AWS_ACCESS_KEY_ID     - Saved central account credentials
-#   SAVE_AWS_SECRET_ACCESS_KEY - Saved central account credentials
-#   SAVE_AWS_SESSION_TOKEN     - Saved central account credentials
+#   CENTRAL_AWS_ACCESS_KEY_ID     - Saved central account credentials
+#   CENTRAL_AWS_SECRET_ACCESS_KEY - Saved central account credentials
+#   CENTRAL_AWS_SESSION_TOKEN     - Saved central account credentials
 #   TARGET_AWS_ACCESS_KEY_ID   - Target account credentials (or same as central)
 #   TARGET_AWS_SECRET_ACCESS_KEY - Target account credentials (or same as central)
 #   TARGET_AWS_SESSION_TOKEN   - Target account credentials (or same as central)
@@ -36,9 +36,9 @@ OPERATION_DESC=$1
 
 # Save central account credentials before assuming role
 # These will be restored later for Terraform backend access
-export SAVE_AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}"
-export SAVE_AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}"
-export SAVE_AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}"
+export CENTRAL_AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}"
+export CENTRAL_AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}"
+export CENTRAL_AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}"
 
 # Prepare target account credentials for the specified operations
 # NOTE: We assume role only for target account operations, then restore central creds for Terraform

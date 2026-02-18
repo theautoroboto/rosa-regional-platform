@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# setup-credentials.sh - Shared credential setup for CodeBuild pipelines
+# argo-bootstrap-preflight.sh - Pre-flight setup for ArgoCD bootstrap pipelines
 #
 # This script handles the common pre_build logic for both regional and management cluster
 # bootstrap pipelines:
@@ -18,9 +18,9 @@
 # Exports:
 #   CENTRAL_ACCOUNT_ID           - Central account ID (for S3 state bucket)
 #   TF_STATE_REGION              - Region where S3 state bucket is located
-#   SAVE_AWS_ACCESS_KEY_ID       - Saved central account credentials
-#   SAVE_AWS_SECRET_ACCESS_KEY   - Saved central account credentials
-#   SAVE_AWS_SESSION_TOKEN       - Saved central account credentials
+#   CENTRAL_AWS_ACCESS_KEY_ID       - Saved central account credentials
+#   CENTRAL_AWS_SECRET_ACCESS_KEY   - Saved central account credentials
+#   CENTRAL_AWS_SESSION_TOKEN       - Saved central account credentials
 #   TARGET_AWS_ACCESS_KEY_ID     - Target account credentials (for ECR/ECS/EKS)
 #   TARGET_AWS_SECRET_ACCESS_KEY - Target account credentials
 #   TARGET_AWS_SESSION_TOKEN     - Target account credentials

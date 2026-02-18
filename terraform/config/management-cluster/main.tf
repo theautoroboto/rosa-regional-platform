@@ -9,7 +9,7 @@ provider "aws" {
     for_each = var.target_account_id != "" ? [1] : []
     content {
       role_arn     = "arn:aws:iam::${var.target_account_id}:role/OrganizationAccountAccessRole"
-      session_name = "terraform-management-${var.target_alias != "" ? var.target_alias : "default"}"
+      session_name = "terraform-management-${var.target_alias}"
     }
   }
 

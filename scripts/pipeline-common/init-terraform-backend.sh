@@ -13,9 +13,9 @@
 #   alias: Cluster alias for state key
 #
 # Expected environment variables:
-#   SAVE_AWS_ACCESS_KEY_ID     - Saved central account credentials
-#   SAVE_AWS_SECRET_ACCESS_KEY - Saved central account credentials
-#   SAVE_AWS_SESSION_TOKEN     - Saved central account credentials
+#   CENTRAL_AWS_ACCESS_KEY_ID     - Saved central account credentials
+#   CENTRAL_AWS_SECRET_ACCESS_KEY - Saved central account credentials
+#   CENTRAL_AWS_SESSION_TOKEN     - Saved central account credentials
 #   CENTRAL_ACCOUNT_ID         - Central account ID (for S3 state bucket)
 #   TF_STATE_REGION            - Region where S3 state bucket is located
 
@@ -43,9 +43,9 @@ fi
 
 # Restore central account credentials for Terraform backend access
 echo "Restoring central account credentials for Terraform backend access..."
-export AWS_ACCESS_KEY_ID="${SAVE_AWS_ACCESS_KEY_ID}"
-export AWS_SECRET_ACCESS_KEY="${SAVE_AWS_SECRET_ACCESS_KEY}"
-export AWS_SESSION_TOKEN="${SAVE_AWS_SESSION_TOKEN}"
+export AWS_ACCESS_KEY_ID="${CENTRAL_AWS_ACCESS_KEY_ID}"
+export AWS_SECRET_ACCESS_KEY="${CENTRAL_AWS_SECRET_ACCESS_KEY}"
+export AWS_SESSION_TOKEN="${CENTRAL_AWS_SESSION_TOKEN}"
 
 # Verify we're back to central account
 CURRENT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)

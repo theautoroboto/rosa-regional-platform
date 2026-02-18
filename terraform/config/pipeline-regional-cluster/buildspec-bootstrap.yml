@@ -8,9 +8,9 @@ env:
     - TARGET_AWS_ACCESS_KEY_ID
     - TARGET_AWS_SECRET_ACCESS_KEY
     - TARGET_AWS_SESSION_TOKEN
-    - SAVE_AWS_ACCESS_KEY_ID
-    - SAVE_AWS_SECRET_ACCESS_KEY
-    - SAVE_AWS_SESSION_TOKEN
+    - CENTRAL_AWS_ACCESS_KEY_ID
+    - CENTRAL_AWS_SECRET_ACCESS_KEY
+    - CENTRAL_AWS_SESSION_TOKEN
     - TF_VAR_target_account_id
     - TF_VAR_target_alias
 
@@ -45,7 +45,7 @@ phases:
 
         kubectl version --client
         echo "✓ kubectl installation verified"
-      - chmod +x ./scripts/dev/validate-argocd-config.sh ./scripts/bootstrap-argocd.sh ./scripts/pipeline-common/setup-credentials.sh ./scripts/pipeline-common/init-terraform-backend.sh ./scripts/pipeline-common/bootstrap-argocd-wrapper.sh
+      - chmod +x ./scripts/dev/validate-argocd-config.sh ./scripts/bootstrap-argocd.sh ./scripts/pipeline-common/argo-bootstrap-preflight.sh ./scripts/pipeline-common/init-terraform-backend.sh ./scripts/pipeline-common/bootstrap-argocd-wrapper.sh
       - echo "Installing Terraform (needed to read outputs)..."
       - |
         set -euo pipefail
@@ -97,7 +97,7 @@ phases:
 
   pre_build:
     commands:
-      - source ./scripts/pipeline-common/setup-credentials.sh
+      - source ./scripts/pipeline-common/argo-bootstrap-preflight.sh
 
   build:
     commands:

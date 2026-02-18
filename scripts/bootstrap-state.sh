@@ -36,7 +36,7 @@ apply_bucket_security() {
 
     aws s3api put-public-access-block \
         --bucket "$BUCKET_NAME" \
-        --public-access-block-configuration "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=false,RestrictPublicBuckets=false" \
+        --public-access-block-configuration "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true" \
         --region "$REGION"
 
     # Get AWS Organization ID to restrict access to organization members only
