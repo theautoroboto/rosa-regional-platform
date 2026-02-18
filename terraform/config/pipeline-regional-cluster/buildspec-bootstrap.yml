@@ -8,18 +8,18 @@ env:
     - TARGET_AWS_ACCESS_KEY_ID
     - TARGET_AWS_SECRET_ACCESS_KEY
     - TARGET_AWS_SESSION_TOKEN
-    - SAVE_AWS_ACCESS_KEY_ID
-    - SAVE_AWS_SECRET_ACCESS_KEY
-    - SAVE_AWS_SESSION_TOKEN
+    - CENTRAL_AWS_ACCESS_KEY_ID
+    - CENTRAL_AWS_SECRET_ACCESS_KEY
+    - CENTRAL_AWS_SESSION_TOKEN
     - TF_VAR_target_account_id
     - TF_VAR_target_alias
 
 phases:
   install:
     commands:
-      - echo "Installing dependencies..."
-      - yum install -y unzip python3 jq gnupg2
-      - pip3 install boto3 pyyaml
+      - echo "Installing dependencies for ArgoCD bootstrap..."
+      - yum install -y jq gnupg2
+      - chmod +x ./scripts/bootstrap-argocd.sh ./scripts/pipeline-common/argo-bootstrap-preflight.sh ./scripts/pipeline-common/init-terraform-backend.sh ./scripts/pipeline-common/bootstrap-argocd-wrapper.sh
       - echo "Installing kubectl..."
       - |
         set -euo pipefail
@@ -45,7 +45,6 @@ phases:
 
         kubectl version --client
         echo "✓ kubectl installation verified"
-      - chmod +x scripts/dev/validate-argocd-config.sh scripts/bootstrap-argocd.sh scripts/pipeline-common/setup-credentials.sh
       - echo "Installing Terraform (needed to read outputs)..."
       - |
         set -euo pipefail
@@ -97,131 +96,37 @@ phases:
 
   pre_build:
     commands:
-      - source scripts/pipeline-common/setup-credentials.sh
+      - source ./scripts/pipeline-common/argo-bootstrap-preflight.sh
 
   build:
     commands:
-      - echo "Bootstrapping ArgoCD on Regional Cluster..."
+      - echo "=========================================="
+      - echo "ArgoCD Bootstrap for Regional Cluster"
+      - echo "=========================================="
       - |
-        bootstrap_target() {
-            local ACCOUNT_ID=$1
-            local REGION=$2
-            local ALIAS=$3
+        set -euo pipefail
 
-            echo "---------------------------------------------------"
-            echo "Bootstrapping ArgoCD: $ALIAS ($ACCOUNT_ID) in $REGION"
-            echo "  Central Account (for S3 state): ${CENTRAL_ACCOUNT_ID}"
-            echo ""
+        echo "Bootstrapping ArgoCD: ${TARGET_ALIAS} (${TARGET_ACCOUNT_ID}) in ${TARGET_REGION}"
+        echo "  Central Account (for S3 state): ${CENTRAL_ACCOUNT_ID}"
+        echo ""
 
-            # Restore central account credentials for Terraform backend access
-            echo "Restoring central account credentials for Terraform backend access..."
-            export AWS_ACCESS_KEY_ID="${SAVE_AWS_ACCESS_KEY_ID}"
-            export AWS_SECRET_ACCESS_KEY="${SAVE_AWS_SECRET_ACCESS_KEY}"
-            export AWS_SESSION_TOKEN="${SAVE_AWS_SESSION_TOKEN}"
+        # Initialize Terraform backend and verify outputs
+        # (restore credentials, configure backend, run terraform init, verify outputs)
+        ./scripts/pipeline-common/init-terraform-backend.sh regional-cluster "${TARGET_REGION}" "${TARGET_ALIAS}"
 
-            # Verify we're back to central account
-            CURRENT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-            echo "Current account: $CURRENT_ACCOUNT (central: $CENTRAL_ACCOUNT_ID)"
-            echo ""
-
-            # Configure Terraform region via environment variable (HashiCorp recommended approach)
-            export TF_VAR_region="${REGION}"
-
-            # Configure Terraform backend (state in central account, region detected in pre_build)
-            export TF_STATE_BUCKET="terraform-state-${CENTRAL_ACCOUNT_ID}"
-            export TF_STATE_KEY="regional-cluster/${ALIAS}.tfstate"
-
-
-            echo "Terraform backend configuration:"
-            echo "  Bucket: $TF_STATE_BUCKET (in central account)"
-            echo "  Key: $TF_STATE_KEY"
-            echo "  Region: $TF_STATE_REGION"
-            echo ""
-
-            echo "Initializing Terraform (uses central account credentials for S3 backend)..."
-            (
-                cd terraform/config/regional-cluster
-                terraform init -reconfigure \
-                    -backend-config="bucket=${TF_STATE_BUCKET}" \
-                    -backend-config="key=${TF_STATE_KEY}" \
-                    -backend-config="region=${TF_STATE_REGION}" \
-                    -backend-config="use_lockfile=true"
-            )
-
-            # Bootstrap ArgoCD
-            # The script reads terraform outputs with central creds, then assumes role internally for ECS/EKS
-
-            echo "Validating ArgoCD configuration..."
-            ./scripts/dev/validate-argocd-config.sh regional-cluster
-
-            echo "Checking terraform outputs are available..."
-            (
-                cd terraform/config/regional-cluster
-                if ! terraform output -json > /tmp/tf-outputs.json 2>&1; then
-                    echo "❌ Failed to read terraform outputs"
-                    cat /tmp/tf-outputs.json
-                    exit 1
-                fi
-                echo "✓ Terraform outputs available:"
-                jq 'keys' /tmp/tf-outputs.json
-            )
-
-            echo "Bootstrapping ArgoCD..."
-
-            # Initialize ENVIRONMENT with safe fallbacks (handles both ENVIRONMENT and TARGET_ENVIRONMENT)
-            local ENV_VALUE="${ENVIRONMENT:-${TARGET_ENVIRONMENT:-}}"
-
-            # Validate all required environment variables are set (using safe parameter expansion)
-            if [[ -z "${ENV_VALUE:-}" ]]; then
-                echo "❌ ERROR: ENVIRONMENT variable not set"
-                exit 1
-            fi
-
-            # Export standardized environment variables for bootstrap script
-            # The script expects: ENVIRONMENT, REGION_ALIAS, AWS_REGION
-            export ENVIRONMENT="${ENV_VALUE}"
-            export REGION_ALIAS="${ALIAS}"
-            export AWS_REGION="${REGION}"
-
-            # Set ASSUME_ROLE_ARN for cross-account bootstrap (if needed)
-            # The script will read terraform outputs with current (central) creds,
-            # then assume this role for ECS/EKS operations
-            if [ "$ACCOUNT_ID" != "$CENTRAL_ACCOUNT_ID" ]; then
-                export ASSUME_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/OrganizationAccountAccessRole"
-                echo "Bootstrap will assume role for target account operations: $ASSUME_ROLE_ARN"
-            fi
-
-            echo "Bootstrap environment configuration:"
-            echo "  ENVIRONMENT: ${ENVIRONMENT}"
-            echo "  REGION_ALIAS: ${REGION_ALIAS}"
-            echo "  AWS_REGION: ${AWS_REGION}"
-            echo ""
-
-            # Call bootstrap script with central account credentials (for terraform output reading)
-            # The script will internally assume ASSUME_ROLE_ARN for ECS/EKS operations
-            ./scripts/bootstrap-argocd.sh regional-cluster 2>&1 | tee /tmp/bootstrap.log
-            BOOTSTRAP_EXIT_CODE=${PIPESTATUS[0]}
-
-            echo ""
-            echo "=== Bootstrap Script Log ==="
-            cat /tmp/bootstrap.log
-            echo "=== End Bootstrap Log ==="
-            echo ""
-
-            if [ $BOOTSTRAP_EXIT_CODE -ne 0 ]; then
-                echo "❌ Bootstrap script failed with exit code $BOOTSTRAP_EXIT_CODE"
-                exit 1
-            fi
-        }
-
-        # This buildspec is called by the pipeline with TARGET_* environment variables
-        if [[ -n "$TARGET_ACCOUNT_ID" && -n "$TARGET_REGION" && -n "$TARGET_ALIAS" ]]; then
-            echo "Using pipeline configuration (TARGET_* variables)"
-            bootstrap_target "$TARGET_ACCOUNT_ID" "$TARGET_REGION" "$TARGET_ALIAS"
-        else
-            echo "ERROR: TARGET_* variables not set. This pipeline should be created by the provisioner."
+        # Set REGION_ALIAS from terraform config for validation
+        export ENVIRONMENT="${ENVIRONMENT:-staging}"
+        RC_CONFIG_FILE="deploy/${ENVIRONMENT}/${TARGET_REGION}/terraform/regional.json"
+        if [ ! -f "$RC_CONFIG_FILE" ]; then
+            echo "❌ ERROR: Regional cluster config not found: $RC_CONFIG_FILE"
+            echo "   This file should be generated by scripts/render.py"
             exit 1
         fi
+        export REGION_ALIAS=$(jq -r '.region_alias' "$RC_CONFIG_FILE")
+        echo "Extracted REGION_ALIAS from config: $REGION_ALIAS"
+
+        # Bootstrap ArgoCD (setup environment, call bootstrap script, handle logging)
+        ./scripts/pipeline-common/bootstrap-argocd-wrapper.sh regional-cluster "${TARGET_ACCOUNT_ID}"
 
   post_build:
     commands:
