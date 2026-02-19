@@ -4,10 +4,6 @@ env:
   shell: bash
 
 phases:
-  install:
-    commands:
-      - ./scripts/pipeline-common/terraform-install.sh
-
   build:
     commands:
       - echo "Provisioning Pipelines from deploy/ directory structure..."
@@ -215,6 +211,7 @@ phases:
                 # Repository URL and branch for cluster configuration
                 TF_VARS="$TF_VARS -var=repository_url=https://github.com/${GITHUB_REPOSITORY}.git"
                 TF_VARS="$TF_VARS -var=repository_branch=${GITHUB_BRANCH}"
+                TF_VARS="$TF_VARS -var=codebuild_image=${CODEBUILD_IMAGE}"
 
                 # Apply with retry logic
                 if retry_terraform_apply "pipelines/regional-${ENVIRONMENT}-${REGION_ALIAS}.tfstate"; then
@@ -306,6 +303,7 @@ phases:
                     # Repository URL and branch for cluster configuration
                     TF_VARS="$TF_VARS -var=repository_url=https://github.com/${GITHUB_REPOSITORY}.git"
                     TF_VARS="$TF_VARS -var=repository_branch=${GITHUB_BRANCH}"
+                    TF_VARS="$TF_VARS -var=codebuild_image=${CODEBUILD_IMAGE}"
 
                     # Apply with retry logic
                     if retry_terraform_apply "pipelines/management-${ENVIRONMENT}-${REGION_ALIAS}-${CLUSTER_NAME}.tfstate"; then

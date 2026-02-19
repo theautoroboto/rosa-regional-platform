@@ -33,3 +33,8 @@ variable "github_connection_arn" {
   type        = string
   description = "ARN of the shared GitHub CodeStar connection"
 }
+
+variable "codebuild_image" {
+  type        = string
+  description = "ECR image URI for CodeBuild projects (platform image with pre-installed tools)"
+}

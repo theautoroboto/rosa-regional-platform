@@ -30,4 +30,5 @@ module "pipeline_provisioner" {
   region                = var.region
   environment           = var.environment
   github_connection_arn = aws_codestarconnections_connection.github_shared.arn
+  codebuild_image       = module.platform_image.container_image
 }
