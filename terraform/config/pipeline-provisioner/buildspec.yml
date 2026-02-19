@@ -210,6 +210,9 @@ phases:
                 [ -n "$APP_CODE" ] && TF_VARS="$TF_VARS -var=app_code=${APP_CODE}"
                 [ -n "$SERVICE_PHASE" ] && TF_VARS="$TF_VARS -var=service_phase=${SERVICE_PHASE}"
                 [ -n "$COST_CENTER" ] && TF_VARS="$TF_VARS -var=cost_center=${COST_CENTER}"
+                # Repository URL and branch for cluster configuration
+                TF_VARS="$TF_VARS -var=repository_url=https://github.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}.git"
+                TF_VARS="$TF_VARS -var=repository_branch=${GITHUB_BRANCH}"
 
                 # Apply with retry logic
                 if retry_terraform_apply "pipelines/regional-${ENVIRONMENT}-${REGION_ALIAS}.tfstate"; then
