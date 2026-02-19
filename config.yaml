@@ -36,6 +36,21 @@ sectors:
           externalDns:
             domain: "dev.{{ aws_region }}.rosa.example.com"
 
+  - name: "cdoan-central"
+    environment: "cdoan-central"
+    terraform_vars:
+      app_code: "infra"
+      service_phase: "dev"
+      cost_center: "000"
+      environment: "{{ environment }}"
+    values:
+      management-cluster:
+        hypershift:
+          oidcStorageS3Bucket:
+            name: "hypershift-mc-{{ aws_region }}"
+            region: "{{ aws_region }}"
+          externalDns:
+            domain: "dev.{{ aws_region }}.rosa.example.com"
 
   - name: "staging"
     environment: "staging"
@@ -54,6 +69,25 @@ sectors:
             domain: "dev.{{ aws_region }}.rosa.example.com"
 
 region_deployments:
+  - name: "us-east-2"
+    aws_region: "us-east-2"
+    sector: "cdoan-central"
+    account_id: "754250776154"
+    terraform_vars:
+      account_id: "{{ account_id }}"
+      region: "{{ aws_region }}"
+      alias: "regional-{{region_alias}}"
+      region_alias: "{{ region_alias }}"
+      enable_bastion: true
+    management_clusters:
+      - cluster_id: "mc01-{{ region_alias }}"
+        account_id: "910485845704"
+    values:
+      regional-cluster:
+        maestro:
+          mqttEndpoint: "xxx.iot.{{ aws_region }}.amazonaws.com"
+        someOtherSetting: "value"
+
   - name: "us-east-1"
     aws_region: "us-east-1"
     sector: "integration"

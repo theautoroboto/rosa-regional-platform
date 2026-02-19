@@ -308,6 +308,14 @@ resource "aws_codebuild_project" "regional_apply" {
       name  = "REPOSITORY_BRANCH"
       value = var.repository_branch
     }
+    environment_variable {
+      name  = "ENVIRONMENT"
+      value = var.target_environment
+    }
+    environment_variable {
+      name  = "ENABLE_BASTION"
+      value = var.enable_bastion ? "true" : "false"
+    }
   }
 
   source {
@@ -363,6 +371,14 @@ resource "aws_codebuild_project" "regional_bootstrap" {
     environment_variable {
       name  = "AWS_REGION"
       value = var.target_region
+    }
+    environment_variable {
+      name  = "REPOSITORY_URL"
+      value = var.repository_url
+    }
+    environment_variable {
+      name  = "REPOSITORY_BRANCH"
+      value = var.repository_branch
     }
   }
 

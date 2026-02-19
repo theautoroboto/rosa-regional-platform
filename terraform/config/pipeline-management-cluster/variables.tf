@@ -88,3 +88,9 @@ variable "regional_aws_account_id" {
   type        = string
   description = "AWS account ID where the regional cluster is hosted"
 }
+
+variable "enable_bastion" {
+  type        = bool
+  description = "Enable ECS Fargate bastion for break-glass/development access to the cluster"
+  default     = false
+}

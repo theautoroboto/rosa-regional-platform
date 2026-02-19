@@ -51,8 +51,10 @@ fi
 
 # Export standardized environment variables for bootstrap script
 # The script expects: ENVIRONMENT, REGION_ALIAS, AWS_REGION
+# Both regional and management clusters use TARGET_REGION (AWS region) for REGION_ALIAS
+# since the directory structure uses AWS region: deploy/<env>/<aws_region>/argocd/
 export ENVIRONMENT="${ENVIRONMENT}"
-export REGION_ALIAS="${TARGET_ALIAS}"
+export REGION_ALIAS="${TARGET_REGION}"
 export AWS_REGION="${TARGET_REGION}"
 
 # Set ASSUME_ROLE_ARN for cross-account bootstrap (if needed)
