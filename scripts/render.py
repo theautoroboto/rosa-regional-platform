@@ -165,11 +165,11 @@ def resolve_templates(value: Any, context: Dict[str, Any]) -> Any:
 
 
 def resolve_region_deployments(config: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Resolve region deployments by merging environment defaults and processing templates.
+    """Resolve region deployments by merging sector defaults and processing templates.
 
-    Each region deployment's "environment" field links to a environment by name. The environment's
+    Each region deployment's "sector" field links to a sector by name. The sector's
     values, terraform_vars, and environment are inherited by the region deployment.
-    Region deployment-level settings override environment defaults via deep merge. All
+    Region deployment-level settings override sector defaults via deep merge. All
     string values are then template-processed using region deployment fields as context.
 
     Args:
@@ -178,18 +178,18 @@ def resolve_region_deployments(config: Dict[str, Any]) -> List[Dict[str, Any]]:
     Returns:
         List of fully resolved region deployment configurations
     """
-    environments = config.get('environments', [])
-    environments_by_name = {s['name']: s for s in environments}
+    sectors = config.get('sectors', [])
+    sectors_by_name = {s['name']: s for s in sectors}
     region_deployments = config.get('region_deployments', [])
 
     resolved = []
     for rd in region_deployments:
         rd = dict(rd)  # shallow copy to avoid mutating original
-        environment_name = rd.get('environment')
-        environment = environments_by_name.get(environment_name, {})
+        sector_name = rd.get('sector')
+        sector = sectors_by_name.get(sector_name, {})
 
-        # Inherit environment from environment
-        rd['environment'] = environment.get('environment', environment_name)
+        # Inherit environment from sector
+        rd['environment'] = sector.get('environment', sector_name)
 
         # Derive region_alias from name (backward compat for templates & K8s labels)
         rd['name'] = rd.get('name', rd.get('region', ''))
@@ -199,15 +199,15 @@ def resolve_region_deployments(config: Dict[str, Any]) -> List[Dict[str, Any]]:
         # Keep 'region' in template context as alias for aws_region (backward compat)
         rd['region'] = rd['aws_region']
 
-        # Deep merge: environment values are defaults, region deployment values override
-        environment_values = environment.get('values', {})
+        # Deep merge: sector values are defaults, region deployment values override
+        sector_values = sector.get('values', {})
         rd_values = rd.get('values', {})
-        rd['values'] = deep_merge(environment_values, rd_values)
+        rd['values'] = deep_merge(sector_values, rd_values)
 
         # Deep merge terraform_vars
-        environment_tf_vars = environment.get('terraform_vars', {})
+        sector_tf_vars = sector.get('terraform_vars', {})
         rd_tf_vars = rd.get('terraform_vars', {})
-        rd['terraform_vars'] = deep_merge(environment_tf_vars, rd_tf_vars)
+        rd['terraform_vars'] = deep_merge(sector_tf_vars, rd_tf_vars)
 
         # Template-process values, terraform_vars, and management_clusters using region deployment fields as context
         rd['values'] = resolve_templates(rd['values'], rd)
@@ -401,7 +401,7 @@ def render_region_deployment_terraform(
     terraform_dir = deploy_dir / environment / region_alias / 'terraform'
     terraform_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate regional.json from region deployment terraform_vars (already merged with environment)
+    # Generate regional.json from region deployment terraform_vars (already merged with sector)
     regional_file = terraform_dir / 'regional.json'
     regional_data = rd.get('terraform_vars', {}).copy()
 
@@ -552,7 +552,7 @@ def main() -> int:
     # Load config
     config = load_yaml(config_file)
 
-    # Resolve region deployments from config (merge environment defaults + template processing)
+    # Resolve region deployments from config (merge sector defaults + template processing)
     region_deployments = resolve_region_deployments(config)
     if not region_deployments:
         print("Error: No region deployments found in config.yaml", file=sys.stderr)
