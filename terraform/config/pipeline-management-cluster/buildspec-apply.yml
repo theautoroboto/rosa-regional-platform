@@ -87,7 +87,7 @@ phases:
         echo ""
 
         # Resolve REGIONAL_AWS_ACCOUNT_ID (supports both direct values and SSM parameter references)
-        RESOLVED_REGIONAL_ACCOUNT_ID="${REGIONAL_AWS_ACCOUNT_ID:-${CENTRAL_ACCOUNT_ID}}"
+        RESOLVED_REGIONAL_ACCOUNT_ID="${REGIONAL_AWS_ACCOUNT_ID}"
 
         # If value is an SSM parameter reference (starts with ssm:/), fetch from Parameter Store
         if [[ "$RESOLVED_REGIONAL_ACCOUNT_ID" =~ ^ssm:/ ]]; then
