@@ -101,10 +101,16 @@ phases:
         # Helper function: Resolve SSM parameter if value starts with "ssm:"
         resolve_ssm_param() {
             local value="$1"
+            local region="${2:-${AWS_REGION}}"  # Optional region parameter, defaults to AWS_REGION
             if [[ "$value" == ssm:* ]]; then
                 local param_name="${value#ssm:}"
-                echo "Resolving SSM parameter: $param_name" >&2
-                aws ssm get-parameter --name "$param_name" --query 'Parameter.Value' --output text
+                echo "Resolving SSM parameter: $param_name in region ${region}" >&2
+                aws ssm get-parameter \
+                    --name "$param_name" \
+                    --with-decryption \
+                    --query 'Parameter.Value' \
+                    --output text \
+                    --region "${region}"
             else
                 echo "$value"
             fi
@@ -269,18 +275,14 @@ phases:
                     # Use TARGET_ALIAS as cluster_id default if not specified
                     [ -z "$CLUSTER_ID" ] && CLUSTER_ID="${TARGET_ALIAS}"
 
-                    # Resolve REGIONAL_AWS_ACCOUNT_ID if it's an SSM parameter reference
-                    if [[ "$REGIONAL_AWS_ACCOUNT_ID" =~ ^ssm:/ ]]; then
-                        SSM_PARAM_NAME="${REGIONAL_AWS_ACCOUNT_ID#ssm:}"
-                        echo "  Resolving SSM parameter: $SSM_PARAM_NAME in region ${AWS_REGION}"
+                    # Resolve REGIONAL_AWS_ACCOUNT_ID using the helper function
+                    REGIONAL_AWS_ACCOUNT_ID=$(resolve_ssm_param "$REGIONAL_AWS_ACCOUNT_ID" "${AWS_REGION}")
 
-                        REGIONAL_AWS_ACCOUNT_ID=$(aws ssm get-parameter \
-                            --name "$SSM_PARAM_NAME" \
-                            --query 'Parameter.Value' \
-                            --output text \
-                            --region "${AWS_REGION}")
-
-                        echo "  ✓ Resolved regional account ID: $REGIONAL_AWS_ACCOUNT_ID"
+                    # Validate that REGIONAL_AWS_ACCOUNT_ID is non-empty
+                    if [[ -z "$REGIONAL_AWS_ACCOUNT_ID" ]]; then
+                        echo "❌ ERROR: REGIONAL_AWS_ACCOUNT_ID must be provided for region ${AWS_REGION}"
+                        echo "   Set regional_aws_account_id in your management cluster config (either direct account ID or ssm:/path/to/param)"
+                        exit 1
                     fi
 
                     echo "  AWS Region: $AWS_REGION"

@@ -96,11 +96,19 @@ phases:
 
             RESOLVED_REGIONAL_ACCOUNT_ID=$(aws ssm get-parameter \
                 --name "$SSM_PARAM_NAME" \
+                --with-decryption \
                 --query 'Parameter.Value' \
                 --output text \
                 --region "${TARGET_REGION}")
 
             echo "✓ Resolved regional account ID: $RESOLVED_REGIONAL_ACCOUNT_ID"
+        fi
+
+        # Validate that REGIONAL_AWS_ACCOUNT_ID is non-empty
+        if [[ -z "$RESOLVED_REGIONAL_ACCOUNT_ID" ]]; then
+            echo "❌ ERROR: REGIONAL_AWS_ACCOUNT_ID must be provided for region ${TARGET_REGION}"
+            echo "   Set this in your management cluster config (either direct account ID or ssm:/path/to/param)"
+            exit 1
         fi
 
         # Set Terraform variables
