@@ -98,6 +98,18 @@ phases:
             done
         }
 
+        # Helper function: Resolve SSM parameter if value starts with "ssm:"
+        resolve_ssm_param() {
+            local value="$1"
+            if [[ "$value" == ssm:* ]]; then
+                local param_name="${value#ssm:}"
+                echo "Resolving SSM parameter: $param_name" >&2
+                aws ssm get-parameter --name "$param_name" --query 'Parameter.Value' --output text
+            else
+                echo "$value"
+            fi
+        }
+
         # Determine which environment to process (prefer existing, fall back to TARGET_ENVIRONMENT, then staging)
         ENVIRONMENT="${ENVIRONMENT:-${TARGET_ENVIRONMENT:-staging}}"
 
@@ -178,6 +190,7 @@ phases:
                 # Extract configuration from JSON
                 AWS_REGION=$(jq -r '.region // .target_region // "us-east-1"' "$REGIONAL_CONFIG")
                 TARGET_ACCOUNT_ID=$(jq -r '.account_id // ""' "$REGIONAL_CONFIG")
+                TARGET_ACCOUNT_ID=$(resolve_ssm_param "$TARGET_ACCOUNT_ID")
                 TARGET_ALIAS=$(jq -r '.alias // ""' "$REGIONAL_CONFIG")
 
                 # Extract terraform vars with defaults
@@ -243,6 +256,7 @@ phases:
                     # Extract configuration from JSON
                     AWS_REGION=$(jq -r '.region // .target_region // "us-east-1"' "$mc_config")
                     TARGET_ACCOUNT_ID=$(jq -r '.account_id // ""' "$mc_config")
+                    TARGET_ACCOUNT_ID=$(resolve_ssm_param "$TARGET_ACCOUNT_ID")
                     TARGET_ALIAS=$(jq -r '.alias // ""' "$mc_config")
 
                     # Extract terraform vars with defaults
