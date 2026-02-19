@@ -98,6 +98,22 @@ phases:
             done
         }
 
+        # Helper function: Resolve account ID from SSM or Secrets Manager
+        resolve_account_id() {
+            local val="$1"
+            if [[ "$val" == ssm:* ]]; then
+                local param_name="${val#ssm:}"
+                echo "Resolving account ID from SSM: $param_name" >&2
+                aws ssm get-parameter --name "$param_name" --with-decryption --query Parameter.Value --output text
+            elif [[ "$val" == secretsmanager:* ]]; then
+                local secret_name="${val#secretsmanager:}"
+                echo "Resolving account ID from Secrets Manager: $secret_name" >&2
+                aws secretsmanager get-secret-value --secret-id "$secret_name" --query SecretString --output text
+            else
+                echo "$val"
+            fi
+        }
+
         # Determine which environment to process (prefer existing, fall back to TARGET_ENVIRONMENT, then staging)
         ENVIRONMENT="${ENVIRONMENT:-${TARGET_ENVIRONMENT:-staging}}"
 

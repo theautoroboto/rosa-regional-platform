@@ -1,3 +1,35 @@
+# =============================================================================
+# Provider Configuration
+# =============================================================================
+
+# Default provider without role assumption (used for SSM parameter resolution)
+# This provider uses the current credentials to read SSM parameters
+provider "aws" {
+  alias  = "default"
+  region = var.region
+}
+
+# =============================================================================
+# SSM Parameter Resolution
+# =============================================================================
+
+# Conditionally fetch account ID from SSM if var starts with "ssm:"
+# Uses the default provider (no role assumption) to read SSM parameters
+data "aws_ssm_parameter" "target_account_id" {
+  provider = aws.default
+  count    = var.target_account_id != "" && startswith(var.target_account_id, "ssm:") ? 1 : 0
+  name     = trimprefix(var.target_account_id, "ssm:")
+}
+
+locals {
+  # Resolve target_account_id: SSM parameter, plain value, or empty string
+  resolved_target_account_id = var.target_account_id == "" ? "" : (
+    startswith(var.target_account_id, "ssm:") ? data.aws_ssm_parameter.target_account_id[0].value : var.target_account_id
+  )
+}
+
+# Main provider with conditional role assumption for cross-account deployment
+# This provider is used for all resource provisioning
 provider "aws" {
   region = var.region
 

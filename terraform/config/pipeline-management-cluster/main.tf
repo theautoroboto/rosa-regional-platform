@@ -1,606 +1,130 @@
+# =============================================================================
+# Provider Configuration
+# =============================================================================
+
+# Default provider without role assumption (used for SSM parameter resolution)
+# This provider uses the current credentials to read SSM parameters
 provider "aws" {
+  alias  = "default"
   region = var.region
 }
 
-data "aws_caller_identity" "current" {}
-data "aws_region" "current" {}
+# =============================================================================
+# SSM Parameter Resolution
+# =============================================================================
+
+# Conditionally fetch account ID from SSM if var starts with "ssm:"
+# Uses the default provider (no role assumption) to read SSM parameters
+data "aws_ssm_parameter" "target_account_id" {
+  provider = aws.default
+  count    = var.target_account_id != "" && startswith(var.target_account_id, "ssm:") ? 1 : 0
+  name     = trimprefix(var.target_account_id, "ssm:")
+}
+
+data "aws_ssm_parameter" "regional_aws_account_id" {
+  provider = aws.default
+  count    = startswith(var.regional_aws_account_id, "ssm:") ? 1 : 0
+  name     = trimprefix(var.regional_aws_account_id, "ssm:")
+}
 
 locals {
-  # Create unique names per management pipeline using target_alias
-  # Fallback to region if alias not provided
-  name_suffix = var.target_alias != "" ? var.target_alias : var.region
+  # Resolve target_account_id: SSM parameter, plain value, or empty string
+  resolved_target_account_id = var.target_account_id == "" ? "" : (
+    startswith(var.target_account_id, "ssm:") ? data.aws_ssm_parameter.target_account_id[0].value : var.target_account_id
+  )
 
-  # Use hash-based naming for all resources to avoid length limits
-  # Hash of full alias ensures uniqueness while keeping names short
-  resource_hash  = substr(md5("management-${local.name_suffix}-${data.aws_caller_identity.current.account_id}"), 0, 12)
-  account_suffix = substr(data.aws_caller_identity.current.account_id, -8, 8)
-
-  # Resource naming patterns (all under 32 chars)
-  artifact_bucket_name   = "mc-${local.resource_hash}-${local.account_suffix}" # 24 chars
-  codebuild_role_name    = "mc-cb-${local.resource_hash}"                      # 18 chars
-  codepipeline_role_name = "mc-cp-${local.resource_hash}"                      # 18 chars
-  validate_project_name  = "mc-val-${local.resource_hash}"                     # 19 chars
-  apply_project_name     = "mc-app-${local.resource_hash}"                     # 19 chars
-  bootstrap_project_name = "mc-boot-${local.resource_hash}"                    # 21 chars
-  pipeline_name          = "mc-pipe-${local.resource_hash}"                    # 20 chars
+  # Resolve regional_aws_account_id: SSM parameter or plain value
+  resolved_regional_aws_account_id = startswith(var.regional_aws_account_id, "ssm:") ? data.aws_ssm_parameter.regional_aws_account_id[0].value : var.regional_aws_account_id
 }
 
-# Use shared GitHub Connection (passed from pipeline-provisioner)
-data "aws_codestarconnections_connection" "github" {
-  arn = var.github_connection_arn
-}
+# Main provider with conditional role assumption for cross-account deployment
+# This provider is used for all resource provisioning
+provider "aws" {
+  region = var.region
 
-# IAM Role for CodeBuild
-resource "aws_iam_role" "codebuild_role" {
-  name = local.codebuild_role_name
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "codebuild.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy" "codebuild_policy" {
-  role = aws_iam_role.codebuild_role.name
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
-        Resource = [
-          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_validate.name}",
-          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_validate.name}:*",
-          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_apply.name}",
-          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_apply.name}:*",
-          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_bootstrap.name}",
-          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_bootstrap.name}:*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:GetObjectVersion",
-          "s3:PutObject",
-          "s3:DeleteObject",
-          "s3:ListBucket",
-          "s3:GetBucketLocation"
-        ]
-        Resource = [
-          aws_s3_bucket.pipeline_artifact.arn,
-          "${aws_s3_bucket.pipeline_artifact.arn}/*",
-          "arn:aws:s3:::terraform-state-*",
-          "arn:aws:s3:::terraform-state-*/*"
-        ]
-      },
-      {
-        Effect   = "Allow"
-        Action   = "sts:AssumeRole"
-        Resource = "arn:aws:iam::*:role/OrganizationAccountAccessRole"
-      },
-      # Permissions for same-account operations (when TARGET_ACCOUNT_ID == CENTRAL_ACCOUNT_ID)
-      # In production, cross-account deployments should use OrganizationAccountAccessRole
-      # These permissions allow Terraform to provision management cluster infrastructure
-      {
-        Effect = "Allow"
-        Action = [
-          # EC2/VPC - Full permissions for networking infrastructure
-          "ec2:*",
-          # EKS - Full permissions for cluster management
-          "eks:*",
-          # ECS - For bootstrap cluster operations
-          "ecs:CreateCluster",
-          "ecs:DeleteCluster",
-          "ecs:DescribeClusters",
-          "ecs:ListClusters",
-          "ecs:PutClusterCapacityProviders",
-          "ecs:TagResource",
-          "ecs:UntagResource",
-          "ecs:RegisterTaskDefinition",
-          "ecs:DeregisterTaskDefinition",
-          "ecs:DescribeTaskDefinition",
-          "ecs:ListTaskDefinitions",
-          "ecs:RunTask",
-          "ecs:StopTask",
-          "ecs:DescribeTasks",
-          "ecs:ListTasks",
-          # ECR - For platform image repository
-          "ecr:CreateRepository",
-          "ecr:DeleteRepository",
-          "ecr:DescribeRepositories",
-          "ecr:ListTagsForResource",
-          "ecr:TagResource",
-          "ecr:UntagResource",
-          "ecr:SetRepositoryPolicy",
-          "ecr:GetRepositoryPolicy",
-          "ecr:DeleteRepositoryPolicy",
-          "ecr:GetLifecyclePolicy",
-          "ecr:PutLifecyclePolicy",
-          "ecr:DeleteLifecyclePolicy",
-          "ecr:PutImageScanningConfiguration",
-          "ecr:PutImageTagMutability",
-          # ECR - For building and pushing platform images
-          "ecr:GetAuthorizationToken",
-          "ecr:DescribeImages",
-          "ecr:BatchGetImage",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:PutImage",
-          "ecr:InitiateLayerUpload",
-          "ecr:UploadLayerPart",
-          "ecr:CompleteLayerUpload",
-          "ecr:BatchCheckLayerAvailability",
-          # Secrets Manager - For Maestro agent secrets
-          "secretsmanager:*",
-          # IAM - For creating cluster roles and policies
-          "iam:CreateRole",
-          "iam:DeleteRole",
-          "iam:GetRole",
-          "iam:PassRole",
-          "iam:PutRolePolicy",
-          "iam:DeleteRolePolicy",
-          "iam:GetRolePolicy",
-          "iam:ListRolePolicies",
-          "iam:ListAttachedRolePolicies",
-          "iam:AttachRolePolicy",
-          "iam:DetachRolePolicy",
-          "iam:CreatePolicy",
-          "iam:DeletePolicy",
-          "iam:GetPolicy",
-          "iam:GetPolicyVersion",
-          "iam:ListPolicyVersions",
-          "iam:CreatePolicyVersion",
-          "iam:DeletePolicyVersion",
-          "iam:TagRole",
-          "iam:TagPolicy",
-          "iam:UntagRole",
-          "iam:UntagPolicy",
-          "iam:CreateOpenIDConnectProvider",
-          "iam:DeleteOpenIDConnectProvider",
-          "iam:GetOpenIDConnectProvider",
-          "iam:TagOpenIDConnectProvider",
-          "iam:UntagOpenIDConnectProvider",
-          "iam:CreateServiceLinkedRole",
-          "iam:GetServiceLinkedRoleDeletionStatus",
-          "iam:DeleteServiceLinkedRole",
-          # KMS - For encryption
-          "kms:CreateKey",
-          "kms:CreateAlias",
-          "kms:DeleteAlias",
-          "kms:DescribeKey",
-          "kms:GetKeyPolicy",
-          "kms:GetKeyRotationStatus",
-          "kms:EnableKeyRotation",
-          "kms:DisableKeyRotation",
-          "kms:ListAliases",
-          "kms:ListResourceTags",
-          "kms:PutKeyPolicy",
-          "kms:ScheduleKeyDeletion",
-          "kms:TagResource",
-          "kms:UntagResource",
-          "kms:CreateGrant",
-          "kms:ListGrants",
-          "kms:RevokeGrant",
-          "kms:RetireGrant",
-          # Logs - For EKS control plane logs and ECS task logs
-          "logs:CreateLogGroup",
-          "logs:DeleteLogGroup",
-          "logs:DescribeLogGroups",
-          "logs:ListTagsLogGroup",
-          "logs:ListTagsForResource",
-          "logs:TagResource",
-          "logs:UntagResource",
-          "logs:PutRetentionPolicy",
-          "logs:TagLogGroup",
-          "logs:UntagLogGroup"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-# IAM Role for CodePipeline
-resource "aws_iam_role" "codepipeline_role" {
-  name = local.codepipeline_role_name
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "codepipeline.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy" "codepipeline_policy" {
-  role = aws_iam_role.codepipeline_role.name
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:GetObjectVersion",
-          "s3:GetBucketVersioning",
-          "s3:PutObjectAcl",
-          "s3:PutObject"
-        ]
-        Resource = [
-          aws_s3_bucket.pipeline_artifact.arn,
-          "${aws_s3_bucket.pipeline_artifact.arn}/*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "codestar-connections:UseConnection"
-        ]
-        Resource = data.aws_codestarconnections_connection.github.arn
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "codebuild:BatchGetBuilds",
-          "codebuild:StartBuild"
-        ]
-        Resource = [
-          aws_codebuild_project.management_validate.arn,
-          aws_codebuild_project.management_apply.arn,
-          aws_codebuild_project.management_bootstrap.arn
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "codebuild:StartBuild"
-        ]
-        Resource = [
-          "arn:aws:codebuild:*:*:project/${aws_codebuild_project.management_validate.name}",
-          "arn:aws:codebuild:*:*:project/${aws_codebuild_project.management_apply.name}",
-          "arn:aws:codebuild:*:*:project/${aws_codebuild_project.management_bootstrap.name}"
-        ]
-      }
-    ]
-  })
-}
-
-# S3 Bucket for Artifacts
-resource "aws_s3_bucket" "pipeline_artifact" {
-  bucket = local.artifact_bucket_name
-
-  timeouts {
-    create = "30s" # Fail fast if bucket creation hangs (explicit names should be instant)
-    delete = "2m"
-  }
-}
-
-resource "aws_s3_bucket_versioning" "pipeline_artifact" {
-  bucket = aws_s3_bucket.pipeline_artifact.id
-
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
-
-resource "aws_s3_bucket_lifecycle_configuration" "pipeline_artifact" {
-  bucket = aws_s3_bucket.pipeline_artifact.id
-
-  rule {
-    id     = "expire-old-artifacts"
-    status = "Enabled"
-
-    expiration {
-      days = 90
+  # Conditionally assume role for cross-account deployment
+  # When target_account_id is set, assume OrganizationAccountAccessRole in target account
+  # Backend (state) uses default CodeBuild credentials (central account)
+  # Provider (resources) uses assumed role credentials (target account)
+  dynamic "assume_role" {
+    for_each = local.resolved_target_account_id != "" ? [1] : []
+    content {
+      role_arn     = "arn:aws:iam::${local.resolved_target_account_id}:role/OrganizationAccountAccessRole"
+      session_name = "terraform-management-${var.target_alias != "" ? var.target_alias : "default"}"
     }
+  }
 
-    noncurrent_version_expiration {
-      noncurrent_days = 30
+  default_tags {
+    tags = {
+      app-code      = var.app_code
+      service-phase = var.service_phase
+      cost-center   = var.cost_center
     }
   }
 }
 
-resource "aws_s3_bucket_public_access_block" "pipeline_artifact" {
-  bucket = aws_s3_bucket.pipeline_artifact.id
+# Call the EKS cluster module for management cluster infrastructure
+module "management_cluster" {
+  source = "../../modules/eks-cluster"
 
-  block_public_acls       = true
-  ignore_public_acls      = true
-  block_public_policy     = true
-  restrict_public_buckets = true
+  # Required variables
+  cluster_type          = "management-cluster"
+  cluster_name_override = var.cluster_id
+
+  # Management cluster sizing
+  node_group_min_size     = 1
+  node_group_max_size     = 2
+  node_group_desired_size = 1
 }
 
-# CodeBuild Project - Validate
-resource "aws_codebuild_project" "management_validate" {
-  name          = local.validate_project_name
-  service_role  = aws_iam_role.codebuild_role.arn
-  build_timeout = 30
+# =============================================================================
+# Platform Image (shared ECR repository for bastion and bootstrap)
+# =============================================================================
 
-  artifacts {
-    type = "CODEPIPELINE"
-  }
+module "platform_image" {
+  source = "../../modules/platform-image"
 
-  environment {
-    compute_type                = "BUILD_GENERAL1_SMALL"
-    image                       = "aws/codebuild/amazonlinux2-x86_64-standard:4.0"
-    type                        = "LINUX_CONTAINER"
-    image_pull_credentials_type = "CODEBUILD"
-
-    environment_variable {
-      name  = "TARGET_ACCOUNT_ID"
-      value = var.target_account_id
-    }
-    environment_variable {
-      name  = "TARGET_REGION"
-      value = var.target_region
-    }
-    environment_variable {
-      name  = "TARGET_ALIAS"
-      value = var.target_alias
-    }
-    environment_variable {
-      name  = "APP_CODE"
-      value = var.app_code
-    }
-    environment_variable {
-      name  = "SERVICE_PHASE"
-      value = var.service_phase
-    }
-    environment_variable {
-      name  = "COST_CENTER"
-      value = var.cost_center
-    }
-    environment_variable {
-      name  = "REPOSITORY_URL"
-      value = var.repository_url
-    }
-    environment_variable {
-      name  = "REPOSITORY_BRANCH"
-      value = var.repository_branch
-    }
-    environment_variable {
-      name  = "CLUSTER_ID"
-      value = var.cluster_id
-    }
-    environment_variable {
-      name  = "REGIONAL_AWS_ACCOUNT_ID"
-      value = var.regional_aws_account_id
-    }
-  }
-
-  source {
-    type      = "CODEPIPELINE"
-    buildspec = "terraform/config/pipeline-management-cluster/buildspec-validate.yml"
-  }
+  resource_name_base = module.management_cluster.resource_name_base
 }
 
-# CodeBuild Project - Apply
-resource "aws_codebuild_project" "management_apply" {
-  name          = local.apply_project_name
-  service_role  = aws_iam_role.codebuild_role.arn
-  build_timeout = 60
+# Call the ECS bootstrap module for external bootstrap execution
+module "ecs_bootstrap" {
+  source = "../../modules/ecs-bootstrap"
 
-  artifacts {
-    type = "CODEPIPELINE"
-  }
+  vpc_id                        = module.management_cluster.vpc_id
+  private_subnets               = module.management_cluster.private_subnets
+  eks_cluster_arn               = module.management_cluster.cluster_arn
+  eks_cluster_name              = module.management_cluster.cluster_name
+  eks_cluster_security_group_id = module.management_cluster.cluster_security_group_id
+  resource_name_base            = module.management_cluster.resource_name_base
+  container_image               = module.platform_image.container_image
 
-  environment {
-    compute_type                = "BUILD_GENERAL1_SMALL"
-    image                       = "aws/codebuild/amazonlinux2-x86_64-standard:4.0"
-    type                        = "LINUX_CONTAINER"
-    image_pull_credentials_type = "CODEBUILD"
-
-    environment_variable {
-      name  = "TARGET_ACCOUNT_ID"
-      value = var.target_account_id
-    }
-    environment_variable {
-      name  = "TARGET_REGION"
-      value = var.target_region
-    }
-    environment_variable {
-      name  = "TARGET_ALIAS"
-      value = var.target_alias
-    }
-    environment_variable {
-      name  = "APP_CODE"
-      value = var.app_code
-    }
-    environment_variable {
-      name  = "SERVICE_PHASE"
-      value = var.service_phase
-    }
-    environment_variable {
-      name  = "COST_CENTER"
-      value = var.cost_center
-    }
-    environment_variable {
-      name  = "REPOSITORY_URL"
-      value = var.repository_url
-    }
-    environment_variable {
-      name  = "REPOSITORY_BRANCH"
-      value = var.repository_branch
-    }
-    environment_variable {
-      name  = "CLUSTER_ID"
-      value = var.cluster_id
-    }
-    environment_variable {
-      name  = "REGIONAL_AWS_ACCOUNT_ID"
-      value = var.regional_aws_account_id
-    }
-  }
-
-  source {
-    type      = "CODEPIPELINE"
-    buildspec = "terraform/config/pipeline-management-cluster/buildspec-apply.yml"
-  }
+  # ArgoCD bootstrap configuration
+  repository_url    = var.repository_url
+  repository_branch = var.repository_branch
 }
 
-# CodeBuild Project - Bootstrap ArgoCD
-resource "aws_codebuild_project" "management_bootstrap" {
-  name          = local.bootstrap_project_name
-  service_role  = aws_iam_role.codebuild_role.arn
-  build_timeout = 30
+# =============================================================================
+# Bastion Module (Optional)
+# =============================================================================
 
-  artifacts {
-    type = "CODEPIPELINE"
-  }
+module "bastion" {
+  count  = var.enable_bastion ? 1 : 0
+  source = "../../modules/bastion"
 
-  environment {
-    compute_type                = "BUILD_GENERAL1_SMALL"
-    image                       = "aws/codebuild/amazonlinux2-x86_64-standard:4.0"
-    type                        = "LINUX_CONTAINER"
-    image_pull_credentials_type = "CODEBUILD"
-    privileged_mode             = true # Required for Docker builds
-
-    environment_variable {
-      name  = "TARGET_ACCOUNT_ID"
-      value = var.target_account_id
-    }
-    environment_variable {
-      name  = "TARGET_ALIAS"
-      value = var.target_alias
-    }
-    environment_variable {
-      name  = "TARGET_REGION"
-      value = var.target_region
-    }
-    environment_variable {
-      name  = "ENVIRONMENT"
-      value = var.target_environment
-    }
-    environment_variable {
-      name  = "AWS_REGION"
-      value = var.target_region
-    }
-  }
-
-  source {
-    type      = "CODEPIPELINE"
-    buildspec = "terraform/config/pipeline-management-cluster/buildspec-bootstrap.yml"
-  }
+  resource_name_base        = module.management_cluster.resource_name_base
+  cluster_name              = module.management_cluster.cluster_name
+  cluster_endpoint          = module.management_cluster.cluster_endpoint
+  cluster_security_group_id = module.management_cluster.cluster_security_group_id
+  vpc_id                    = module.management_cluster.vpc_id
+  private_subnet_ids        = module.management_cluster.private_subnets
+  container_image           = module.platform_image.container_image
 }
 
-# CodePipeline
-resource "aws_codepipeline" "regional_pipeline" {
-  name          = local.pipeline_name
-  role_arn      = aws_iam_role.codepipeline_role.arn
-  pipeline_type = "V2"
+module "maestro_agent" {
+  source = "../../modules/maestro-agent"
 
-  # Ensure IAM policy is attached before creating pipeline
-  depends_on = [aws_iam_role_policy.codepipeline_policy]
-
-  artifact_store {
-    location = aws_s3_bucket.pipeline_artifact.bucket
-    type     = "S3"
-  }
-
-  trigger {
-    provider_type = "CodeStarSourceConnection"
-    git_configuration {
-      source_action_name = "Source"
-      push {
-        branches {
-          includes = [var.github_branch]
-        }
-        file_paths {
-          includes = ["deploy/*/${local.name_suffix}/terraform/management/**", "terraform/config/pipeline-management-cluster/**"]
-        }
-      }
-    }
-  }
-
-  stage {
-    name = "Source"
-
-    action {
-      name             = "Source"
-      category         = "Source"
-      owner            = "AWS"
-      provider         = "CodeStarSourceConnection"
-      version          = "1"
-      output_artifacts = ["source_output"]
-
-      configuration = {
-        ConnectionArn    = data.aws_codestarconnections_connection.github.arn
-        FullRepositoryId = "${var.github_repo_owner}/${var.github_repo_name}"
-        BranchName       = var.github_branch
-      }
-    }
-  }
-
-  stage {
-    name = "Validate"
-
-    action {
-      name             = "ValidateAndPlan"
-      category         = "Build"
-      owner            = "AWS"
-      provider         = "CodeBuild"
-      input_artifacts  = ["source_output"]
-      output_artifacts = ["validate_output"]
-      version          = "1"
-
-      configuration = {
-        ProjectName = aws_codebuild_project.management_validate.name
-      }
-    }
-  }
-
-  stage {
-    name = "Deploy"
-
-    action {
-      name             = "ApplyInfrastructure"
-      category         = "Build"
-      owner            = "AWS"
-      provider         = "CodeBuild"
-      input_artifacts  = ["validate_output"]
-      output_artifacts = ["apply_output"]
-      version          = "1"
-
-      configuration = {
-        ProjectName = aws_codebuild_project.management_apply.name
-      }
-    }
-  }
-
-  stage {
-    name = "Bootstrap-ArgoCD"
-
-    action {
-      name             = "BootstrapArgoCD"
-      category         = "Build"
-      owner            = "AWS"
-      provider         = "CodeBuild"
-      input_artifacts  = ["apply_output"]
-      output_artifacts = ["bootstrap_output"]
-      version          = "1"
-
-      configuration = {
-        ProjectName = aws_codebuild_project.management_bootstrap.name
-      }
-    }
-  }
+  cluster_id              = var.cluster_id
+  regional_aws_account_id = local.resolved_regional_aws_account_id
+  eks_cluster_name        = module.management_cluster.cluster_name
 }
