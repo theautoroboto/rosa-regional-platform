@@ -476,6 +476,14 @@ resource "aws_codebuild_project" "management_apply" {
       name  = "REGIONAL_AWS_ACCOUNT_ID"
       value = var.regional_aws_account_id
     }
+    environment_variable {
+      name  = "ENVIRONMENT"
+      value = var.target_environment
+    }
+    environment_variable {
+      name  = "ENABLE_BASTION"
+      value = var.enable_bastion ? "true" : "false"
+    }
   }
 
   source {
