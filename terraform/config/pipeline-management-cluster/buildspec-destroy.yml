@@ -5,12 +5,8 @@ env:
   exported-variables:
     - CENTRAL_ACCOUNT_ID
     - TF_STATE_REGION
-    - TARGET_AWS_ACCESS_KEY_ID
-    - TARGET_AWS_SECRET_ACCESS_KEY
-    - TARGET_AWS_SESSION_TOKEN
-    - CENTRAL_AWS_ACCESS_KEY_ID
-    - CENTRAL_AWS_SECRET_ACCESS_KEY
-    - CENTRAL_AWS_SESSION_TOKEN
+    - TF_VAR_target_account_id
+    - TF_VAR_target_alias
 
 phases:
   install:
@@ -21,7 +17,14 @@ phases:
   pre_build:
     commands:
       - source scripts/pipeline-common/setup-apply-preflight.sh
-      - source scripts/pipeline-common/assume-target-role.sh "target account operations"
+      - |
+        # Management cluster uses Terraform provider assume_role for cross-account access
+        if [ "$TARGET_ACCOUNT_ID" != "$CENTRAL_ACCOUNT_ID" ]; then
+            echo "✅ Terraform will assume OrganizationAccountAccessRole in account $TARGET_ACCOUNT_ID"
+        else
+            echo "✅ Destroying resources in central account - no role assumption needed"
+        fi
+        echo ""
 
   build:
     commands:

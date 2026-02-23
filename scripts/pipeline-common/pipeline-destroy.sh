@@ -127,44 +127,32 @@ if [ "$CLUSTER_TYPE" == "regional" ]; then
 elif [ "$CLUSTER_TYPE" == "management" ]; then
     export TF_VAR_cluster_id="${CLUSTER_ID:-mgmt-cluster-01}"
     export TF_VAR_target_account_id="${TARGET_ACCOUNT_ID}"
-    
+
     # Resolve Regional Account ID (SSM check)
     RESOLVED_REGIONAL_ACCOUNT_ID="${REGIONAL_AWS_ACCOUNT_ID}"
     if [[ "$RESOLVED_REGIONAL_ACCOUNT_ID" =~ ^ssm:/ ]]; then
         SSM_PARAM_NAME="${RESOLVED_REGIONAL_ACCOUNT_ID#ssm:}"
         echo "Resolving SSM parameter: $SSM_PARAM_NAME in region ${TARGET_REGION}"
 
-        # Using current credentials (assumed target role)
+        # Using current credentials (CodeBuild IAM role)
         RESOLVED_REGIONAL_ACCOUNT_ID=$(aws ssm get-parameter \
             --name "$SSM_PARAM_NAME" \
             --with-decryption \
             --query 'Parameter.Value' \
             --output text \
             --region "${TARGET_REGION}")
-            
+
         echo "✓ Resolved regional account ID"
     fi
-    
+
     if [[ -z "$RESOLVED_REGIONAL_ACCOUNT_ID" ]]; then
         echo "❌ ERROR: REGIONAL_AWS_ACCOUNT_ID is empty or could not be resolved."
         exit 1
     fi
     export TF_VAR_regional_aws_account_id="${RESOLVED_REGIONAL_ACCOUNT_ID}"
-    
-    # Restore central account credentials for Terraform backend access
-    echo "Restoring central account credentials for Terraform backend access..."
-    if [[ -z "${CENTRAL_AWS_ACCESS_KEY_ID:-}" ]]; then
-        echo "❌ Error: CENTRAL_AWS_ACCESS_KEY_ID not saved. Cannot restore backend access."
-        exit 1
-    fi
-    
-    export AWS_ACCESS_KEY_ID="${CENTRAL_AWS_ACCESS_KEY_ID}"
-    export AWS_SECRET_ACCESS_KEY="${CENTRAL_AWS_SECRET_ACCESS_KEY}"
-    export AWS_SESSION_TOKEN="${CENTRAL_AWS_SESSION_TOKEN}"
-    
-    # Verify restoration
-    CURRENT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-    echo "Restored identity account: $CURRENT_ACCOUNT (should be Central: $CENTRAL_ACCOUNT_ID)"
+
+    # Management cluster uses Terraform provider assume_role for cross-account access
+    # Current credentials (CodeBuild role) are sufficient to access the backend in Central account
 fi
 
 echo "Running make target: $MAKE_TARGET"
