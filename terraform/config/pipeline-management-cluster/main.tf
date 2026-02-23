@@ -554,6 +554,22 @@ resource "aws_codebuild_project" "management_destroy" {
     image_pull_credentials_type = "CODEBUILD"
 
     environment_variable {
+      name  = "GITHUB_REPO_OWNER"
+      value = var.github_repo_owner
+    }
+    environment_variable {
+      name  = "GITHUB_REPO_NAME"
+      value = var.github_repo_name
+    }
+    environment_variable {
+      name  = "GITHUB_BRANCH"
+      value = var.github_branch
+    }
+    environment_variable {
+      name  = "GITHUB_CONNECTION_ARN"
+      value = var.github_connection_arn
+    }
+    environment_variable {
       name  = "TARGET_ACCOUNT_ID"
       value = var.target_account_id
     }

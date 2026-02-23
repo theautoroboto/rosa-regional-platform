@@ -441,6 +441,10 @@ resource "aws_codebuild_project" "regional_destroy" {
       value = var.github_branch
     }
     environment_variable {
+      name  = "GITHUB_CONNECTION_ARN"
+      value = var.github_connection_arn
+    }
+    environment_variable {
       name  = "TARGET_ACCOUNT_ID"
       value = var.target_account_id
     }
