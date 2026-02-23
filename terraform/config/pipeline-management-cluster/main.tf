@@ -68,7 +68,9 @@ resource "aws_iam_role_policy" "codebuild_policy" {
           "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_apply.name}",
           "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_apply.name}:*",
           "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_bootstrap.name}",
-          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_bootstrap.name}:*"
+          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_bootstrap.name}:*",
+          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_destroy.name}",
+          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_destroy.name}:*"
         ]
       },
       {
@@ -206,7 +208,16 @@ resource "aws_iam_role_policy" "codebuild_policy" {
           "logs:UntagResource",
           "logs:PutRetentionPolicy",
           "logs:TagLogGroup",
-          "logs:UntagLogGroup"
+          "logs:UntagLogGroup",
+          # CodeStar Connections - For querying GitHub connection during pipeline destroy
+          "codestar-connections:ListConnections",
+          "codestar-connections:GetConnection",
+          # CodeBuild - For destroying CodeBuild projects during pipeline destroy
+          "codebuild:DeleteProject",
+          "codebuild:BatchGetProjects",
+          # CodePipeline - For destroying CodePipeline during pipeline destroy
+          "codepipeline:DeletePipeline",
+          "codepipeline:GetPipeline"
         ]
         Resource = "*"
       }

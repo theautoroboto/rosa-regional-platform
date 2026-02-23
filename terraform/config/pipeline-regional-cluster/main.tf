@@ -73,7 +73,10 @@ resource "aws_iam_role_policy" "codebuild_policy" {
           "elasticloadbalancing:*",
           "autoscaling:*",
           "cloudwatch:*",
-          "tag:*"
+          "tag:*",
+          "codestar-connections:*",
+          "codebuild:*",
+          "codepipeline:*"
         ]
         Resource = "*"
       },
