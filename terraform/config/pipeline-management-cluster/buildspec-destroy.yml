@@ -1,0 +1,34 @@
+version: 0.2
+
+env:
+  shell: bash
+  exported-variables:
+    - CENTRAL_ACCOUNT_ID
+    - TF_STATE_REGION
+    - TARGET_AWS_ACCESS_KEY_ID
+    - TARGET_AWS_SECRET_ACCESS_KEY
+    - TARGET_AWS_SESSION_TOKEN
+    - CENTRAL_AWS_ACCESS_KEY_ID
+    - CENTRAL_AWS_SECRET_ACCESS_KEY
+    - CENTRAL_AWS_SESSION_TOKEN
+
+phases:
+  install:
+    commands:
+      - ./scripts/pipeline-common/install-terraform.sh
+
+  pre_build:
+    commands:
+      - source scripts/pipeline-common/setup-apply-preflight.sh
+      - source scripts/pipeline-common/assume-target-role.sh "target account operations"
+
+  build:
+    commands:
+      - ./scripts/pipeline-common/pipeline-destroy.sh management
+
+  post_build:
+    commands:
+      - echo "Destroy phase complete."
+artifacts:
+  files:
+    - '**/*'

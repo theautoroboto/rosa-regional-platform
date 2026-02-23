@@ -170,6 +170,30 @@ pipeline-provision-management: require-tf-state-vars
 			-backend-config="use_lockfile=true" && \
 		terraform apply -auto-approve
 
+# Pipeline destroy for regional cluster (Non-interactive)
+pipeline-destroy-regional: require-tf-state-vars
+	@echo "🗑️  Destroying regional cluster infrastructure (Pipeline Mode)..."
+	@echo "📍 Terraform Directory: terraform/config/regional-cluster"
+	@cd terraform/config/regional-cluster && \
+		terraform init -reconfigure \
+			-backend-config="bucket=$${TF_STATE_BUCKET}" \
+			-backend-config="key=$${TF_STATE_KEY}" \
+			-backend-config="region=$${TF_STATE_REGION}" \
+			-backend-config="use_lockfile=true" && \
+		terraform destroy -auto-approve
+
+# Pipeline destroy for management cluster (Non-interactive)
+pipeline-destroy-management: require-tf-state-vars
+	@echo "🗑️  Destroying management cluster infrastructure (Pipeline Mode)..."
+	@echo "📍 Terraform Directory: terraform/config/management-cluster"
+	@cd terraform/config/management-cluster && \
+		terraform init -reconfigure \
+			-backend-config="bucket=$${TF_STATE_BUCKET}" \
+			-backend-config="key=$${TF_STATE_KEY}" \
+			-backend-config="region=$${TF_STATE_REGION}" \
+			-backend-config="use_lockfile=true" && \
+		terraform destroy -auto-approve
+
 # Destroy management cluster and all resources
 destroy-management:
 	@echo "🗑️  Destroying management cluster..."
