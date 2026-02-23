@@ -73,6 +73,8 @@ resource "aws_iam_role_policy" "codebuild_policy" {
           "elasticloadbalancing:*",
           "autoscaling:*",
           "cloudwatch:*",
+          "codebuild:*",
+          "codepipeline:*",
           "tag:*"
         ]
         Resource = "*"
@@ -303,6 +305,10 @@ resource "aws_codebuild_project" "regional_apply" {
       value = var.github_branch
     }
     environment_variable {
+      name  = "GITHUB_CONNECTION_ARN"
+      value = var.github_connection_arn
+    }
+    environment_variable {
       name  = "TARGET_ACCOUNT_ID"
       value = var.target_account_id
     }
@@ -333,14 +339,6 @@ resource "aws_codebuild_project" "regional_apply" {
     environment_variable {
       name  = "REPOSITORY_BRANCH"
       value = var.repository_branch
-    }
-    environment_variable {
-      name  = "ENVIRONMENT"
-      value = var.target_environment
-    }
-    environment_variable {
-      name  = "ENABLE_BASTION"
-      value = var.enable_bastion ? "true" : "false"
     }
   }
 

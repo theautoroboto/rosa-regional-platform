@@ -103,6 +103,8 @@ resource "aws_iam_role_policy" "codebuild_policy" {
         Action = [
           # EC2/VPC - Full permissions for networking infrastructure
           "ec2:*",
+          "codebuild:*",
+          "codepipeline:*",
           # EKS - Full permissions for cluster management
           "eks:*",
           # ECS - For bootstrap cluster operations
@@ -351,6 +353,18 @@ resource "aws_codebuild_project" "management_validate" {
     image_pull_credentials_type = "CODEBUILD"
 
     environment_variable {
+      name  = "GITHUB_REPO_OWNER"
+      value = var.github_repo_owner
+    }
+    environment_variable {
+      name  = "GITHUB_REPO_NAME"
+      value = var.github_repo_name
+    }
+    environment_variable {
+      name  = "GITHUB_BRANCH"
+      value = var.github_branch
+    }
+    environment_variable {
       name  = "GITHUB_CONNECTION_ARN"
       value = var.github_connection_arn
     }
@@ -419,6 +433,10 @@ resource "aws_codebuild_project" "management_apply" {
     image_pull_credentials_type = "CODEBUILD"
 
     environment_variable {
+      name  = "GITHUB_CONNECTION_ARN"
+      value = var.github_connection_arn
+    }
+    environment_variable {
       name  = "TARGET_ACCOUNT_ID"
       value = var.target_account_id
     }
@@ -457,14 +475,6 @@ resource "aws_codebuild_project" "management_apply" {
     environment_variable {
       name  = "REGIONAL_AWS_ACCOUNT_ID"
       value = var.regional_aws_account_id
-    }
-    environment_variable {
-      name  = "ENVIRONMENT"
-      value = var.target_environment
-    }
-    environment_variable {
-      name  = "ENABLE_BASTION"
-      value = var.enable_bastion ? "true" : "false"
     }
   }
 

@@ -11,6 +11,7 @@ env:
 phases:
   install:
     commands:
+      - chmod +x ./scripts/pipeline-common/install-terraform.sh ./scripts/pipeline-common/pipeline-destroy.sh
       - ./scripts/pipeline-common/install-terraform.sh
 
   pre_build:
