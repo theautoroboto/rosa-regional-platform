@@ -22,6 +22,7 @@ locals {
   validate_project_name  = "rc-val-${local.resource_hash}"                     # 19 chars
   apply_project_name     = "rc-app-${local.resource_hash}"                     # 19 chars
   bootstrap_project_name = "rc-boot-${local.resource_hash}"                    # 21 chars
+  destroy_project_name   = "rc-dest-${local.resource_hash}"                    # 21 chars
   pipeline_name          = "rc-pipe-${local.resource_hash}"                    # 20 chars
 }
 
@@ -139,7 +140,8 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
         Resource = [
           aws_codebuild_project.regional_validate.arn,
           aws_codebuild_project.regional_apply.arn,
-          aws_codebuild_project.regional_bootstrap.arn
+          aws_codebuild_project.regional_bootstrap.arn,
+          aws_codebuild_project.regional_destroy.arn
         ]
       }
     ]
@@ -372,6 +374,78 @@ resource "aws_codebuild_project" "regional_bootstrap" {
   }
 }
 
+# CodeBuild Project - Destroy
+resource "aws_codebuild_project" "regional_destroy" {
+  name          = local.destroy_project_name
+  service_role  = aws_iam_role.codebuild_role.arn
+  build_timeout = 60
+
+  artifacts {
+    type = "CODEPIPELINE"
+  }
+
+  environment {
+    compute_type                = "BUILD_GENERAL1_SMALL"
+    image                       = "aws/codebuild/amazonlinux2-x86_64-standard:4.0"
+    type                        = "LINUX_CONTAINER"
+    image_pull_credentials_type = "CODEBUILD"
+
+    environment_variable {
+      name  = "GITHUB_REPO_OWNER"
+      value = var.github_repo_owner
+    }
+    environment_variable {
+      name  = "GITHUB_REPO_NAME"
+      value = var.github_repo_name
+    }
+    environment_variable {
+      name  = "GITHUB_BRANCH"
+      value = var.github_branch
+    }
+    environment_variable {
+      name  = "TARGET_ACCOUNT_ID"
+      value = var.target_account_id
+    }
+    environment_variable {
+      name  = "TARGET_REGION"
+      value = var.target_region
+    }
+    environment_variable {
+      name  = "TARGET_ALIAS"
+      value = var.target_alias
+    }
+    environment_variable {
+      name  = "APP_CODE"
+      value = var.app_code
+    }
+    environment_variable {
+      name  = "SERVICE_PHASE"
+      value = var.service_phase
+    }
+    environment_variable {
+      name  = "COST_CENTER"
+      value = var.cost_center
+    }
+    environment_variable {
+      name  = "REPOSITORY_URL"
+      value = var.repository_url
+    }
+    environment_variable {
+      name  = "REPOSITORY_BRANCH"
+      value = var.repository_branch
+    }
+    environment_variable {
+      name  = "ENVIRONMENT"
+      value = var.target_environment
+    }
+  }
+
+  source {
+    type      = "CODEPIPELINE"
+    buildspec = "terraform/config/pipeline-regional-cluster/buildspec-destroy.yml"
+  }
+}
+
 # CodePipeline
 resource "aws_codepipeline" "central_pipeline" {
   name          = local.pipeline_name
@@ -468,6 +542,24 @@ resource "aws_codepipeline" "central_pipeline" {
 
       configuration = {
         ProjectName = aws_codebuild_project.regional_bootstrap.name
+      }
+    }
+  }
+
+  stage {
+    name = "Destroy"
+
+    action {
+      name             = "ConditionalDestroy"
+      category         = "Build"
+      owner            = "AWS"
+      provider         = "CodeBuild"
+      input_artifacts  = ["bootstrap_output"]
+      output_artifacts = ["destroy_output"]
+      version          = "1"
+
+      configuration = {
+        ProjectName = aws_codebuild_project.regional_destroy.name
       }
     }
   }
