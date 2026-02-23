@@ -78,3 +78,9 @@ variable "repository_branch" {
   description = "Git branch to use for cluster configuration"
   default     = "main"
 }
+
+variable "enable_bastion" {
+  type        = bool
+  description = "Enable ECS Fargate bastion for break-glass/development access to the cluster"
+  default     = false
+}
