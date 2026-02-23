@@ -23,6 +23,35 @@ fi
 
 export ENVIRONMENT="${ENVIRONMENT:-staging}"
 
+# Validate required environment variables
+echo "Validating required environment variables..."
+MISSING_VARS=()
+
+# Common required variables
+[[ -z "${TARGET_REGION:-}" ]] && MISSING_VARS+=("TARGET_REGION")
+[[ -z "${TARGET_ALIAS:-}" ]] && MISSING_VARS+=("TARGET_ALIAS")
+[[ -z "${TARGET_ACCOUNT_ID:-}" ]] && MISSING_VARS+=("TARGET_ACCOUNT_ID")
+[[ -z "${APP_CODE:-}" ]] && MISSING_VARS+=("APP_CODE")
+[[ -z "${SERVICE_PHASE:-}" ]] && MISSING_VARS+=("SERVICE_PHASE")
+[[ -z "${COST_CENTER:-}" ]] && MISSING_VARS+=("COST_CENTER")
+[[ -z "${GITHUB_REPO_OWNER:-}" ]] && MISSING_VARS+=("GITHUB_REPO_OWNER")
+[[ -z "${GITHUB_REPO_NAME:-}" ]] && MISSING_VARS+=("GITHUB_REPO_NAME")
+[[ -z "${GITHUB_BRANCH:-}" ]] && MISSING_VARS+=("GITHUB_BRANCH")
+
+# Cluster-type specific validation (REGIONAL_AWS_ACCOUNT_ID for management)
+# will be checked later after CLUSTER_TYPE is determined
+
+if [ ${#MISSING_VARS[@]} -gt 0 ]; then
+    echo "❌ ERROR: Missing required environment variables:"
+    for var in "${MISSING_VARS[@]}"; do
+        echo "   - $var"
+    done
+    exit 1
+fi
+
+echo "✓ All required environment variables are set"
+echo ""
+
 # Determine paths and targets based on cluster type
 if [ "$CLUSTER_TYPE" == "regional" ]; then
     CONFIG_FILE="deploy/${ENVIRONMENT}/${TARGET_REGION}/terraform/regional.json"

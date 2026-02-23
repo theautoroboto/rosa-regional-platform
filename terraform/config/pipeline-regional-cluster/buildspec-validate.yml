@@ -6,7 +6,7 @@ env:
 phases:
   install:
     commands:
-      - bash scripts/pipeline-common/install-terraform.sh
+      - ./scripts/pipeline-common/install-terraform.sh
 
   pre_build:
     commands:
