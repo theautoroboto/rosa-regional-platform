@@ -27,7 +27,7 @@ export ENVIRONMENT="${ENVIRONMENT:-staging}"
 echo "Validating required environment variables..."
 MISSING_VARS=()
 
-# Common required variables
+# Required variables
 [[ -z "${TARGET_REGION:-}" ]] && MISSING_VARS+=("TARGET_REGION")
 [[ -z "${TARGET_ALIAS:-}" ]] && MISSING_VARS+=("TARGET_ALIAS")
 [[ -z "${TARGET_ACCOUNT_ID:-}" ]] && MISSING_VARS+=("TARGET_ACCOUNT_ID")
