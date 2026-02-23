@@ -7,6 +7,7 @@ phases:
   install:
     commands:
       - ./scripts/pipeline-common/install-terraform.sh
+      - chmod +x ./scripts/pipeline-common/run-terraform-validate.sh
 
   pre_build:
     commands:
@@ -14,77 +15,10 @@ phases:
       - echo "Pre-flight Setup"
       - echo "=========================================="
       - source ./scripts/pipeline-common/detect-central-state.sh
-      - |
-        set -euo pipefail
-
-        # Validate required environment variables
-        if [[ -z "${TARGET_ACCOUNT_ID:-}" || -z "${TARGET_REGION:-}" || -z "${TARGET_ALIAS:-}" ]]; then
-            echo "❌ ERROR: Required environment variables not set"
-            echo "   TARGET_ACCOUNT_ID: ${TARGET_ACCOUNT_ID:-}"
-            echo "   TARGET_REGION: ${TARGET_REGION:-}"
-            echo "   TARGET_ALIAS: ${TARGET_ALIAS:-}"
-            exit 1
-        fi
-
-        echo "Target Account: $TARGET_ACCOUNT_ID"
-        echo "Target Region: $TARGET_REGION"
-        echo "Target Alias: $TARGET_ALIAS"
-        echo ""
 
   build:
     commands:
-      - echo "Validating Regional Cluster Configuration..."
-      - |
-        set -euo pipefail
-
-        echo "---------------------------------------------------"
-        echo "Validating Target: $TARGET_ALIAS ($TARGET_ACCOUNT_ID) in $TARGET_REGION"
-        if [ "$TARGET_ACCOUNT_ID" != "$CENTRAL_ACCOUNT_ID" ]; then
-            echo "  Terraform will assume OrganizationAccountAccessRole"
-        else
-            echo "  Using central account credentials"
-        fi
-        echo ""
-
-        # Set Terraform backend config (state bucket is in central account, region detected in pre_build)
-        export TF_STATE_BUCKET="terraform-state-${CENTRAL_ACCOUNT_ID}"
-        export TF_STATE_KEY="regional-cluster/${TARGET_ALIAS}.tfstate"
-
-        # Export required Terraform variables (provider will handle cross-account assume role)
-        export TF_VAR_region="${TARGET_REGION}"
-        export TF_VAR_target_account_id="${TARGET_ACCOUNT_ID}"
-        export TF_VAR_target_alias="${TARGET_ALIAS}"
-        export TF_VAR_app_code="${APP_CODE}"
-        export TF_VAR_service_phase="${SERVICE_PHASE}"
-        export TF_VAR_cost_center="${COST_CENTER}"
-        export TF_VAR_repository_url="${REPOSITORY_URL}"
-        export TF_VAR_repository_branch="${REPOSITORY_BRANCH}"
-        export TF_VAR_api_additional_allowed_accounts="${TARGET_ACCOUNT_ID}"
-
-        # Initialize Terraform
-        echo "Initializing Terraform..."
-        cd terraform/config/regional-cluster
-        terraform init -reconfigure \
-            -backend-config="bucket=${TF_STATE_BUCKET}" \
-            -backend-config="key=${TF_STATE_KEY}" \
-            -backend-config="region=${TF_STATE_REGION}" \
-            -backend-config="use_lockfile=true"
-
-        echo "Validating Terraform configuration..."
-        terraform validate
-
-        echo "Running Terraform plan..."
-        if ! terraform plan -out=tfplan; then
-            echo "❌ Terraform plan failed"
-            cd ../../..
-            exit 1
-        fi
-
-        # Save plan summary
-        terraform show -no-color tfplan > plan-summary.txt
-        echo "✓ Plan summary saved to plan-summary.txt"
-
-        cd ../../..
+      - ./scripts/pipeline-common/run-terraform-validate.sh regional
 
   post_build:
     commands:
