@@ -415,6 +415,16 @@ resource "aws_codebuild_project" "management_validate" {
       name  = "REGIONAL_AWS_ACCOUNT_ID"
       value = var.regional_aws_account_id
     }
+    # Environment name (staging/production)
+    environment_variable {
+      name  = "ENVIRONMENT"
+      value = var.target_environment
+    }
+    # AWS region for SDK/CLI operations
+    environment_variable {
+      name  = "AWS_REGION"
+      value = var.target_region
+    }
   }
 
   source {
@@ -493,6 +503,11 @@ resource "aws_codebuild_project" "management_apply" {
     environment_variable {
       name  = "ENVIRONMENT"
       value = var.target_environment
+    }
+    # AWS region for SDK/CLI operations
+    environment_variable {
+      name  = "AWS_REGION"
+      value = var.target_region
     }
     # Whether to provision a bastion host
     environment_variable {

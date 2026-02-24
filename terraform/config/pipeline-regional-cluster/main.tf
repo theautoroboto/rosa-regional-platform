@@ -271,10 +271,17 @@ resource "aws_codebuild_project" "regional_validate" {
       name  = "REPOSITORY_BRANCH"
       value = var.repository_branch
     }
+    # Target environment name (dev/staging/prod)
     environment_variable {
       name  = "ENVIRONMENT"
       value = var.target_environment
     }
+    # AWS region for SDK/CLI operations
+    environment_variable {
+      name  = "AWS_REGION"
+      value = var.target_region
+    }
+    # Enable bastion host for cluster access
     environment_variable {
       name  = "ENABLE_BASTION"
       value = var.enable_bastion ? "true" : "false"
@@ -362,6 +369,11 @@ resource "aws_codebuild_project" "regional_apply" {
     environment_variable {
       name  = "ENVIRONMENT"
       value = var.target_environment
+    }
+    # AWS region for SDK/CLI operations
+    environment_variable {
+      name  = "AWS_REGION"
+      value = var.target_region
     }
     # Enable bastion host for cluster access
     environment_variable {

@@ -15,6 +15,13 @@ if [[ -z "$CLUSTER_TYPE" ]]; then
     exit 1
 fi
 
+# Validate CLUSTER_TYPE is one of the allowed values
+if [[ "$CLUSTER_TYPE" != "regional" && "$CLUSTER_TYPE" != "management" ]]; then
+    echo "❌ ERROR: Invalid cluster type: $CLUSTER_TYPE"
+    echo "Usage: $0 <regional|management>"
+    exit 1
+fi
+
 echo "=========================================="
 echo "Validating $CLUSTER_TYPE Cluster Configurations"
 echo "=========================================="
@@ -43,6 +50,9 @@ validate_target() {
     elif [ "$CLUSTER_TYPE" == "management" ]; then
         export TF_STATE_KEY="management-cluster/${ALIAS}.tfstate"
         TERRAFORM_DIR="terraform/config/management-cluster"
+    else
+        echo "❌ ERROR: Invalid CLUSTER_TYPE: $CLUSTER_TYPE"
+        exit 1
     fi
 
     # Export Common Terraform variables
@@ -63,6 +73,9 @@ validate_target() {
         # These are usually exported by the caller loop logic or manual override env vars
         if [ -n "${CLUSTER_ID:-}" ]; then export TF_VAR_cluster_id="$CLUSTER_ID"; fi
         if [ -n "${REGIONAL_AWS_ACCOUNT_ID:-}" ]; then export TF_VAR_regional_aws_account_id="$REGIONAL_AWS_ACCOUNT_ID"; fi
+    else
+        echo "❌ ERROR: Invalid CLUSTER_TYPE: $CLUSTER_TYPE"
+        exit 1
     fi
 
     # Run terraform operations in subshell
@@ -127,6 +140,9 @@ if [ "$CLUSTER_TYPE" == "regional" ]; then
     SEARCH_PATTERN="deploy/${ENVIRONMENT}/*/terraform/regional.json"
 elif [ "$CLUSTER_TYPE" == "management" ]; then
     SEARCH_PATTERN="deploy/${ENVIRONMENT}/*/terraform/management/*.json"
+else
+    echo "❌ ERROR: Invalid CLUSTER_TYPE: $CLUSTER_TYPE"
+    exit 1
 fi
 
 echo "Searching for config files: $SEARCH_PATTERN"
@@ -163,7 +179,7 @@ for file in $SEARCH_PATTERN; do
        # Usually Account ID parameters are in the Central account (where pipeline runs).
        # detect-central-state.sh sets AWS_REGION.
        PARAM_NAME="${ACCOUNT_ID#ssm:}"
-       ACCOUNT_ID=$(aws ssm get-parameter --name "$PARAM_NAME" --with-decryption --query 'Parameter.Value' --output text)
+       ACCOUNT_ID=$(aws ssm get-parameter --name "$PARAM_NAME" --with-decryption --query 'Parameter.Value' --output text --region "$REGION")
     fi
 
     if [[ ! "$ACCOUNT_ID" =~ ^[0-9]{12}$ ]]; then

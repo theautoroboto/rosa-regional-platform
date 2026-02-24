@@ -7,7 +7,6 @@ phases:
   install:
     commands:
       - ./scripts/pipeline-common/terraform-install.sh
-      - chmod +x ./scripts/pipeline-common/terraform-validate.sh
 
   pre_build:
     commands:
