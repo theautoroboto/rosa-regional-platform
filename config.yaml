@@ -174,9 +174,12 @@ region_deployments:
       region: "{{ aws_region }}"
       alias: "regional-{{region_alias}}"
       region_alias: "{{ region_alias }}"
+      delete: true
     management_clusters:
       - cluster_id: "mc01-{{ region_alias }}"
         account_id: "ssm:/infra/staging/us-east-1/mc01/account_id"
+      - cluster_id: "mc00-{{ region_alias }}"
+        account_id: "ssm:/infra/staging/us-east-1/mc00/account_id"
 
   - name: "us-east-1"
     aws_region: "us-east-1"
