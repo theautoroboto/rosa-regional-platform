@@ -35,7 +35,7 @@ set -euo pipefail
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-readonly MC_CLUSTER_ID="${MC_CLUSTER_ID:?MC_CLUSTER_ID is required}"
+# Required variables (always needed)
 readonly TEST_REGION="${TEST_REGION:?TEST_REGION is required}"
 readonly RC_ACCOUNT_ID="${RC_ACCOUNT_ID:?RC_ACCOUNT_ID is required}"
 readonly MC_ACCOUNT_ID="${MC_ACCOUNT_ID:?MC_ACCOUNT_ID is required}"
@@ -43,9 +43,12 @@ readonly CENTRAL_ACCOUNT_ID="${CENTRAL_ACCOUNT_ID:?CENTRAL_ACCOUNT_ID is require
 readonly TF_STATE_BUCKET="${TF_STATE_BUCKET:?TF_STATE_BUCKET is required}"
 readonly TF_STATE_REGION="${TF_STATE_REGION:?TF_STATE_REGION is required}"
 readonly TF_STATE_KEY_RC="${TF_STATE_KEY_RC:?TF_STATE_KEY_RC is required}"
-readonly TF_STATE_KEY_MC="${TF_STATE_KEY_MC:?TF_STATE_KEY_MC is required}"
-readonly RC_CLUSTER_NAME="${RC_CLUSTER_NAME:?RC_CLUSTER_NAME is required}"
-readonly MC_CLUSTER_NAME="${MC_CLUSTER_NAME:?MC_CLUSTER_NAME is required}"
+
+# Optional variables (may not be set if provisioning failed early)
+readonly MC_CLUSTER_ID="${MC_CLUSTER_ID:-}"
+readonly TF_STATE_KEY_MC="${TF_STATE_KEY_MC:-}"
+readonly RC_CLUSTER_NAME="${RC_CLUSTER_NAME:-}"
+readonly MC_CLUSTER_NAME="${MC_CLUSTER_NAME:-}"
 
 CLEANUP_FAILURES=0
 
@@ -109,6 +112,12 @@ retry_command() {
 
 cleanup_iot_resources() {
     log_phase "Cleaning up IoT Resources"
+
+    # Skip if MC was never configured
+    if [ -z "$MC_CLUSTER_ID" ]; then
+        log_info "MC was never provisioned, skipping IoT cleanup"
+        return 0
+    fi
 
     # Export cluster ID for cleanup script
     export CLUSTER_ID="$MC_CLUSTER_ID"
@@ -257,17 +266,23 @@ cleanup_state_files() {
         log_info "RC state file not found or already deleted"
     fi
 
-    # Delete MC state file
-    log_info "Deleting MC state file: s3://${TF_STATE_BUCKET}/${TF_STATE_KEY_MC}"
-    if aws s3 rm "s3://${TF_STATE_BUCKET}/${TF_STATE_KEY_MC}" --region "$TF_STATE_REGION" 2>/dev/null; then
-        log_success "MC state file deleted"
+    # Delete MC state file (only if MC was provisioned)
+    if [ -n "$TF_STATE_KEY_MC" ]; then
+        log_info "Deleting MC state file: s3://${TF_STATE_BUCKET}/${TF_STATE_KEY_MC}"
+        if aws s3 rm "s3://${TF_STATE_BUCKET}/${TF_STATE_KEY_MC}" --region "$TF_STATE_REGION" 2>/dev/null; then
+            log_success "MC state file deleted"
+        else
+            log_info "MC state file not found or already deleted"
+        fi
+
+        # Clean up MC lock file (ignore errors)
+        aws s3 rm "s3://${TF_STATE_BUCKET}/${TF_STATE_KEY_MC}.tflock" --region "$TF_STATE_REGION" 2>/dev/null || true
     else
-        log_info "MC state file not found or already deleted"
+        log_info "Skipping MC state file cleanup (MC was never provisioned)"
     fi
 
-    # Clean up any lock files (ignore errors)
+    # Clean up RC lock file (ignore errors)
     aws s3 rm "s3://${TF_STATE_BUCKET}/${TF_STATE_KEY_RC}.tflock" --region "$TF_STATE_REGION" 2>/dev/null || true
-    aws s3 rm "s3://${TF_STATE_BUCKET}/${TF_STATE_KEY_MC}.tflock" --region "$TF_STATE_REGION" 2>/dev/null || true
 
     log_success "State file cleanup complete"
 }
@@ -292,18 +307,30 @@ cleanup_kubectl_contexts() {
 
 main() {
     log_phase "Starting E2E Environment Cleanup"
-    log_info "MC Cluster ID: $MC_CLUSTER_ID"
+    if [ -n "$MC_CLUSTER_ID" ]; then
+        log_info "MC Cluster ID: $MC_CLUSTER_ID"
+    else
+        log_info "MC Cluster ID: (not set - MC was never provisioned)"
+    fi
     log_info "Region: $TEST_REGION"
     echo ""
 
     # Step 1: Clean up IoT resources (must be done before MC destroy)
     cleanup_iot_resources
 
-    # Step 2: Clean up Maestro secrets in MC account
-    cleanup_maestro_secrets
+    # Step 2: Clean up Maestro secrets in MC account (only if MC was provisioned)
+    if [ -n "$MC_CLUSTER_ID" ]; then
+        cleanup_maestro_secrets
+    else
+        log_info "Skipping Maestro secrets cleanup (MC was never provisioned)"
+    fi
 
     # Step 3: Destroy Management Cluster (depends on RC, so destroy first)
-    destroy_terraform "management-cluster" "$TF_STATE_KEY_MC" "Management Cluster"
+    if [ -n "$TF_STATE_KEY_MC" ]; then
+        destroy_terraform "management-cluster" "$TF_STATE_KEY_MC" "Management Cluster"
+    else
+        log_info "Skipping MC destroy (MC was never provisioned)"
+    fi
 
     # Step 4: Destroy Regional Cluster
     destroy_terraform "regional-cluster" "$TF_STATE_KEY_RC" "Regional Cluster"
@@ -324,8 +351,12 @@ main() {
         log_error "Cleanup completed with $CLEANUP_FAILURES failure(s)"
         log_error "Manual intervention may be required to clean up orphaned resources"
         log_info "Check AWS console for resources tagged with cluster names:"
-        log_info "  RC: $RC_CLUSTER_NAME"
-        log_info "  MC: $MC_CLUSTER_NAME"
+        if [ -n "$RC_CLUSTER_NAME" ]; then
+            log_info "  RC: $RC_CLUSTER_NAME"
+        fi
+        if [ -n "$MC_CLUSTER_NAME" ]; then
+            log_info "  MC: $MC_CLUSTER_NAME"
+        fi
         exit 3
     fi
 }
