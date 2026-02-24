@@ -92,6 +92,16 @@ phases:
 
         export REGION_ALIAS=$(jq -r '.region_alias' "$RC_CONFIG_FILE")
         echo "Extracted REGION_ALIAS from config: $REGION_ALIAS"
+        echo ""
+
+        # Check if cluster is marked for deletion
+        DELETE_FLAG=$(jq -r '.delete // false' "$RC_CONFIG_FILE")
+
+        if [ "$DELETE_FLAG" == "true" ]; then
+            echo "🔴 Cluster is marked for deletion (delete: true in config)"
+            echo "   Skipping apply phase - destruction will be handled by Destroy stage after approval"
+            exit 0
+        fi
 
         # Run provisioning (in same shell to preserve exports)
         make pipeline-provision-regional

@@ -1,0 +1,105 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  install:
+    commands:
+      - ./scripts/pipeline-common/terraform-install.sh
+
+  pre_build:
+    commands:
+      - source scripts/pipeline-common/setup-apply-preflight.sh
+      - |
+        # Management cluster cross-account access
+        CURRENT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+        echo "Current account: $CURRENT_ACCOUNT (central: $CENTRAL_ACCOUNT_ID)"
+        echo ""
+
+  build:
+    commands:
+      - echo "=========================================="
+      - echo "Destroying Management Cluster Infrastructure"
+      - echo "=========================================="
+      - |
+        set -euo pipefail
+
+        export ENVIRONMENT="${ENVIRONMENT:-staging}"
+        MC_CONFIG_FILE="deploy/${ENVIRONMENT}/${TARGET_REGION}/terraform/management/${TARGET_ALIAS}.json"
+
+        if [ ! -f "$MC_CONFIG_FILE" ]; then
+            echo "❌ ERROR: Management cluster config not found: $MC_CONFIG_FILE"
+            exit 1
+        fi
+
+        # Verify delete flag is still true (in case config changed during approval wait)
+        DELETE_FLAG=$(jq -r '.delete // false' "$MC_CONFIG_FILE")
+
+        if [ "$DELETE_FLAG" != "true" ]; then
+            echo "⏭️  Delete flag is no longer set to 'true' (current value: $DELETE_FLAG)"
+            echo "   Aborting destruction - config may have been reverted"
+            exit 1
+        fi
+
+        echo "Destroying Management Cluster:"
+        echo "  Account: ${TARGET_ACCOUNT_ID}"
+        echo "  Region: ${TARGET_REGION}"
+        echo "  Alias: ${TARGET_ALIAS}"
+        echo "  Cluster ID: ${CLUSTER_ID}"
+        echo ""
+
+        # TODO: Add check for customer hosted clusters (control planes) on this MC
+        # This would query the MC's Kubernetes API or Maestro state to verify
+        # no customer workloads remain before destruction
+        echo "⚠️  Warning: Ensure all customer Hosted Clusters have been migrated"
+        echo "   off this Management Cluster before proceeding."
+        echo ""
+
+        # Configure Terraform backend
+        export TF_STATE_BUCKET="terraform-state-${CENTRAL_ACCOUNT_ID}"
+        export TF_STATE_KEY="management-cluster/${TARGET_ALIAS}.tfstate"
+
+        echo "Terraform backend:"
+        echo "  Bucket: $TF_STATE_BUCKET (central account: $CENTRAL_ACCOUNT_ID)"
+        echo "  Key: $TF_STATE_KEY"
+        echo "  Region: $TF_STATE_REGION"
+        echo ""
+
+        # Set Terraform variables (same as apply for destroy)
+        export TF_VAR_region="${TARGET_REGION}"
+        export TF_VAR_app_code="${APP_CODE}"
+        export TF_VAR_service_phase="${SERVICE_PHASE}"
+        export TF_VAR_cost_center="${COST_CENTER}"
+        export TF_VAR_repository_url="${REPOSITORY_URL:-https://github.com/${GITHUB_REPOSITORY}.git}"
+        export TF_VAR_repository_branch="${REPOSITORY_BRANCH:-${GITHUB_BRANCH:-main}}"
+        export TF_VAR_cluster_id="${CLUSTER_ID}"
+        export TF_VAR_regional_aws_account_id="${REGIONAL_AWS_ACCOUNT_ID}"
+
+        # Extract REGION_ALIAS from config
+        export REGION_ALIAS=$(jq -r '.region_alias' "$MC_CONFIG_FILE")
+        export ENVIRONMENT="${ENVIRONMENT:-staging}"
+
+        # Run destruction
+        echo "🗑️  Running terraform destroy..."
+        make pipeline-destroy-management
+
+        echo ""
+        echo "✅ Management Cluster infrastructure destroyed successfully"
+
+  post_build:
+    commands:
+      - echo "=========================================="
+      - echo "Destruction Complete"
+      - echo "=========================================="
+      - |
+        echo "Management Cluster ${TARGET_ALIAS} has been destroyed."
+        echo ""
+        echo "Next steps:"
+        echo "  1. The pipeline infrastructure will be cleaned up automatically"
+        echo "  2. Terraform state remains in S3 for audit purposes"
+        echo "  3. Update config file to remove 'delete: true' or delete the config file entirely"
+
+artifacts:
+  files:
+    - '**/*'

@@ -1,0 +1,130 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  install:
+    commands:
+      - ./scripts/pipeline-common/terraform-install.sh
+
+  pre_build:
+    commands:
+      - source scripts/pipeline-common/setup-apply-preflight.sh
+      - |
+        # Regional cluster uses Terraform provider assume_role for cross-account access
+        if [ "$TARGET_ACCOUNT_ID" != "$CENTRAL_ACCOUNT_ID" ]; then
+            echo "✅ Terraform will assume OrganizationAccountAccessRole in account $TARGET_ACCOUNT_ID"
+        else
+            echo "✅ Destroying in central account - no role assumption needed"
+        fi
+        echo ""
+
+  build:
+    commands:
+      - echo "=========================================="
+      - echo "Destroying Regional Cluster Infrastructure"
+      - echo "=========================================="
+      - |
+        set -euo pipefail
+
+        export ENVIRONMENT="${ENVIRONMENT:-staging}"
+        RC_CONFIG_FILE="deploy/${ENVIRONMENT}/${TARGET_REGION}/terraform/regional.json"
+
+        if [ ! -f "$RC_CONFIG_FILE" ]; then
+            echo "❌ ERROR: Regional cluster config not found: $RC_CONFIG_FILE"
+            exit 1
+        fi
+
+        # Verify delete flag is still true (in case config changed during approval wait)
+        DELETE_FLAG=$(jq -r '.delete // false' "$RC_CONFIG_FILE")
+
+        if [ "$DELETE_FLAG" != "true" ]; then
+            echo "⏭️  Delete flag is no longer set to 'true' (current value: $DELETE_FLAG)"
+            echo "   Aborting destruction - config may have been reverted"
+            exit 1
+        fi
+
+        echo "Destroying Regional Cluster:"
+        echo "  Account: ${TARGET_ACCOUNT_ID}"
+        echo "  Region: ${TARGET_REGION}"
+        echo "  Alias: ${TARGET_ALIAS}"
+        echo ""
+
+        # Check for dependent Management Clusters
+        MC_DIR="deploy/${ENVIRONMENT}/${TARGET_REGION}/terraform/management"
+        if [ -d "$MC_DIR" ]; then
+            MC_CONFIGS=$(find "$MC_DIR" -name "*.json" 2>/dev/null || echo "")
+            MC_COUNT=$(echo "$MC_CONFIGS" | grep -c ".json" || echo "0")
+
+            if [ "$MC_COUNT" -gt 0 ]; then
+                echo "❌ ERROR: Cannot destroy Regional Cluster - ${MC_COUNT} Management Cluster(s) still exist:"
+                echo ""
+                for mc_config in $MC_CONFIGS; do
+                    MC_NAME=$(basename "$mc_config" .json)
+                    MC_DELETE=$(jq -r '.delete // false' "$mc_config")
+                    echo "   - $MC_NAME (delete: $MC_DELETE)"
+                done
+                echo ""
+                echo "   All Management Clusters must be destroyed first."
+                echo "   Set 'delete: true' in each MC config and wait for destruction to complete."
+                exit 1
+            fi
+        fi
+
+        echo "✅ No Management Clusters detected - proceeding with Regional Cluster destruction"
+        echo ""
+
+        # Configure Terraform backend
+        export TF_STATE_BUCKET="terraform-state-${CENTRAL_ACCOUNT_ID}"
+        export TF_STATE_KEY="regional-cluster/${TARGET_ALIAS}.tfstate"
+
+        echo "Terraform backend:"
+        echo "  Bucket: $TF_STATE_BUCKET (central account: $CENTRAL_ACCOUNT_ID)"
+        echo "  Key: $TF_STATE_KEY"
+        echo "  Region: $TF_STATE_REGION"
+        echo ""
+
+        # Set Terraform variables (same as apply for destroy)
+        export TF_VAR_region="${TARGET_REGION}"
+        export TF_VAR_app_code="${APP_CODE}"
+        export TF_VAR_service_phase="${SERVICE_PHASE}"
+        export TF_VAR_cost_center="${COST_CENTER}"
+        export TF_VAR_repository_url="${REPOSITORY_URL:-https://github.com/${GITHUB_REPOSITORY}.git}"
+        export TF_VAR_repository_branch="${REPOSITORY_BRANCH:-${GITHUB_BRANCH:-main}}"
+        export TF_VAR_api_additional_allowed_accounts="${TARGET_ACCOUNT_ID}"
+
+        ENABLE_BASTION="${ENABLE_BASTION:-false}"
+        if [ "$ENABLE_BASTION" == "true" ] || [ "$ENABLE_BASTION" == "1" ]; then
+            export TF_VAR_enable_bastion="true"
+        else
+            export TF_VAR_enable_bastion="false"
+        fi
+
+        # Extract REGION_ALIAS from config
+        export REGION_ALIAS=$(jq -r '.region_alias' "$RC_CONFIG_FILE")
+        export ENVIRONMENT="${ENVIRONMENT:-staging}"
+
+        # Run destruction
+        echo "🗑️  Running terraform destroy..."
+        make pipeline-destroy-regional
+
+        echo ""
+        echo "✅ Regional Cluster infrastructure destroyed successfully"
+
+  post_build:
+    commands:
+      - echo "=========================================="
+      - echo "Destruction Complete"
+      - echo "=========================================="
+      - |
+        echo "Regional Cluster ${TARGET_ALIAS} has been destroyed."
+        echo ""
+        echo "Next steps:"
+        echo "  1. The pipeline infrastructure will be cleaned up automatically"
+        echo "  2. Terraform state remains in S3 for audit purposes"
+        echo "  3. Update config file to remove 'delete: true' or delete the config file entirely"
+
+artifacts:
+  files:
+    - '**/*'

@@ -204,6 +204,31 @@ destroy-regional:
 	@cd terraform/config/regional-cluster && \
 		terraform init && terraform destroy
 
+# Pipeline destroy for management cluster (Non-interactive, for pipeline use)
+pipeline-destroy-management: require-tf-state-vars
+	@echo "🗑️  Destroying management cluster infrastructure (Pipeline Mode)..."
+	@echo "📍 Terraform Directory: terraform/config/management-cluster"
+	@cd terraform/config/management-cluster && \
+		terraform init -reconfigure \
+			-backend-config="bucket=$(TF_STATE_BUCKET)" \
+			-backend-config="key=$(TF_STATE_KEY)" \
+			-backend-config="region=$(TF_STATE_REGION)" \
+			-backend-config="use_lockfile=true" && \
+		terraform destroy -auto-approve
+
+# Pipeline destroy for regional cluster (Non-interactive, for pipeline use)
+pipeline-destroy-regional: require-tf-state-vars
+	@echo "🗑️  Destroying regional cluster infrastructure (Pipeline Mode)..."
+	@scripts/dev/validate-argocd-config.sh regional-cluster
+	@echo "📍 Terraform Directory: terraform/config/regional-cluster"
+	@cd terraform/config/regional-cluster && \
+		terraform init -reconfigure \
+			-backend-config="bucket=$(TF_STATE_BUCKET)" \
+			-backend-config="key=$(TF_STATE_KEY)" \
+			-backend-config="region=$(TF_STATE_REGION)" \
+			-backend-config="use_lockfile=true" && \
+		terraform destroy -auto-approve
+
 # =============================================================================
 # Infrastructure Maintenance Targets
 # =============================================================================

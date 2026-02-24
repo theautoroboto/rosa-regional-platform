@@ -325,6 +325,117 @@ phases:
             echo ""
         done
 
+        echo "=========================================="
+        echo "Cleanup Phase: Removing Pipelines for Destroyed Infrastructure"
+        echo "=========================================="
+        echo ""
+
+        # Process each region_alias directory to check for destroyed infrastructure
+        for region_dir in deploy/${ENVIRONMENT}/*/; do
+            [ -d "$region_dir" ] || continue
+
+            REGION_ALIAS=$(basename "$region_dir")
+
+            # Check regional cluster for deletion
+            if [ -f "${region_dir}terraform/regional.json" ]; then
+                REGIONAL_CONFIG="${region_dir}terraform/regional.json"
+                DELETE_FLAG=$(jq -r '.delete // false' "$REGIONAL_CONFIG")
+
+                if [ "$DELETE_FLAG" == "true" ]; then
+                    echo "Found Regional Cluster ${ENVIRONMENT}-${REGION_ALIAS} marked for deletion"
+
+                    # Check if infrastructure state still exists
+                    STATE_KEY="regional-cluster/${ENVIRONMENT}-${REGION_ALIAS}.tfstate"
+
+                    # Try to check if state object exists and is empty
+                    STATE_EXISTS=$(aws s3api head-object \
+                        --bucket "$TF_STATE_BUCKET" \
+                        --key "$STATE_KEY" \
+                        --region "$TF_STATE_REGION" 2>&1 || echo "NotFound")
+
+                    if echo "$STATE_EXISTS" | grep -q "NotFound"; then
+                        echo "  ✅ Infrastructure state not found - infrastructure has been destroyed"
+                        echo "  🗑️  Destroying Regional Cluster pipeline infrastructure..."
+
+                        cd terraform/config/pipeline-regional-cluster
+
+                        terraform init \
+                            -reconfigure \
+                            -backend-config="bucket=$TF_STATE_BUCKET" \
+                            -backend-config="key=pipelines/regional-${ENVIRONMENT}-${REGION_ALIAS}.tfstate" \
+                            -backend-config="region=$TF_STATE_REGION" \
+                            -backend-config="use_lockfile=true"
+
+                        # Destroy pipeline infrastructure
+                        if terraform destroy -auto-approve; then
+                            echo "  ✅ Regional Cluster pipeline destroyed for ${ENVIRONMENT}-${REGION_ALIAS}"
+                        else
+                            echo "  ⚠️  Failed to destroy Regional Cluster pipeline (may already be destroyed)"
+                        fi
+
+                        cd ../../..
+                    else
+                        echo "  ⏸️  Infrastructure state still exists - waiting for destruction to complete"
+                    fi
+
+                    echo ""
+                fi
+            fi
+
+            # Check management clusters for deletion
+            if [ -d "${region_dir}terraform/management" ]; then
+                for mc_config in ${region_dir}terraform/management/*.json; do
+                    [ -e "$mc_config" ] || continue
+
+                    CLUSTER_NAME=$(basename "$mc_config" .json)
+                    DELETE_FLAG=$(jq -r '.delete // false' "$mc_config")
+
+                    if [ "$DELETE_FLAG" == "true" ]; then
+                        echo "Found Management Cluster $CLUSTER_NAME in ${ENVIRONMENT}-${REGION_ALIAS} marked for deletion"
+
+                        # Check if infrastructure state still exists
+                        TARGET_ALIAS=$(jq -r '.alias // ""' "$mc_config")
+                        STATE_KEY="management-cluster/${TARGET_ALIAS}.tfstate"
+
+                        STATE_EXISTS=$(aws s3api head-object \
+                            --bucket "$TF_STATE_BUCKET" \
+                            --key "$STATE_KEY" \
+                            --region "$TF_STATE_REGION" 2>&1 || echo "NotFound")
+
+                        if echo "$STATE_EXISTS" | grep -q "NotFound"; then
+                            echo "  ✅ Infrastructure state not found - infrastructure has been destroyed"
+                            echo "  🗑️  Destroying Management Cluster pipeline infrastructure..."
+
+                            cd terraform/config/pipeline-management-cluster
+
+                            terraform init \
+                                -reconfigure \
+                                -backend-config="bucket=$TF_STATE_BUCKET" \
+                                -backend-config="key=pipelines/management-${ENVIRONMENT}-${REGION_ALIAS}-${CLUSTER_NAME}.tfstate" \
+                                -backend-config="region=$TF_STATE_REGION" \
+                                -backend-config="use_lockfile=true"
+
+                            # Destroy pipeline infrastructure
+                            if terraform destroy -auto-approve; then
+                                echo "  ✅ Management Cluster pipeline destroyed for $CLUSTER_NAME"
+                            else
+                                echo "  ⚠️  Failed to destroy Management Cluster pipeline (may already be destroyed)"
+                            fi
+
+                            cd ../../..
+                        else
+                            echo "  ⏸️  Infrastructure state still exists - waiting for destruction to complete"
+                        fi
+
+                        echo ""
+                    fi
+                done
+            fi
+        done
+
+        echo "✅ Cleanup phase complete"
+        echo ""
+
   post_build:
     commands:
       - echo "Pipeline provisioning complete."

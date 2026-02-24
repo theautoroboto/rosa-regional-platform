@@ -165,6 +165,16 @@ phases:
         export REGION_ALIAS=$(jq -r '.region_alias' "$MC_CONFIG_FILE")
         echo "Extracted REGION_ALIAS from config: $REGION_ALIAS"
         export ENVIRONMENT="${ENVIRONMENT:-staging}"
+        echo ""
+
+        # Check if cluster is marked for deletion
+        DELETE_FLAG=$(jq -r '.delete // false' "$MC_CONFIG_FILE")
+
+        if [ "$DELETE_FLAG" == "true" ]; then
+            echo "🔴 Cluster is marked for deletion (delete: true in config)"
+            echo "   Skipping apply phase - destruction will be handled by Destroy stage after approval"
+            exit 0
+        fi
 
         set +e
         make pipeline-provision-management
