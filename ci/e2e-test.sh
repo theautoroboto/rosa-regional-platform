@@ -227,6 +227,10 @@ provision_regional_cluster() {
 
     configure_rc_environment
 
+    # Set environment variables for ArgoCD validation
+    export ENVIRONMENT="e2e"
+    export REGION_ALIAS="e2e"
+
     # Validate ArgoCD config
     log_info "Validating ArgoCD configuration..."
     "$REPO_ROOT/scripts/dev/validate-argocd-config.sh" regional-cluster || {
@@ -288,6 +292,10 @@ provision_management_cluster() {
     log_phase "Provisioning Management Cluster"
 
     configure_mc_environment
+
+    # Set environment variables for ArgoCD validation
+    export ENVIRONMENT="e2e"
+    export REGION_ALIAS="e2e"
 
     # Provision IoT resources in regional account first
     log_info "Provisioning IoT resources in regional account..."
