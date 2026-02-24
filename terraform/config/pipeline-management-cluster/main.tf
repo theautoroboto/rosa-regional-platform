@@ -418,11 +418,6 @@ resource "aws_codebuild_project" "management_validate" {
       name  = "ENVIRONMENT"
       value = var.target_environment
     }
-    # AWS region for SDK/CLI operations
-    environment_variable {
-      name  = "AWS_REGION"
-      value = var.target_region
-    }
   }
 
   source {
@@ -502,11 +497,6 @@ resource "aws_codebuild_project" "management_apply" {
       name  = "ENVIRONMENT"
       value = var.target_environment
     }
-    # AWS region for SDK/CLI operations
-    environment_variable {
-      name  = "AWS_REGION"
-      value = var.target_region
-    }
     # Whether to provision a bastion host
     environment_variable {
       name  = "ENABLE_BASTION"
@@ -556,11 +546,6 @@ resource "aws_codebuild_project" "management_bootstrap" {
     environment_variable {
       name  = "ENVIRONMENT"
       value = var.target_environment
-    }
-    # AWS region for SDK/CLI operations
-    environment_variable {
-      name  = "AWS_REGION"
-      value = var.target_region
     }
     # Git repository URL for ArgoCD bootstrap
     environment_variable {

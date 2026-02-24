@@ -115,6 +115,21 @@ if [[ -n "${TARGET_ACCOUNT_ID:-}" && -n "${TARGET_REGION:-}" && -n "${TARGET_ALI
             echo "Resolving SSM parameter: $SSM_PARAM_NAME"
             REGIONAL_AWS_ACCOUNT_ID=$(aws ssm get-parameter --name "$SSM_PARAM_NAME" --with-decryption --query 'Parameter.Value' --output text --region "${TARGET_REGION}")
         fi
+
+        # Validate REGIONAL_AWS_ACCOUNT_ID is set for management clusters
+        if [[ -z "${REGIONAL_AWS_ACCOUNT_ID:-}" ]]; then
+            echo "❌ ERROR: REGIONAL_AWS_ACCOUNT_ID is required for CLUSTER_TYPE=management"
+            echo "   Set REGIONAL_AWS_ACCOUNT_ID environment variable (direct value or ssm:/path/to/param)"
+            exit 1
+        fi
+
+        # Validate REGIONAL_AWS_ACCOUNT_ID format (12-digit AWS account ID)
+        if [[ ! "$REGIONAL_AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]; then
+            echo "❌ ERROR: Invalid REGIONAL_AWS_ACCOUNT_ID: $REGIONAL_AWS_ACCOUNT_ID"
+            echo "   Must be a 12-digit AWS account ID"
+            exit 1
+        fi
+
         export REGIONAL_AWS_ACCOUNT_ID
         export CLUSTER_ID="${CLUSTER_ID:-mgmt-cluster-01}" # Default for manual run
     fi
@@ -147,10 +162,16 @@ fi
 
 echo "Searching for config files: $SEARCH_PATTERN"
 
+# Track how many valid config files are found
+MATCHED_COUNT=0
+
 # Enable globstar if supported/needed, but standard glob works for fixed depth
 # deploy/ENV/REGION/terraform/...
 for file in $SEARCH_PATTERN; do
     [ -e "$file" ] || continue
+
+    # Increment counter for matched files
+    MATCHED_COUNT=$((MATCHED_COUNT + 1))
 
     echo "Processing config: $file"
 
@@ -212,4 +233,22 @@ for file in $SEARCH_PATTERN; do
     validate_target "$ACCOUNT_ID" "$REGION" "$ALIAS"
 done
 
+# Validate that at least one configuration file was found
+if [ "$MATCHED_COUNT" -eq 0 ]; then
+    echo "❌ ERROR: No configuration files found matching pattern: $SEARCH_PATTERN"
+    echo "   Environment: $ENVIRONMENT"
+    echo "   Cluster Type: $CLUSTER_TYPE"
+    echo ""
+    echo "   Expected directory structure:"
+    if [ "$CLUSTER_TYPE" == "regional" ]; then
+        echo "     deploy/${ENVIRONMENT}/<region-alias>/terraform/regional.json"
+    else
+        echo "     deploy/${ENVIRONMENT}/<region-alias>/terraform/management/*.json"
+    fi
+    echo ""
+    echo "   Ensure configuration files exist for environment '${ENVIRONMENT}'"
+    exit 1
+fi
+
+echo "✓ Validated $MATCHED_COUNT configuration file(s)"
 echo "Validation process complete."

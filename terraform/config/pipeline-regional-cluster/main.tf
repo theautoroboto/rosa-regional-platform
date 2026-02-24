@@ -274,11 +274,6 @@ resource "aws_codebuild_project" "regional_validate" {
       name  = "ENVIRONMENT"
       value = var.target_environment
     }
-    # AWS region for SDK/CLI operations
-    environment_variable {
-      name  = "AWS_REGION"
-      value = var.target_region
-    }
     # Enable bastion host for cluster access
     environment_variable {
       name  = "ENABLE_BASTION"
@@ -363,11 +358,6 @@ resource "aws_codebuild_project" "regional_apply" {
       name  = "ENVIRONMENT"
       value = var.target_environment
     }
-    # AWS region for SDK/CLI operations
-    environment_variable {
-      name  = "AWS_REGION"
-      value = var.target_region
-    }
     # Enable bastion host for cluster access
     environment_variable {
       name  = "ENABLE_BASTION"
@@ -426,11 +416,6 @@ resource "aws_codebuild_project" "regional_bootstrap" {
     environment_variable {
       name  = "ENVIRONMENT"
       value = var.target_environment
-    }
-    # AWS region for SDK/CLI operations
-    environment_variable {
-      name  = "AWS_REGION"
-      value = var.target_region
     }
     # Git repository URL for ArgoCD to sync
     environment_variable {
