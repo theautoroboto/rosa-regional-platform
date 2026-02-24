@@ -238,14 +238,30 @@ cleanup_orphaned_secrets() {
 
     for secret in "${secrets[@]}"; do
         log_info "Checking for orphaned secret: $secret"
-        if aws secretsmanager describe-secret --secret-id "$secret" --region "$TEST_REGION" >/dev/null 2>&1; then
-            log_warning "Found orphaned secret: $secret - deleting..."
-            aws secretsmanager delete-secret \
-                --secret-id "$secret" \
-                --region "$TEST_REGION" \
-                --force-delete-without-recovery \
-                2>/dev/null || log_warning "Failed to delete $secret (may already be scheduled for deletion)"
+
+        # Get secret status
+        local secret_info=$(aws secretsmanager describe-secret --secret-id "$secret" --region "$TEST_REGION" 2>&1 || echo "NOT_FOUND")
+
+        if echo "$secret_info" | grep -q "ResourceNotFoundException"; then
+            log_info "Secret $secret does not exist (clean)"
+            continue
         fi
+
+        # Check if secret is scheduled for deletion
+        if echo "$secret_info" | grep -q "DeletedDate"; then
+            log_warning "Secret $secret is scheduled for deletion - canceling deletion and re-deleting..."
+            # Restore the secret first
+            aws secretsmanager restore-secret --secret-id "$secret" --region "$TEST_REGION" 2>/dev/null || true
+            sleep 2
+        fi
+
+        # Now force delete
+        log_warning "Deleting orphaned secret: $secret"
+        aws secretsmanager delete-secret \
+            --secret-id "$secret" \
+            --region "$TEST_REGION" \
+            --force-delete-without-recovery \
+            2>/dev/null || log_warning "Failed to delete $secret"
     done
 
     log_success "Orphaned secrets cleanup complete"
