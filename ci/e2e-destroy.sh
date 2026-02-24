@@ -239,9 +239,18 @@ destroy_terraform() {
         return 1
     fi
 
+    # Build destroy command with all required variables
+    local destroy_cmd="terraform destroy -auto-approve -input=false"
+
+    # Add cluster-type specific variables
+    if [ "$cluster_type" = "management-cluster" ] && [ -n "$MC_CLUSTER_ID" ]; then
+        destroy_cmd="$destroy_cmd -var cluster_id=${MC_CLUSTER_ID}"
+        destroy_cmd="$destroy_cmd -var regional_aws_account_id=${RC_ACCOUNT_ID}"
+    fi
+
     # Retry destroy up to 2 times
     log_info "Running terraform destroy for $description (with retry)..."
-    if retry_command 2 terraform destroy -auto-approve; then
+    if retry_command 2 bash -c "$destroy_cmd"; then
         log_success "$description infrastructure destroyed"
     else
         log_error "Terraform destroy failed for $description after retries"

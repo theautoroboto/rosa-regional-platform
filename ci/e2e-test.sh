@@ -219,6 +219,39 @@ configure_mc_environment() {
 }
 
 # =============================================================================
+# Pre-Flight Cleanup
+# =============================================================================
+
+cleanup_orphaned_secrets() {
+    log_phase "Cleaning Up Orphaned Secrets from Previous Runs"
+
+    # List of secrets that might be left over from failed runs
+    local secrets=(
+        "maestro/server-cert"
+        "maestro/server-config"
+        "maestro/db-credentials"
+        "hyperfleet/db-credentials"
+        "hyperfleet/mq-credentials"
+        "maestro/agent-cert"
+        "maestro/agent-config"
+    )
+
+    for secret in "${secrets[@]}"; do
+        log_info "Checking for orphaned secret: $secret"
+        if aws secretsmanager describe-secret --secret-id "$secret" --region "$TEST_REGION" >/dev/null 2>&1; then
+            log_warning "Found orphaned secret: $secret - deleting..."
+            aws secretsmanager delete-secret \
+                --secret-id "$secret" \
+                --region "$TEST_REGION" \
+                --force-delete-without-recovery \
+                2>/dev/null || log_warning "Failed to delete $secret (may already be scheduled for deletion)"
+        fi
+    done
+
+    log_success "Orphaned secrets cleanup complete"
+}
+
+# =============================================================================
 # Provisioning Functions
 # =============================================================================
 
@@ -583,6 +616,9 @@ main() {
 
     # Detect central account and configure state
     detect_central_account
+
+    # Clean up any orphaned resources from previous failed runs
+    cleanup_orphaned_secrets
 
     # Provision Regional Cluster
     if ! provision_regional_cluster; then
