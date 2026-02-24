@@ -114,11 +114,19 @@ fi
 # Loop Logic (Iterate over JSON files)
 # ------------------------------------------------------------------------------
 
+# Resolve ENVIRONMENT (with fallback to TARGET_ENVIRONMENT)
+ENVIRONMENT="${ENVIRONMENT:-${TARGET_ENVIRONMENT:-}}"
+if [[ -z "${ENVIRONMENT:-}" ]]; then
+    echo "❌ ERROR: ENVIRONMENT variable not set"
+    echo "Set ENVIRONMENT or TARGET_ENVIRONMENT to specify the deployment environment"
+    exit 1
+fi
+
 # Define search pattern
 if [ "$CLUSTER_TYPE" == "regional" ]; then
-    SEARCH_PATTERN="deploy/*/*/terraform/regional.json"
+    SEARCH_PATTERN="deploy/${ENVIRONMENT}/*/terraform/regional.json"
 elif [ "$CLUSTER_TYPE" == "management" ]; then
-    SEARCH_PATTERN="deploy/*/*/terraform/management/*.json"
+    SEARCH_PATTERN="deploy/${ENVIRONMENT}/*/terraform/management/*.json"
 fi
 
 echo "Searching for config files: $SEARCH_PATTERN"
