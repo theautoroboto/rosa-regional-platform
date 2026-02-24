@@ -85,6 +85,23 @@ sectors:
           externalDns:
             domain: "dev.{{ aws_region }}.rosa.example.com"
 
+
+  - name: "e2e"
+    environment: "e2e"
+    terraform_vars:
+      app_code: "infra"
+      service_phase: "e2e"
+      cost_center: "000"
+      environment: "{{ environment }}"
+    values:
+      management-cluster:
+        hypershift:
+          oidcStorageS3Bucket:
+            name: "hypershift-mc-{{ aws_region }}"
+            region: "{{ aws_region }}"
+          externalDns:
+            domain: "dev.{{ aws_region }}.rosa.example.com"
+
 region_deployments:
   - name: "us-east-2"
     aws_region: "us-east-2"

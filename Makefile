@@ -1,4 +1,4 @@
-.PHONY: help terraform-fmt terraform-init terraform-validate terraform-upgrade terraform-output-management terraform-output-regional provision-management provision-regional apply-infra-management apply-infra-regional provision-maestro-agent-iot-regional provision-maestro-agent-iot-management cleanup-maestro-agent-iot destroy-management destroy-regional build-platform-image test-e2e helm-lint check-rendered-files
+.PHONY: help terraform-fmt terraform-init terraform-validate terraform-upgrade terraform-output-management terraform-output-regional provision-management provision-regional apply-infra-management apply-infra-regional provision-maestro-agent-iot-regional provision-maestro-agent-iot-management cleanup-maestro-agent-iot destroy-management destroy-regional build-platform-image test-e2e test-e2e-full test-e2e-validate test-e2e-destroy helm-lint check-rendered-files
 
 # Default target
 help:
@@ -377,8 +377,55 @@ check-rendered-files:
 	fi
 	@echo "✅ Rendered files are up to date"
 
-# Run end-to-end tests
+# =============================================================================
+# End-to-End Testing
+# =============================================================================
+
+# Run end-to-end tests - display usage information
 test-e2e:
-	@echo "🧪 Running end-to-end tests..."
-	@echo "✅ End-to-end tests complete"
+	@echo "🧪 End-to-End Testing"
+	@echo ""
+	@echo "Full automated test (provision + validate + destroy):"
+	@echo "  make test-e2e-full RC_ACCOUNT_ID=<id> MC_ACCOUNT_ID=<id>"
+	@echo ""
+	@echo "Alternative (environment variables):"
+	@echo "  RC_ACCOUNT_ID=<id> MC_ACCOUNT_ID=<id> make test-e2e-full"
+	@echo ""
+	@echo "Required parameters:"
+	@echo "  RC_ACCOUNT_ID        - Regional cluster AWS account ID"
+	@echo "  MC_ACCOUNT_ID        - Management cluster AWS account ID"
+	@echo ""
+	@echo "Optional parameters:"
+	@echo "  TEST_REGION          - AWS region (default: us-east-1)"
+	@echo "  GITHUB_REPOSITORY    - Git repo (default: current repo)"
+	@echo "  GITHUB_BRANCH        - Git branch (default: main)"
+	@echo ""
+	@echo "Individual commands:"
+	@echo "  make test-e2e-validate   - Run validation tests only"
+	@echo "  make test-e2e-destroy    - Clean up test environment"
+
+# Full end-to-end test with provisioning, validation, and cleanup
+test-e2e-full:
+	@if [ -z "$(RC_ACCOUNT_ID)" ] || [ -z "$(MC_ACCOUNT_ID)" ]; then \
+		echo "❌ ERROR: Required parameters not set"; \
+		echo "   RC_ACCOUNT_ID: $(RC_ACCOUNT_ID)"; \
+		echo "   MC_ACCOUNT_ID: $(MC_ACCOUNT_ID)"; \
+		echo ""; \
+		echo "Usage: make test-e2e-full RC_ACCOUNT_ID=<id> MC_ACCOUNT_ID=<id>"; \
+		exit 1; \
+	fi
+	@RC_ACCOUNT_ID=$(RC_ACCOUNT_ID) \
+		MC_ACCOUNT_ID=$(MC_ACCOUNT_ID) \
+		TEST_REGION=$(TEST_REGION) \
+		GITHUB_REPOSITORY=$(GITHUB_REPOSITORY) \
+		GITHUB_BRANCH=$(GITHUB_BRANCH) \
+		ci/e2e-test.sh
+
+# Validate existing e2e deployment (utility for debugging)
+test-e2e-validate:
+	@ci/e2e-validate.sh
+
+# Clean up e2e test environment (utility for manual cleanup)
+test-e2e-destroy:
+	@ci/e2e-destroy.sh
 

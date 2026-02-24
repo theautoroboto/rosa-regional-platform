@@ -1,0 +1,333 @@
+#!/usr/bin/env bash
+#
+# e2e-destroy.sh - Automated E2E Environment Cleanup
+#
+# This script performs non-interactive teardown of e2e test environments.
+# Destroys resources in the correct order:
+# 1. IoT resources (certificates, things, policies)
+# 2. Management Cluster infrastructure
+# 3. Regional Cluster infrastructure
+# 4. Terraform state files
+#
+# Required environment variables:
+#   MC_CLUSTER_ID       - Management cluster ID
+#   TEST_REGION         - AWS region
+#   RC_ACCOUNT_ID       - RC AWS account ID
+#   MC_ACCOUNT_ID       - MC AWS account ID
+#   CENTRAL_ACCOUNT_ID  - Central account ID
+#   TF_STATE_BUCKET     - Terraform state bucket
+#   TF_STATE_REGION     - State bucket region
+#   TF_STATE_KEY_RC     - RC state key
+#   TF_STATE_KEY_MC     - MC state key
+#   RC_CLUSTER_NAME     - Regional cluster name
+#   MC_CLUSTER_NAME     - Management cluster name
+#
+# Exit codes:
+#   0 - All cleanup successful
+#   3 - One or more cleanup steps failed
+
+set -euo pipefail
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+readonly MC_CLUSTER_ID="${MC_CLUSTER_ID:?MC_CLUSTER_ID is required}"
+readonly TEST_REGION="${TEST_REGION:?TEST_REGION is required}"
+readonly RC_ACCOUNT_ID="${RC_ACCOUNT_ID:?RC_ACCOUNT_ID is required}"
+readonly MC_ACCOUNT_ID="${MC_ACCOUNT_ID:?MC_ACCOUNT_ID is required}"
+readonly CENTRAL_ACCOUNT_ID="${CENTRAL_ACCOUNT_ID:?CENTRAL_ACCOUNT_ID is required}"
+readonly TF_STATE_BUCKET="${TF_STATE_BUCKET:?TF_STATE_BUCKET is required}"
+readonly TF_STATE_REGION="${TF_STATE_REGION:?TF_STATE_REGION is required}"
+readonly TF_STATE_KEY_RC="${TF_STATE_KEY_RC:?TF_STATE_KEY_RC is required}"
+readonly TF_STATE_KEY_MC="${TF_STATE_KEY_MC:?TF_STATE_KEY_MC is required}"
+readonly RC_CLUSTER_NAME="${RC_CLUSTER_NAME:?RC_CLUSTER_NAME is required}"
+readonly MC_CLUSTER_NAME="${MC_CLUSTER_NAME:?MC_CLUSTER_NAME is required}"
+
+CLEANUP_FAILURES=0
+
+# =============================================================================
+# Logging Functions
+# =============================================================================
+
+log() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [CLEANUP] $*"
+}
+
+log_success() {
+    echo "✅ $1"
+}
+
+log_error() {
+    echo "❌ $1" >&2
+}
+
+log_info() {
+    echo "ℹ️  $1"
+}
+
+log_phase() {
+    echo ""
+    echo "=========================================="
+    log "$1"
+    echo "=========================================="
+}
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+record_failure() {
+    ((CLEANUP_FAILURES++)) || true
+    log_error "$1"
+}
+
+retry_command() {
+    local max_attempts="$1"
+    shift
+    local attempt=1
+
+    while [ $attempt -le $max_attempts ]; do
+        if "$@"; then
+            return 0
+        fi
+
+        log_info "Attempt $attempt/$max_attempts failed, retrying..."
+        attempt=$((attempt + 1))
+        sleep 10
+    done
+
+    return 1
+}
+
+# =============================================================================
+# IoT Cleanup
+# =============================================================================
+
+cleanup_iot_resources() {
+    log_phase "Cleaning up IoT Resources"
+
+    # Export cluster ID for cleanup script
+    export CLUSTER_ID="$MC_CLUSTER_ID"
+
+    # Run IoT cleanup script
+    if [ -x "$SCRIPT_DIR/e2e-cleanup-iot.sh" ]; then
+        log_info "Running IoT cleanup script..."
+        if "$SCRIPT_DIR/e2e-cleanup-iot.sh"; then
+            log_success "IoT resources cleaned up"
+        else
+            record_failure "IoT cleanup script failed (non-fatal, continuing)"
+        fi
+    else
+        log_info "IoT cleanup script not found, skipping"
+    fi
+
+    # Clean up local certificate files
+    if [ -d "$REPO_ROOT/.maestro-certs/${MC_CLUSTER_ID}" ]; then
+        log_info "Removing local certificate files..."
+        rm -rf "$REPO_ROOT/.maestro-certs/${MC_CLUSTER_ID}"
+        log_success "Local certificate files removed"
+    fi
+
+    # Clean up IoT Terraform state
+    if [ -d "$REPO_ROOT/terraform/config/maestro-agent-iot-provisioning/.terraform" ]; then
+        log_info "Cleaning up IoT provisioning Terraform state..."
+        rm -rf "$REPO_ROOT/terraform/config/maestro-agent-iot-provisioning/.terraform"
+        rm -f "$REPO_ROOT/terraform/config/maestro-agent-iot-provisioning/terraform.tfstate"*
+        log_success "IoT Terraform state cleaned up"
+    fi
+}
+
+# =============================================================================
+# Maestro Secrets Cleanup
+# =============================================================================
+
+cleanup_maestro_secrets() {
+    log_phase "Cleaning up Maestro Secrets (MC Account)"
+
+    # Save original credentials
+    local ORIG_AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}"
+    local ORIG_AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}"
+    local ORIG_AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}"
+
+    # Assume role in MC account if needed
+    if [ "$MC_ACCOUNT_ID" != "$CENTRAL_ACCOUNT_ID" ]; then
+        local role_arn="arn:aws:iam::${MC_ACCOUNT_ID}:role/OrganizationAccountAccessRole"
+        log_info "Assuming role in MC account: $role_arn"
+
+        local creds=$(aws sts assume-role \
+            --role-arn "$role_arn" \
+            --role-session-name "e2e-cleanup-secrets" \
+            --output json 2>/dev/null || echo "")
+
+        if [ -n "$creds" ]; then
+            export AWS_ACCESS_KEY_ID=$(echo "$creds" | jq -r '.Credentials.AccessKeyId')
+            export AWS_SECRET_ACCESS_KEY=$(echo "$creds" | jq -r '.Credentials.SecretAccessKey')
+            export AWS_SESSION_TOKEN=$(echo "$creds" | jq -r '.Credentials.SessionToken')
+        else
+            log_error "Failed to assume role in MC account"
+            record_failure "Cannot cleanup Maestro secrets"
+        fi
+    fi
+
+    # Delete Maestro secrets (ignore errors if they don't exist)
+    log_info "Deleting Maestro agent certificate secret..."
+    aws secretsmanager delete-secret \
+        --secret-id "maestro/agent-cert" \
+        --region "$TEST_REGION" \
+        --force-delete-without-recovery \
+        2>/dev/null || log_info "Secret maestro/agent-cert not found or already deleted"
+
+    log_info "Deleting Maestro agent config secret..."
+    aws secretsmanager delete-secret \
+        --secret-id "maestro/agent-config" \
+        --region "$TEST_REGION" \
+        --force-delete-without-recovery \
+        2>/dev/null || log_info "Secret maestro/agent-config not found or already deleted"
+
+    log_success "Maestro secrets cleanup complete"
+
+    # Restore original credentials
+    export AWS_ACCESS_KEY_ID="$ORIG_AWS_ACCESS_KEY_ID"
+    export AWS_SECRET_ACCESS_KEY="$ORIG_AWS_SECRET_ACCESS_KEY"
+    export AWS_SESSION_TOKEN="$ORIG_AWS_SESSION_TOKEN"
+}
+
+# =============================================================================
+# Terraform Destroy
+# =============================================================================
+
+destroy_terraform() {
+    local cluster_type="$1"
+    local state_key="$2"
+    local description="$3"
+
+    log_phase "Destroying $description Infrastructure"
+
+    local terraform_dir="$REPO_ROOT/terraform/config/${cluster_type}"
+
+    if [ ! -d "$terraform_dir" ]; then
+        log_error "Terraform directory not found: $terraform_dir"
+        record_failure "Cannot destroy $description"
+        return 1
+    fi
+
+    cd "$terraform_dir"
+
+    # Initialize Terraform with correct backend
+    log_info "Initializing Terraform for $description..."
+    if ! terraform init -reconfigure \
+        -backend-config="bucket=${TF_STATE_BUCKET}" \
+        -backend-config="key=${state_key}" \
+        -backend-config="region=${TF_STATE_REGION}" \
+        -backend-config="use_lockfile=true" 2>/dev/null; then
+        log_error "Terraform init failed for $description"
+        record_failure "Cannot destroy $description - init failed"
+        cd "$REPO_ROOT"
+        return 1
+    fi
+
+    # Retry destroy up to 2 times
+    log_info "Running terraform destroy for $description (with retry)..."
+    if retry_command 2 terraform destroy -auto-approve; then
+        log_success "$description infrastructure destroyed"
+    else
+        log_error "Terraform destroy failed for $description after retries"
+        record_failure "$description infrastructure may not be fully destroyed"
+    fi
+
+    cd "$REPO_ROOT"
+}
+
+# =============================================================================
+# State File Cleanup
+# =============================================================================
+
+cleanup_state_files() {
+    log_phase "Cleaning up Terraform State Files"
+
+    # Delete RC state file
+    log_info "Deleting RC state file: s3://${TF_STATE_BUCKET}/${TF_STATE_KEY_RC}"
+    if aws s3 rm "s3://${TF_STATE_BUCKET}/${TF_STATE_KEY_RC}" --region "$TF_STATE_REGION" 2>/dev/null; then
+        log_success "RC state file deleted"
+    else
+        log_info "RC state file not found or already deleted"
+    fi
+
+    # Delete MC state file
+    log_info "Deleting MC state file: s3://${TF_STATE_BUCKET}/${TF_STATE_KEY_MC}"
+    if aws s3 rm "s3://${TF_STATE_BUCKET}/${TF_STATE_KEY_MC}" --region "$TF_STATE_REGION" 2>/dev/null; then
+        log_success "MC state file deleted"
+    else
+        log_info "MC state file not found or already deleted"
+    fi
+
+    # Clean up any lock files (ignore errors)
+    aws s3 rm "s3://${TF_STATE_BUCKET}/${TF_STATE_KEY_RC}.tflock" --region "$TF_STATE_REGION" 2>/dev/null || true
+    aws s3 rm "s3://${TF_STATE_BUCKET}/${TF_STATE_KEY_MC}.tflock" --region "$TF_STATE_REGION" 2>/dev/null || true
+
+    log_success "State file cleanup complete"
+}
+
+# =============================================================================
+# kubectl Context Cleanup
+# =============================================================================
+
+cleanup_kubectl_contexts() {
+    log_phase "Cleaning up kubectl Contexts"
+
+    # Remove kubectl contexts for e2e clusters
+    kubectl config delete-context "e2e-RC" 2>/dev/null || true
+    kubectl config delete-context "e2e-MC" 2>/dev/null || true
+
+    log_success "kubectl contexts cleaned up"
+}
+
+# =============================================================================
+# Main Cleanup Flow
+# =============================================================================
+
+main() {
+    log_phase "Starting E2E Environment Cleanup"
+    log_info "MC Cluster ID: $MC_CLUSTER_ID"
+    log_info "Region: $TEST_REGION"
+    echo ""
+
+    # Step 1: Clean up IoT resources (must be done before MC destroy)
+    cleanup_iot_resources
+
+    # Step 2: Clean up Maestro secrets in MC account
+    cleanup_maestro_secrets
+
+    # Step 3: Destroy Management Cluster (depends on RC, so destroy first)
+    destroy_terraform "management-cluster" "$TF_STATE_KEY_MC" "Management Cluster"
+
+    # Step 4: Destroy Regional Cluster
+    destroy_terraform "regional-cluster" "$TF_STATE_KEY_RC" "Regional Cluster"
+
+    # Step 5: Clean up state files
+    cleanup_state_files
+
+    # Step 6: Clean up kubectl contexts
+    cleanup_kubectl_contexts
+
+    # Summary
+    log_phase "Cleanup Summary"
+
+    if [ $CLEANUP_FAILURES -eq 0 ]; then
+        log_success "All cleanup operations completed successfully (0 failures)"
+        exit 0
+    else
+        log_error "Cleanup completed with $CLEANUP_FAILURES failure(s)"
+        log_error "Manual intervention may be required to clean up orphaned resources"
+        log_info "Check AWS console for resources tagged with cluster names:"
+        log_info "  RC: $RC_CLUSTER_NAME"
+        log_info "  MC: $MC_CLUSTER_NAME"
+        exit 3
+    fi
+}
+
+main "$@"
