@@ -266,8 +266,8 @@ provision_regional_cluster() {
 
     # Bootstrap ArgoCD
     log_info "Bootstrapping ArgoCD for Regional Cluster..."
-    export ENVIRONMENT="integration"
-    export REGION_ALIAS="${TEST_REGION}"
+    export ENVIRONMENT="e2e"
+    export REGION_ALIAS="e2e"
     export AWS_REGION="${TEST_REGION}"
     export CLUSTER_TYPE="regional-cluster"
 
@@ -335,8 +335,8 @@ provision_management_cluster() {
 
     # Bootstrap ArgoCD
     log_info "Bootstrapping ArgoCD for Management Cluster..."
-    export ENVIRONMENT="integration"
-    export REGION_ALIAS="${TEST_REGION}"
+    export ENVIRONMENT="e2e"
+    export REGION_ALIAS="e2e"
     export AWS_REGION="${TEST_REGION}"
     export CLUSTER_TYPE="management-cluster"
 
