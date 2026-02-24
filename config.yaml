@@ -208,3 +208,16 @@ region_deployments:
     management_clusters:
       - cluster_id: "mc01-{{ region_alias }}"
         account_id: "ssm:/infra/psav-central/us-east-1/mc01/account_id"
+
+  - name: "e2e"
+    aws_region: "us-east-1"
+    sector: "e2e"
+    account_id: 
+    terraform_vars:
+      account_id:
+      region: "{{ aws_region }}"
+      alias: "regional-{{region_alias}}"
+      region_alias: "{{ region_alias }}"
+    management_clusters:
+      - cluster_id: "mc01-{{ region_alias }}"
+        account_id: 
