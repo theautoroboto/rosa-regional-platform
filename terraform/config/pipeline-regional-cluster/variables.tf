@@ -1,10 +1,11 @@
-variable "github_repository" {
+variable "github_repo_owner" {
   type        = string
-  description = "GitHub Repository in owner/name format (e.g., 'octocat/hello-world')"
-  validation {
-    condition     = can(regex("^[^/]+/[^/]+$", var.github_repository))
-    error_message = "github_repository must be in 'owner/name' format"
-  }
+  description = "GitHub Repository Owner"
+}
+
+variable "github_repo_name" {
+  type        = string
+  description = "GitHub Repository Name"
 }
 
 variable "github_branch" {
@@ -81,5 +82,11 @@ variable "repository_branch" {
 variable "enable_bastion" {
   type        = bool
   description = "Enable ECS Fargate bastion for break-glass/development access to the cluster"
+  default     = false
+}
+
+variable "is_destroy" {
+  type        = bool
+  description = "Whether to run the pipeline in destroy mode"
   default     = false
 }

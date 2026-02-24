@@ -19,12 +19,10 @@ locals {
   artifact_bucket_name   = "mc-${local.resource_hash}-${local.account_suffix}" # 24 chars
   codebuild_role_name    = "mc-cb-${local.resource_hash}"                      # 18 chars
   codepipeline_role_name = "mc-cp-${local.resource_hash}"                      # 18 chars
+  validate_project_name  = "mc-val-${local.resource_hash}"                     # 19 chars
   apply_project_name     = "mc-app-${local.resource_hash}"                     # 19 chars
   bootstrap_project_name = "mc-boot-${local.resource_hash}"                    # 21 chars
   pipeline_name          = "mc-pipe-${local.resource_hash}"                    # 20 chars
-
-  # Repository URL constructed from github_repository variable
-  repository_url = "https://github.com/${var.github_repository}.git"
 }
 
 # Use shared GitHub Connection (passed from pipeline-provisioner)
@@ -64,12 +62,12 @@ resource "aws_iam_role_policy" "codebuild_policy" {
           "logs:PutLogEvents"
         ]
         Resource = [
+          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_validate.name}",
+          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_validate.name}:*",
           "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_apply.name}",
           "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_apply.name}:*",
           "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_bootstrap.name}",
-          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_bootstrap.name}:*",
-          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_destroy.name}",
-          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_destroy.name}:*"
+          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.management_bootstrap.name}:*"
         ]
       },
       {
@@ -267,9 +265,9 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
           "codebuild:StartBuild"
         ]
         Resource = [
+          aws_codebuild_project.management_validate.arn,
           aws_codebuild_project.management_apply.arn,
-          aws_codebuild_project.management_bootstrap.arn,
-          aws_codebuild_project.management_destroy.arn
+          aws_codebuild_project.management_bootstrap.arn
         ]
       },
       {
@@ -278,6 +276,7 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
           "codebuild:StartBuild"
         ]
         Resource = [
+          "arn:aws:codebuild:*:*:project/${aws_codebuild_project.management_validate.name}",
           "arn:aws:codebuild:*:*:project/${aws_codebuild_project.management_apply.name}",
           "arn:aws:codebuild:*:*:project/${aws_codebuild_project.management_bootstrap.name}"
         ]
@@ -330,6 +329,70 @@ resource "aws_s3_bucket_public_access_block" "pipeline_artifact" {
   restrict_public_buckets = true
 }
 
+# CodeBuild Project - Validate
+resource "aws_codebuild_project" "management_validate" {
+  name          = local.validate_project_name
+  service_role  = aws_iam_role.codebuild_role.arn
+  build_timeout = 30
+
+  artifacts {
+    type = "CODEPIPELINE"
+  }
+
+  environment {
+    compute_type                = "BUILD_GENERAL1_SMALL"
+    image                       = "aws/codebuild/amazonlinux2-x86_64-standard:4.0"
+    type                        = "LINUX_CONTAINER"
+    image_pull_credentials_type = "CODEBUILD"
+
+    environment_variable {
+      name  = "TARGET_ACCOUNT_ID"
+      value = var.target_account_id
+    }
+    environment_variable {
+      name  = "TARGET_REGION"
+      value = var.target_region
+    }
+    environment_variable {
+      name  = "TARGET_ALIAS"
+      value = var.target_alias
+    }
+    environment_variable {
+      name  = "APP_CODE"
+      value = var.app_code
+    }
+    environment_variable {
+      name  = "SERVICE_PHASE"
+      value = var.service_phase
+    }
+    environment_variable {
+      name  = "COST_CENTER"
+      value = var.cost_center
+    }
+    environment_variable {
+      name  = "REPOSITORY_URL"
+      value = var.repository_url
+    }
+    environment_variable {
+      name  = "REPOSITORY_BRANCH"
+      value = var.repository_branch
+    }
+    environment_variable {
+      name  = "CLUSTER_ID"
+      value = var.cluster_id
+    }
+    environment_variable {
+      name  = "REGIONAL_AWS_ACCOUNT_ID"
+      value = var.regional_aws_account_id
+    }
+  }
+
+  source {
+    type      = "CODEPIPELINE"
+    buildspec = "terraform/config/pipeline-management-cluster/buildspec-validate.yml"
+  }
+}
+
 # CodeBuild Project - Apply
 resource "aws_codebuild_project" "management_apply" {
   name          = local.apply_project_name
@@ -346,65 +409,57 @@ resource "aws_codebuild_project" "management_apply" {
     type                        = "LINUX_CONTAINER"
     image_pull_credentials_type = "CODEBUILD"
 
-    # AWS account where Management Cluster will be deployed
     environment_variable {
       name  = "TARGET_ACCOUNT_ID"
       value = var.target_account_id
     }
-    # AWS region for Management Cluster deployment
     environment_variable {
       name  = "TARGET_REGION"
       value = var.target_region
     }
-    # Unique identifier for deploying multiple clusters per region
     environment_variable {
       name  = "TARGET_ALIAS"
       value = var.target_alias
     }
-    # Application code for resource tagging
     environment_variable {
       name  = "APP_CODE"
       value = var.app_code
     }
-    # Service phase for resource tagging
     environment_variable {
       name  = "SERVICE_PHASE"
       value = var.service_phase
     }
-    # Cost center for resource tagging
     environment_variable {
       name  = "COST_CENTER"
       value = var.cost_center
     }
-    # Git repository URL for ArgoCD configuration
     environment_variable {
       name  = "REPOSITORY_URL"
       value = var.repository_url
     }
-    # Git branch for ArgoCD configuration
     environment_variable {
       name  = "REPOSITORY_BRANCH"
       value = var.repository_branch
     }
-    # Logical ID for registering with Regional Cluster
     environment_variable {
       name  = "CLUSTER_ID"
       value = var.cluster_id
     }
-    # AWS account hosting the Regional Cluster
     environment_variable {
       name  = "REGIONAL_AWS_ACCOUNT_ID"
       value = var.regional_aws_account_id
     }
-    # Environment name (staging/production)
     environment_variable {
       name  = "ENVIRONMENT"
       value = var.target_environment
     }
-    # Whether to provision a bastion host
     environment_variable {
       name  = "ENABLE_BASTION"
       value = var.enable_bastion ? "true" : "false"
+    }
+    environment_variable {
+      name  = "IS_DESTROY"
+      value = var.is_destroy ? "true" : "false"
     }
   }
 
@@ -431,32 +486,30 @@ resource "aws_codebuild_project" "management_bootstrap" {
     image_pull_credentials_type = "CODEBUILD"
     privileged_mode             = true # Required for Docker builds
 
-    # AWS account where Management Cluster is deployed
     environment_variable {
       name  = "TARGET_ACCOUNT_ID"
       value = var.target_account_id
     }
-    # Unique identifier for the cluster
     environment_variable {
       name  = "TARGET_ALIAS"
       value = var.target_alias
     }
-    # AWS region for bootstrap operations
     environment_variable {
       name  = "TARGET_REGION"
       value = var.target_region
     }
-    # Environment name (staging/production)
     environment_variable {
       name  = "ENVIRONMENT"
       value = var.target_environment
     }
-    # Git repository URL for ArgoCD bootstrap
+    environment_variable {
+      name  = "AWS_REGION"
+      value = var.target_region
+    }
     environment_variable {
       name  = "REPOSITORY_URL"
       value = var.repository_url
     }
-    # Git branch for ArgoCD bootstrap
     environment_variable {
       name  = "REPOSITORY_BRANCH"
       value = var.repository_branch
@@ -466,100 +519,6 @@ resource "aws_codebuild_project" "management_bootstrap" {
   source {
     type      = "CODEPIPELINE"
     buildspec = "terraform/config/pipeline-management-cluster/buildspec-bootstrap.yml"
-  }
-}
-
-# CodeBuild Project - Destroy
-resource "aws_codebuild_project" "management_destroy" {
-  name          = "${local.apply_project_name}-destroy"
-  service_role  = aws_iam_role.codebuild_role.arn
-  build_timeout = 60
-
-  artifacts {
-    type = "CODEPIPELINE"
-  }
-
-  environment {
-    compute_type                = "BUILD_GENERAL1_SMALL"
-    image                       = "aws/codebuild/amazonlinux2-x86_64-standard:4.0"
-    type                        = "LINUX_CONTAINER"
-    image_pull_credentials_type = "CODEBUILD"
-
-    # GitHub repository in owner/name format
-    environment_variable {
-      name  = "GITHUB_REPOSITORY"
-      value = var.github_repository
-    }
-    # Git branch to trigger builds from
-    environment_variable {
-      name  = "GITHUB_BRANCH"
-      value = var.github_branch
-    }
-    # CodeStar connection ARN for GitHub access
-    environment_variable {
-      name  = "GITHUB_CONNECTION_ARN"
-      value = var.github_connection_arn
-    }
-    # AWS account where Management Cluster will be deployed
-    environment_variable {
-      name  = "TARGET_ACCOUNT_ID"
-      value = var.target_account_id
-    }
-    # AWS region for Management Cluster deployment
-    environment_variable {
-      name  = "TARGET_REGION"
-      value = var.target_region
-    }
-    # Unique identifier for deploying multiple clusters per region
-    environment_variable {
-      name  = "TARGET_ALIAS"
-      value = var.target_alias
-    }
-    # Application code for resource tagging
-    environment_variable {
-      name  = "APP_CODE"
-      value = var.app_code
-    }
-    # Service phase for resource tagging
-    environment_variable {
-      name  = "SERVICE_PHASE"
-      value = var.service_phase
-    }
-    # Cost center for resource tagging
-    environment_variable {
-      name  = "COST_CENTER"
-      value = var.cost_center
-    }
-    # Git repository URL for ArgoCD configuration
-    environment_variable {
-      name  = "REPOSITORY_URL"
-      value = var.repository_url
-    }
-    # Git branch for ArgoCD configuration
-    environment_variable {
-      name  = "REPOSITORY_BRANCH"
-      value = var.repository_branch
-    }
-    # Logical ID for registering with Regional Cluster
-    environment_variable {
-      name  = "CLUSTER_ID"
-      value = var.cluster_id
-    }
-    # AWS account hosting the Regional Cluster
-    environment_variable {
-      name  = "REGIONAL_AWS_ACCOUNT_ID"
-      value = var.regional_aws_account_id
-    }
-    # Environment name (staging/production)
-    environment_variable {
-      name  = "ENVIRONMENT"
-      value = var.target_environment
-    }
-  }
-
-  source {
-    type      = "CODEPIPELINE"
-    buildspec = "terraform/config/pipeline-management-cluster/buildspec-destroy.yml"
   }
 }
 
@@ -605,8 +564,26 @@ resource "aws_codepipeline" "regional_pipeline" {
 
       configuration = {
         ConnectionArn    = data.aws_codestarconnections_connection.github.arn
-        FullRepositoryId = var.github_repository
+        FullRepositoryId = "${var.github_repo_owner}/${var.github_repo_name}"
         BranchName       = var.github_branch
+      }
+    }
+  }
+
+  stage {
+    name = "Validate"
+
+    action {
+      name             = "ValidateAndPlan"
+      category         = "Build"
+      owner            = "AWS"
+      provider         = "CodeBuild"
+      input_artifacts  = ["source_output"]
+      output_artifacts = ["validate_output"]
+      version          = "1"
+
+      configuration = {
+        ProjectName = aws_codebuild_project.management_validate.name
       }
     }
   }
@@ -619,7 +596,7 @@ resource "aws_codepipeline" "regional_pipeline" {
       category         = "Build"
       owner            = "AWS"
       provider         = "CodeBuild"
-      input_artifacts  = ["source_output"]
+      input_artifacts  = ["validate_output"]
       output_artifacts = ["apply_output"]
       version          = "1"
 
@@ -643,42 +620,6 @@ resource "aws_codepipeline" "regional_pipeline" {
 
       configuration = {
         ProjectName = aws_codebuild_project.management_bootstrap.name
-      }
-    }
-  }
-
-  # Manual Approval before Destruction (for safety)
-  stage {
-    name = "Destroy-Approval"
-
-    action {
-      name     = "ApproveDestruction"
-      category = "Approval"
-      owner    = "AWS"
-      provider = "Manual"
-      version  = "1"
-
-      configuration = {
-        CustomData = "Management Cluster ${var.target_alias} (${var.cluster_id}) is marked for deletion (delete: true in config). Review the infrastructure and approve to proceed with destruction. This action is IRREVERSIBLE. Ensure all customer Hosted Clusters have been migrated off this Management Cluster."
-      }
-    }
-  }
-
-  # Destroy Infrastructure
-  stage {
-    name = "Destroy-Infrastructure"
-
-    action {
-      name             = "DestroyInfrastructure"
-      category         = "Build"
-      owner            = "AWS"
-      provider         = "CodeBuild"
-      input_artifacts  = ["source_output"]
-      output_artifacts = ["destroy_output"]
-      version          = "1"
-
-      configuration = {
-        ProjectName = aws_codebuild_project.management_destroy.name
       }
     }
   }
