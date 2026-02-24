@@ -335,7 +335,8 @@ main() {
     fi
 
     # Step 3: Destroy Management Cluster (depends on RC, so destroy first)
-    if [ -n "$TF_STATE_KEY_MC" ]; then
+    # Only destroy if MC was actually configured (MC_CLUSTER_ID is set)
+    if [ -n "$MC_CLUSTER_ID" ] && [ -n "$TF_STATE_KEY_MC" ]; then
         destroy_terraform "management-cluster" "$TF_STATE_KEY_MC" "Management Cluster"
     else
         log_info "Skipping MC destroy (MC was never provisioned)"
