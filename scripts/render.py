@@ -445,13 +445,16 @@ def render_region_deployment_terraform(
             # Build MC terraform_vars by merging region deployment terraform_vars with MC-specific overrides
             rd_tf_vars = rd.get('terraform_vars', {}).copy()
 
-            # MC-specific overrides (these override region deployment values)
-            mc_overrides = {
+            # Start with all MC-specific fields from config.yaml (preserves extra fields like 'delete')
+            mc_overrides = mc.copy()
+
+            # Then apply standard overrides that we always set
+            mc_overrides.update({
                 'account_id': mc.get('account_id'),
                 'alias': cluster_id,
                 'cluster_id': cluster_id,
                 'regional_aws_account_id': rd.get('account_id'),
-            }
+            })
 
             mc_data = deep_merge(rd_tf_vars, mc_overrides)
 
