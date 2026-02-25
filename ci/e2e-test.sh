@@ -556,6 +556,28 @@ provision_regional_cluster() {
     log_success "Regional Cluster infrastructure provisioned"
     PROVISION_RC_COMPLETED=true
 
+    # Assume RC role for image build and bootstrap if cross-account
+    # This ensures the platform image is pushed to the ECR repository in the RC account
+    local SAVED_AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}"
+    local SAVED_AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}"
+    local SAVED_AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}"
+
+    if [ "$RC_ACCOUNT_ID" != "$CENTRAL_ACCOUNT_ID" ]; then
+        local role_arn="arn:aws:iam::${RC_ACCOUNT_ID}:role/OrganizationAccountAccessRole"
+        log_info "Assuming role in RC account for image build: $role_arn"
+
+        local creds=$(aws sts assume-role \
+            --role-arn "$role_arn" \
+            --role-session-name "e2e-rc-image-build" \
+            --output json)
+
+        export AWS_ACCESS_KEY_ID=$(echo "$creds" | jq -r '.Credentials.AccessKeyId')
+        export AWS_SECRET_ACCESS_KEY=$(echo "$creds" | jq -r '.Credentials.SecretAccessKey')
+        export AWS_SESSION_TOKEN=$(echo "$creds" | jq -r '.Credentials.SessionToken')
+
+        log_info "Role assumed - Account: $(aws sts get-caller-identity --query Account --output text)"
+    fi
+
     # Build platform image
     log_info "Building platform image..."
     local build_output=$(mktemp)
@@ -565,6 +587,14 @@ provision_regional_cluster() {
             error_lines=$(tail -10 "$build_output")
         fi
         rm -f "$build_output"
+
+        # Restore credentials before returning
+        if [ "$RC_ACCOUNT_ID" != "$CENTRAL_ACCOUNT_ID" ]; then
+            export AWS_ACCESS_KEY_ID="$SAVED_AWS_ACCESS_KEY_ID"
+            export AWS_SECRET_ACCESS_KEY="$SAVED_AWS_SECRET_ACCESS_KEY"
+            export AWS_SESSION_TOKEN="$SAVED_AWS_SESSION_TOKEN"
+        fi
+
         record_test_error "Platform image build failed. Last output:\n$error_lines"
         return 1
     fi
@@ -573,7 +603,7 @@ provision_regional_cluster() {
     # Bootstrap ArgoCD
     log_info "Bootstrapping ArgoCD for Regional Cluster..."
 
-    # Set role assumption if cross-account
+    # Set role assumption for bootstrap script (credentials already assumed above if cross-account)
     if [ "$RC_ACCOUNT_ID" != "$CENTRAL_ACCOUNT_ID" ]; then
         export ASSUME_ROLE_ARN="arn:aws:iam::${RC_ACCOUNT_ID}:role/OrganizationAccountAccessRole"
     fi
@@ -585,10 +615,26 @@ provision_regional_cluster() {
             error_lines=$(tail -10 "$bootstrap_output")
         fi
         rm -f "$bootstrap_output"
+
+        # Restore credentials before returning
+        if [ "$RC_ACCOUNT_ID" != "$CENTRAL_ACCOUNT_ID" ]; then
+            export AWS_ACCESS_KEY_ID="$SAVED_AWS_ACCESS_KEY_ID"
+            export AWS_SECRET_ACCESS_KEY="$SAVED_AWS_SECRET_ACCESS_KEY"
+            export AWS_SESSION_TOKEN="$SAVED_AWS_SESSION_TOKEN"
+        fi
+
         record_test_error "RC ArgoCD bootstrap failed. Last output:\n$error_lines"
         return 1
     fi
     rm -f "$bootstrap_output"
+
+    # Restore credentials after bootstrap
+    if [ "$RC_ACCOUNT_ID" != "$CENTRAL_ACCOUNT_ID" ]; then
+        export AWS_ACCESS_KEY_ID="$SAVED_AWS_ACCESS_KEY_ID"
+        export AWS_SECRET_ACCESS_KEY="$SAVED_AWS_SECRET_ACCESS_KEY"
+        export AWS_SESSION_TOKEN="$SAVED_AWS_SESSION_TOKEN"
+        log_info "Restored central account credentials"
+    fi
 
     log_success "Regional Cluster fully provisioned and bootstrapped"
 }
