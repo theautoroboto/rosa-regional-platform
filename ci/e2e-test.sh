@@ -492,20 +492,28 @@ provision_regional_cluster() {
 
     # Provision infrastructure using pipeline target (same as CI/CD)
     log_info "Running pipeline provisioning for Regional Cluster..."
-    make pipeline-provision-regional || {
-        log_error "Pipeline provision failed for RC"
+    local provision_output=$(mktemp)
+    if ! make pipeline-provision-regional 2>&1 | tee "$provision_output"; then
+        local error_summary=$(tail -20 "$provision_output" | grep -E "Error:|error:|failed" || echo "Unknown error")
+        rm -f "$provision_output"
+        record_test_error "RC provisioning failed: $error_summary"
         return 1
-    }
+    fi
+    rm -f "$provision_output"
 
     log_success "Regional Cluster infrastructure provisioned"
     PROVISION_RC_COMPLETED=true
 
     # Build platform image
     log_info "Building platform image..."
-    make build-platform-image || {
-        log_error "Platform image build failed"
+    local build_output=$(mktemp)
+    if ! make build-platform-image 2>&1 | tee "$build_output"; then
+        local error_summary=$(tail -10 "$build_output" | grep -E "Error:|error:|failed" || echo "Unknown error")
+        rm -f "$build_output"
+        record_test_error "Platform image build failed: $error_summary"
         return 1
-    }
+    fi
+    rm -f "$build_output"
 
     # Bootstrap ArgoCD
     log_info "Bootstrapping ArgoCD for Regional Cluster..."
@@ -515,10 +523,14 @@ provision_regional_cluster() {
         export ASSUME_ROLE_ARN="arn:aws:iam::${RC_ACCOUNT_ID}:role/OrganizationAccountAccessRole"
     fi
 
-    "$REPO_ROOT/scripts/bootstrap-argocd.sh" regional-cluster || {
-        log_error "ArgoCD bootstrap failed for RC"
+    local bootstrap_output=$(mktemp)
+    if ! "$REPO_ROOT/scripts/bootstrap-argocd.sh" regional-cluster 2>&1 | tee "$bootstrap_output"; then
+        local error_summary=$(tail -10 "$bootstrap_output" | grep -E "Error:|error:|failed" || echo "Unknown error")
+        rm -f "$bootstrap_output"
+        record_test_error "RC ArgoCD bootstrap failed: $error_summary"
         return 1
-    }
+    fi
+    rm -f "$bootstrap_output"
 
     log_success "Regional Cluster fully provisioned and bootstrapped"
 }
@@ -536,24 +548,28 @@ provision_management_cluster() {
 
     # Provision IoT resources in regional account first
     log_info "Provisioning IoT resources in regional account..."
-    provision_iot_resources || {
-        log_error "IoT provisioning failed"
+    if ! provision_iot_resources; then
+        record_test_error "IoT provisioning failed (see logs above for details)"
         return 1
-    }
+    fi
 
     # Create Maestro secrets in management account
     log_info "Creating Maestro secrets in management account..."
-    create_maestro_secrets || {
-        log_error "Maestro secret creation failed"
+    if ! create_maestro_secrets; then
+        record_test_error "Maestro secret creation failed (see logs above for details)"
         return 1
-    }
+    fi
 
     # Provision infrastructure using pipeline target (same as CI/CD)
     log_info "Running pipeline provisioning for Management Cluster..."
-    make pipeline-provision-management || {
-        log_error "Pipeline provision failed for MC"
+    local provision_output=$(mktemp)
+    if ! make pipeline-provision-management 2>&1 | tee "$provision_output"; then
+        local error_summary=$(tail -20 "$provision_output" | grep -E "Error:|error:|failed" || echo "Unknown error")
+        rm -f "$provision_output"
+        record_test_error "MC provisioning failed: $error_summary"
         return 1
-    }
+    fi
+    rm -f "$provision_output"
 
     log_success "Management Cluster infrastructure provisioned"
     PROVISION_MC_COMPLETED=true
@@ -566,10 +582,14 @@ provision_management_cluster() {
         export ASSUME_ROLE_ARN="arn:aws:iam::${MC_ACCOUNT_ID}:role/OrganizationAccountAccessRole"
     fi
 
-    "$REPO_ROOT/scripts/bootstrap-argocd.sh" management-cluster || {
-        log_error "ArgoCD bootstrap failed for MC"
+    local bootstrap_output=$(mktemp)
+    if ! "$REPO_ROOT/scripts/bootstrap-argocd.sh" management-cluster 2>&1 | tee "$bootstrap_output"; then
+        local error_summary=$(tail -10 "$bootstrap_output" | grep -E "Error:|error:|failed" || echo "Unknown error")
+        rm -f "$bootstrap_output"
+        record_test_error "MC ArgoCD bootstrap failed: $error_summary"
         return 1
-    }
+    fi
+    rm -f "$bootstrap_output"
 
     log_success "Management Cluster fully provisioned and bootstrapped"
 }
@@ -600,17 +620,32 @@ provision_iot_resources() {
     # Provision IoT thing and certificate
     cd "$REPO_ROOT/terraform/config/maestro-agent-iot-provisioning"
 
-    terraform init -backend=false
+    local tf_output=$(mktemp)
 
-    terraform apply -auto-approve \
-        -var="cluster_id=${MC_CLUSTER_ID}" \
-        -var="region=${TEST_REGION}" || {
+    if ! terraform init -backend=false 2>&1 | tee "$tf_output"; then
+        local error_summary=$(tail -10 "$tf_output" | grep -E "Error:|error:|failed" || echo "Terraform init failed")
+        rm -f "$tf_output"
+        record_test_error "IoT terraform init failed: $error_summary"
         # Restore credentials
         export AWS_ACCESS_KEY_ID="$SAVED_AWS_ACCESS_KEY_ID"
         export AWS_SECRET_ACCESS_KEY="$SAVED_AWS_SECRET_ACCESS_KEY"
         export AWS_SESSION_TOKEN="$SAVED_AWS_SESSION_TOKEN"
         return 1
-    }
+    fi
+
+    if ! terraform apply -auto-approve \
+        -var="cluster_id=${MC_CLUSTER_ID}" \
+        -var="region=${TEST_REGION}" 2>&1 | tee "$tf_output"; then
+        local error_summary=$(tail -20 "$tf_output" | grep -E "Error:|error:|failed" || echo "Terraform apply failed")
+        rm -f "$tf_output"
+        record_test_error "IoT terraform apply failed: $error_summary"
+        # Restore credentials
+        export AWS_ACCESS_KEY_ID="$SAVED_AWS_ACCESS_KEY_ID"
+        export AWS_SECRET_ACCESS_KEY="$SAVED_AWS_SECRET_ACCESS_KEY"
+        export AWS_SESSION_TOKEN="$SAVED_AWS_SESSION_TOKEN"
+        return 1
+    fi
+    rm -f "$tf_output"
 
     # Save outputs for secret creation
     local iot_endpoint=$(terraform output -raw iot_endpoint)
@@ -660,7 +695,7 @@ create_maestro_secrets() {
     # Read certificate data
     local cert_file="$REPO_ROOT/.maestro-certs/${MC_CLUSTER_ID}/certificate_data.json"
     if [ ! -f "$cert_file" ]; then
-        log_error "Certificate data not found: $cert_file"
+        record_test_error "Certificate data not found: $cert_file"
         return 1
     fi
 
@@ -669,16 +704,29 @@ create_maestro_secrets() {
     local private_key=$(jq -r '.private_key' "$cert_file")
     local ca_cert=$(jq -r '.ca_certificate' "$cert_file")
 
-    # Create secrets
-    aws secretsmanager create-secret \
+    # Create secrets with error capture
+    local secret_output=$(mktemp)
+
+    if ! aws secretsmanager create-secret \
         --name "maestro/agent-cert" \
         --secret-string "{\"certificate\":\"$certificate_pem\",\"private_key\":\"$private_key\",\"ca_certificate\":\"$ca_cert\"}" \
-        --region "${TEST_REGION}" || true
+        --region "${TEST_REGION}" 2>&1 | tee "$secret_output"; then
+        local error_msg=$(cat "$secret_output")
+        rm -f "$secret_output"
+        record_test_error "Failed to create maestro/agent-cert secret: $error_msg"
+        return 1
+    fi
 
-    aws secretsmanager create-secret \
+    if ! aws secretsmanager create-secret \
         --name "maestro/agent-config" \
         --secret-string "{\"endpoint\":\"$iot_endpoint\"}" \
-        --region "${TEST_REGION}" || true
+        --region "${TEST_REGION}" 2>&1 | tee "$secret_output"; then
+        local error_msg=$(cat "$secret_output")
+        rm -f "$secret_output"
+        record_test_error "Failed to create maestro/agent-config secret: $error_msg"
+        return 1
+    fi
+    rm -f "$secret_output"
 
     log_success "Maestro secrets created"
 }
@@ -699,10 +747,14 @@ run_validation() {
     export MC_ACCOUNT_ID
     export CENTRAL_ACCOUNT_ID
 
-    "$SCRIPT_DIR/e2e-validate.sh" || {
-        log_error "Validation failed"
+    local validation_output=$(mktemp)
+    if ! "$SCRIPT_DIR/e2e-validate.sh" 2>&1 | tee "$validation_output"; then
+        local error_summary=$(tail -20 "$validation_output" | grep -E "Error:|error:|FAILED|failed" || echo "Unknown validation error")
+        rm -f "$validation_output"
+        record_test_error "Validation failed: $error_summary"
         return 1
-    }
+    fi
+    rm -f "$validation_output"
 
     log_success "Validation complete"
     VALIDATION_COMPLETED=true
@@ -852,19 +904,19 @@ main() {
 
     # Provision Regional Cluster
     if ! provision_regional_cluster; then
-        record_test_error "Regional Cluster provisioning failed"
+        # Error already recorded in provision_regional_cluster function
         exit $EXIT_PROVISION_FAILURE
     fi
 
     # Provision Management Cluster
     if ! provision_management_cluster; then
-        record_test_error "Management Cluster provisioning failed"
+        # Error already recorded in provision_management_cluster function
         exit $EXIT_PROVISION_FAILURE
     fi
 
     # Run validation tests
     if ! run_validation; then
-        record_test_error "Validation failed"
+        # Error already recorded in run_validation function
         exit $EXIT_VALIDATION_FAILURE
     fi
 
