@@ -63,6 +63,11 @@ PROVISION_MC_COMPLETED=false
 VALIDATION_COMPLETED=false
 CLEANUP_COMPLETED=false
 
+# Cluster names (set during environment configuration)
+RC_CLUSTER_NAME=""
+MC_CLUSTER_NAME=""
+MC_CLUSTER_ID=""
+
 # Error tracking
 TEST_ERRORS=()
 CLEANUP_ERRORS=()
@@ -711,17 +716,18 @@ run_cleanup() {
     log_phase "Running Cleanup"
 
     # Export necessary variables for cleanup script
-    export MC_CLUSTER_ID
-    export TEST_REGION
-    export RC_ACCOUNT_ID
-    export MC_ACCOUNT_ID
-    export CENTRAL_ACCOUNT_ID
-    export TF_STATE_BUCKET
-    export TF_STATE_REGION
-    export TF_STATE_KEY_RC
-    export TF_STATE_KEY_MC
-    export RC_CLUSTER_NAME
-    export MC_CLUSTER_NAME
+    # Note: All these should be set by now since we only call cleanup after detect_central_account
+    export MC_CLUSTER_ID="${MC_CLUSTER_ID:-}"
+    export TEST_REGION="${TEST_REGION}"
+    export RC_ACCOUNT_ID="${RC_ACCOUNT_ID}"
+    export MC_ACCOUNT_ID="${MC_ACCOUNT_ID}"
+    export CENTRAL_ACCOUNT_ID="${CENTRAL_ACCOUNT_ID}"
+    export TF_STATE_BUCKET="${TF_STATE_BUCKET}"
+    export TF_STATE_REGION="${TF_STATE_REGION}"
+    export TF_STATE_KEY_RC="${TF_STATE_KEY_RC}"
+    export TF_STATE_KEY_MC="${TF_STATE_KEY_MC}"
+    export RC_CLUSTER_NAME="${RC_CLUSTER_NAME:-}"
+    export MC_CLUSTER_NAME="${MC_CLUSTER_NAME:-}"
 
     # Capture cleanup output to detect errors
     local cleanup_output=$(mktemp)
@@ -763,13 +769,18 @@ cleanup_on_exit() {
         log_success "Test passed"
     fi
 
-    # Always run cleanup
-    log_info "Running cleanup (always runs regardless of test result)..."
-    if run_cleanup; then
-        log_success "Cleanup successful"
+    # Only run cleanup if we got past account detection (TF_STATE_BUCKET is set)
+    if [ -n "${TF_STATE_BUCKET:-}" ]; then
+        log_info "Running cleanup (always runs regardless of test result)..."
+        if run_cleanup; then
+            log_success "Cleanup successful"
+        else
+            log_error "Cleanup failed - manual intervention may be required"
+            exit_code=$EXIT_CLEANUP_FAILURE
+        fi
     else
-        log_error "Cleanup failed - manual intervention may be required"
-        exit_code=$EXIT_CLEANUP_FAILURE
+        log_info "Skipping cleanup - test failed before infrastructure was provisioned"
+        CLEANUP_COMPLETED=true  # No cleanup needed
     fi
 
     # Summary
