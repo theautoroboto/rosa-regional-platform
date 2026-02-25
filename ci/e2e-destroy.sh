@@ -54,6 +54,7 @@ readonly RC_CLUSTER_NAME="${RC_CLUSTER_NAME:-}"
 readonly MC_CLUSTER_NAME="${MC_CLUSTER_NAME:-}"
 
 CLEANUP_FAILURES=0
+CLEANUP_ERRORS=()
 
 # =============================================================================
 # Logging Functions
@@ -88,6 +89,7 @@ log_phase() {
 
 record_failure() {
     ((CLEANUP_FAILURES++)) || true
+    CLEANUP_ERRORS+=("$1")
     log_error "$1"
 }
 
@@ -443,6 +445,12 @@ main() {
         exit 0
     else
         log_error "Cleanup completed with $CLEANUP_FAILURES failure(s)"
+        echo ""
+        log_error "Errors encountered during cleanup:"
+        for error in "${CLEANUP_ERRORS[@]}"; do
+            echo "  ❌ $error"
+        done
+        echo ""
         log_error "Manual intervention may be required to clean up orphaned resources"
         log_info "Check AWS console for resources tagged with cluster names:"
         if [ -n "$RC_CLUSTER_NAME" ]; then

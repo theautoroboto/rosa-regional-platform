@@ -63,6 +63,10 @@ PROVISION_MC_COMPLETED=false
 VALIDATION_COMPLETED=false
 CLEANUP_COMPLETED=false
 
+# Error tracking
+TEST_ERRORS=()
+CLEANUP_ERRORS=()
+
 # =============================================================================
 # Logging Functions
 # =============================================================================
@@ -88,6 +92,24 @@ log_error() {
 
 log_info() {
     log "ℹ️  $1"
+}
+
+log_warning() {
+    log "⚠️  $1"
+}
+
+# =============================================================================
+# Error Tracking
+# =============================================================================
+
+record_test_error() {
+    TEST_ERRORS+=("$1")
+    log_error "$1"
+}
+
+record_cleanup_error() {
+    CLEANUP_ERRORS+=("$1")
+    log_error "$1"
 }
 
 # =============================================================================
@@ -555,14 +577,28 @@ run_cleanup() {
     export RC_CLUSTER_NAME
     export MC_CLUSTER_NAME
 
-    "$SCRIPT_DIR/e2e-destroy.sh" || {
-        log_error "Cleanup failed - resources may be orphaned"
+    # Capture cleanup output to detect errors
+    local cleanup_output=$(mktemp)
+    if "$SCRIPT_DIR/e2e-destroy.sh" 2>&1 | tee "$cleanup_output"; then
+        log_success "Cleanup complete"
+        CLEANUP_COMPLETED=true
+        rm -f "$cleanup_output"
+        return 0
+    else
+        # Extract error lines from cleanup output
+        while IFS= read -r line; do
+            if [[ "$line" =~ ❌ ]]; then
+                # Extract the error message after the emoji
+                local error_msg=$(echo "$line" | sed 's/.*❌ //')
+                CLEANUP_ERRORS+=("$error_msg")
+            fi
+        done < "$cleanup_output"
+
+        rm -f "$cleanup_output"
+        record_cleanup_error "Cleanup script failed - resources may be orphaned"
         CLEANUP_COMPLETED=false
         return 1
-    }
-
-    log_success "Cleanup complete"
-    CLEANUP_COMPLETED=true
+    fi
 }
 
 # =============================================================================
@@ -599,10 +635,38 @@ cleanup_on_exit() {
     log_info "Validation: $VALIDATION_COMPLETED"
     log_info "Cleanup: $CLEANUP_COMPLETED"
 
+    # Display test errors if any
+    if [ ${#TEST_ERRORS[@]} -gt 0 ]; then
+        echo ""
+        log_error "Test errors encountered (${#TEST_ERRORS[@]}):"
+        for error in "${TEST_ERRORS[@]}"; do
+            echo "  ❌ $error"
+        done
+    fi
+
+    # Display cleanup errors if any
+    if [ ${#CLEANUP_ERRORS[@]} -gt 0 ]; then
+        echo ""
+        log_error "Cleanup errors encountered (${#CLEANUP_ERRORS[@]}):"
+        for error in "${CLEANUP_ERRORS[@]}"; do
+            echo "  ❌ $error"
+        done
+    fi
+
+    echo ""
     if [ $exit_code -eq 0 ] && [ "$CLEANUP_COMPLETED" = "true" ]; then
         log_success "E2E Test PASSED - All resources cleaned up"
     else
         log_error "E2E Test FAILED - Exit code: $exit_code"
+        if [ -n "$RC_CLUSTER_NAME" ] || [ -n "$MC_CLUSTER_NAME" ]; then
+            log_info "Check AWS console for remaining resources:"
+            if [ -n "$RC_CLUSTER_NAME" ]; then
+                log_info "  RC: $RC_CLUSTER_NAME"
+            fi
+            if [ -n "$MC_CLUSTER_NAME" ]; then
+                log_info "  MC: $MC_CLUSTER_NAME"
+            fi
+        fi
     fi
 
     exit $exit_code
@@ -630,19 +694,19 @@ main() {
 
     # Provision Regional Cluster
     if ! provision_regional_cluster; then
-        log_error "Regional Cluster provisioning failed"
+        record_test_error "Regional Cluster provisioning failed"
         exit $EXIT_PROVISION_FAILURE
     fi
 
     # Provision Management Cluster
     if ! provision_management_cluster; then
-        log_error "Management Cluster provisioning failed"
+        record_test_error "Management Cluster provisioning failed"
         exit $EXIT_PROVISION_FAILURE
     fi
 
     # Run validation tests
     if ! run_validation; then
-        log_error "Validation failed"
+        record_test_error "Validation failed"
         exit $EXIT_VALIDATION_FAILURE
     fi
 
