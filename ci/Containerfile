@@ -7,6 +7,7 @@ FROM registry.access.redhat.com/ubi10/ubi:latest
 ARG TERRAFORM_VERSION=1.14.3
 ARG HELM_VERSION=v3.16.0
 ARG UV_VERSION=0.6.0
+ARG AWS_CLI_VERSION=2.33.19
 
 # System packages
 RUN dnf install -y \
@@ -54,6 +55,18 @@ RUN curl -fsSL "https://astral.sh/uv/${UV_VERSION}/install.sh" -o /tmp/uv-instal
     UV_UNMANAGED_INSTALL=/usr/local/bin sh /tmp/uv-install.sh && \
     rm /tmp/uv-install.sh && \
     uv --version
+
+# AWS CLI v2
+RUN arch=$(uname -m) && \
+    case "${arch}" in \
+        x86_64)  AWS_ARCH="x86_64" ;; \
+        aarch64) AWS_ARCH="aarch64" ;; \
+    esac && \
+    curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${AWS_ARCH}-${AWS_CLI_VERSION}.zip" -o "awscliv2.zip" && \
+    unzip -qo awscliv2.zip && \
+    ./aws/install && \
+    rm -rf awscliv2.zip ./aws && \
+    aws --version
 
 # Pre-create cache directories writable by any UID (OpenShift runs as random UID)
 RUN mkdir -p /tmp/.uv-cache /tmp/.uv-python /tmp/.terraform.d && \
