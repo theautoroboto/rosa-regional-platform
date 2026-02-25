@@ -285,7 +285,8 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
 
 # S3 Bucket for Artifacts
 resource "aws_s3_bucket" "pipeline_artifact" {
-  bucket = local.artifact_bucket_name
+  bucket        = local.artifact_bucket_name
+  force_destroy = true # Allow deletion even if bucket contains objects
 
   timeouts {
     create = "30s" # Fail fast if bucket creation hangs (explicit names should be instant)
@@ -294,8 +295,7 @@ resource "aws_s3_bucket" "pipeline_artifact" {
 }
 
 resource "aws_s3_bucket_versioning" "pipeline_artifact" {
-  bucket        = local.artifact_bucket_name
-  force_destroy = true # Allow deletion even if bucket contains objects
+  bucket = aws_s3_bucket.pipeline_artifact.id
 
   versioning_configuration {
     status = "Enabled"
