@@ -5,6 +5,7 @@
   "alias": "regional-us-east-1",
   "region_alias": "us-east-1",
   "management_cluster_account_ids": [
+    "ssm:/infra/staging/us-east-1/mc00/account_id",
     "ssm:/infra/staging/us-east-1/mc01/account_id"
   ]
 }
