@@ -5,9 +5,12 @@
 # This script performs non-interactive teardown of e2e test environments.
 # Destroys resources in the correct order:
 # 1. IoT resources (certificates, things, policies)
-# 2. Management Cluster infrastructure
-# 3. Regional Cluster infrastructure
-# 4. Terraform state files
+# 2. Maestro secrets (MC account)
+# 3. Management Cluster infrastructure
+# 4. Regional Cluster secrets (RC account)
+# 5. Regional Cluster infrastructure
+# 6. Terraform state files
+# 7. kubectl contexts
 #
 # Required environment variables:
 #   MC_CLUSTER_ID       - Management cluster ID
@@ -148,6 +151,84 @@ cleanup_iot_resources() {
         rm -f "$REPO_ROOT/terraform/config/maestro-agent-iot-provisioning/terraform.tfstate"*
         log_success "IoT Terraform state cleaned up"
     fi
+}
+
+# =============================================================================
+# Regional Cluster Secrets Cleanup
+# =============================================================================
+
+cleanup_regional_secrets() {
+    log_phase "Cleaning up Regional Cluster Secrets (RC Account)"
+
+    # Save original credentials
+    local ORIG_AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}"
+    local ORIG_AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}"
+    local ORIG_AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}"
+
+    # Assume role in RC account if needed
+    if [ "$RC_ACCOUNT_ID" != "$CENTRAL_ACCOUNT_ID" ]; then
+        local role_arn="arn:aws:iam::${RC_ACCOUNT_ID}:role/OrganizationAccountAccessRole"
+        log_info "Assuming role in RC account: $role_arn"
+
+        local creds=$(aws sts assume-role \
+            --role-arn "$role_arn" \
+            --role-session-name "e2e-cleanup-rc-secrets" \
+            --output json 2>/dev/null || echo "")
+
+        if [ -n "$creds" ]; then
+            export AWS_ACCESS_KEY_ID=$(echo "$creds" | jq -r '.Credentials.AccessKeyId')
+            export AWS_SECRET_ACCESS_KEY=$(echo "$creds" | jq -r '.Credentials.SecretAccessKey')
+            export AWS_SESSION_TOKEN=$(echo "$creds" | jq -r '.Credentials.SessionToken')
+        else
+            log_error "Failed to assume role in RC account"
+            record_failure "Cannot cleanup RC secrets"
+            return 1
+        fi
+    fi
+
+    # List of secrets to clean up in RC account
+    local secrets=(
+        "hyperfleet/db-credentials"
+        "maestro/server-cert"
+        "maestro/server-key"
+        "maestro/ca-cert"
+    )
+
+    for secret in "${secrets[@]}"; do
+        log_info "Deleting secret: $secret"
+
+        # Check if secret exists and is scheduled for deletion
+        local secret_info=$(aws secretsmanager describe-secret \
+            --secret-id "$secret" \
+            --region "$TEST_REGION" 2>/dev/null || echo "")
+
+        if [ -n "$secret_info" ]; then
+            # If scheduled for deletion, restore it first
+            if echo "$secret_info" | grep -q "DeletedDate"; then
+                log_info "Secret $secret is scheduled for deletion, restoring first..."
+                aws secretsmanager restore-secret \
+                    --secret-id "$secret" \
+                    --region "$TEST_REGION" 2>/dev/null || log_info "Failed to restore $secret"
+                sleep 2
+            fi
+
+            # Force delete
+            aws secretsmanager delete-secret \
+                --secret-id "$secret" \
+                --region "$TEST_REGION" \
+                --force-delete-without-recovery \
+                2>/dev/null || log_info "Failed to delete $secret"
+        else
+            log_info "Secret $secret not found or already deleted"
+        fi
+    done
+
+    log_success "Regional cluster secrets cleanup complete"
+
+    # Restore original credentials
+    export AWS_ACCESS_KEY_ID="$ORIG_AWS_ACCESS_KEY_ID"
+    export AWS_SECRET_ACCESS_KEY="$ORIG_AWS_SECRET_ACCESS_KEY"
+    export AWS_SESSION_TOKEN="$ORIG_AWS_SESSION_TOKEN"
 }
 
 # =============================================================================
@@ -342,13 +423,16 @@ main() {
         log_info "Skipping MC destroy (MC was never provisioned)"
     fi
 
-    # Step 4: Destroy Regional Cluster
+    # Step 4: Clean up Regional Cluster secrets (before destroying RC)
+    cleanup_regional_secrets
+
+    # Step 5: Destroy Regional Cluster
     destroy_terraform "regional-cluster" "$TF_STATE_KEY_RC" "Regional Cluster"
 
-    # Step 5: Clean up state files
+    # Step 6: Clean up state files
     cleanup_state_files
 
-    # Step 6: Clean up kubectl contexts
+    # Step 7: Clean up kubectl contexts
     cleanup_kubectl_contexts
 
     # Summary

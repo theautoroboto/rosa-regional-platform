@@ -267,6 +267,41 @@ cleanup_orphaned_secrets() {
     log_success "Orphaned secrets cleanup complete"
 }
 
+cleanup_orphaned_eips() {
+    log_phase "Cleaning Up Orphaned Elastic IPs from Previous Runs"
+
+    # Find all unattached EIPs with e2e tags
+    log_info "Searching for unattached EIPs with e2e tags..."
+
+    local eip_allocations=$(aws ec2 describe-addresses \
+        --region "$TEST_REGION" \
+        --filters "Name=tag:app_code,Values=e2e" \
+        --query 'Addresses[?AssociationId==null].AllocationId' \
+        --output text 2>/dev/null || echo "")
+
+    if [ -z "$eip_allocations" ]; then
+        log_info "No orphaned EIPs found (clean)"
+        log_success "Orphaned EIPs cleanup complete"
+        return 0
+    fi
+
+    local eip_count=$(echo "$eip_allocations" | wc -w)
+    log_warning "Found $eip_count orphaned EIP(s)"
+
+    for allocation_id in $eip_allocations; do
+        log_warning "Releasing orphaned EIP: $allocation_id"
+        if aws ec2 release-address \
+            --allocation-id "$allocation_id" \
+            --region "$TEST_REGION" 2>/dev/null; then
+            log_success "Released EIP: $allocation_id"
+        else
+            log_warning "Failed to release EIP: $allocation_id (may be in use)"
+        fi
+    done
+
+    log_success "Orphaned EIPs cleanup complete"
+}
+
 # =============================================================================
 # Provisioning Functions
 # =============================================================================
@@ -276,36 +311,18 @@ provision_regional_cluster() {
 
     configure_rc_environment
 
-    # Set environment variables for ArgoCD validation
+    # Set environment variables for ArgoCD validation and bootstrap
     export ENVIRONMENT="e2e"
     export REGION_ALIAS="e2e"
+    export AWS_REGION="${TEST_REGION}"
+    export CLUSTER_TYPE="regional-cluster"
 
-    # Validate ArgoCD config
-    log_info "Validating ArgoCD configuration..."
-    "$REPO_ROOT/scripts/dev/validate-argocd-config.sh" regional-cluster || {
-        log_error "ArgoCD config validation failed"
+    # Provision infrastructure using pipeline target (same as CI/CD)
+    log_info "Running pipeline provisioning for Regional Cluster..."
+    make pipeline-provision-regional || {
+        log_error "Pipeline provision failed for RC"
         return 1
     }
-
-    # Initialize and apply Terraform
-    log_info "Running Terraform for Regional Cluster..."
-    cd "$REPO_ROOT/terraform/config/regional-cluster"
-
-    terraform init -reconfigure \
-        -backend-config="bucket=${TF_STATE_BUCKET}" \
-        -backend-config="key=${TF_STATE_KEY}" \
-        -backend-config="region=${TF_STATE_REGION}" \
-        -backend-config="use_lockfile=true" || {
-        log_error "Terraform init failed for RC"
-        return 1
-    }
-
-    terraform apply -auto-approve || {
-        log_error "Terraform apply failed for RC"
-        return 1
-    }
-
-    cd "$REPO_ROOT"
 
     log_success "Regional Cluster infrastructure provisioned"
     PROVISION_RC_COMPLETED=true
@@ -319,10 +336,6 @@ provision_regional_cluster() {
 
     # Bootstrap ArgoCD
     log_info "Bootstrapping ArgoCD for Regional Cluster..."
-    export ENVIRONMENT="e2e"
-    export REGION_ALIAS="e2e"
-    export AWS_REGION="${TEST_REGION}"
-    export CLUSTER_TYPE="regional-cluster"
 
     # Set role assumption if cross-account
     if [ "$RC_ACCOUNT_ID" != "$CENTRAL_ACCOUNT_ID" ]; then
@@ -342,9 +355,11 @@ provision_management_cluster() {
 
     configure_mc_environment
 
-    # Set environment variables for ArgoCD validation
+    # Set environment variables for ArgoCD validation and bootstrap
     export ENVIRONMENT="e2e"
     export REGION_ALIAS="e2e"
+    export AWS_REGION="${TEST_REGION}"
+    export CLUSTER_TYPE="management-cluster"
 
     # Provision IoT resources in regional account first
     log_info "Provisioning IoT resources in regional account..."
@@ -360,42 +375,18 @@ provision_management_cluster() {
         return 1
     }
 
-    # Validate ArgoCD config
-    log_info "Validating ArgoCD configuration..."
-    "$REPO_ROOT/scripts/dev/validate-argocd-config.sh" management-cluster || {
-        log_error "ArgoCD config validation failed"
+    # Provision infrastructure using pipeline target (same as CI/CD)
+    log_info "Running pipeline provisioning for Management Cluster..."
+    make pipeline-provision-management || {
+        log_error "Pipeline provision failed for MC"
         return 1
     }
-
-    # Initialize and apply Terraform
-    log_info "Running Terraform for Management Cluster..."
-    cd "$REPO_ROOT/terraform/config/management-cluster"
-
-    terraform init -reconfigure \
-        -backend-config="bucket=${TF_STATE_BUCKET}" \
-        -backend-config="key=${TF_STATE_KEY}" \
-        -backend-config="region=${TF_STATE_REGION}" \
-        -backend-config="use_lockfile=true" || {
-        log_error "Terraform init failed for MC"
-        return 1
-    }
-
-    terraform apply -auto-approve || {
-        log_error "Terraform apply failed for MC"
-        return 1
-    }
-
-    cd "$REPO_ROOT"
 
     log_success "Management Cluster infrastructure provisioned"
     PROVISION_MC_COMPLETED=true
 
     # Bootstrap ArgoCD
     log_info "Bootstrapping ArgoCD for Management Cluster..."
-    export ENVIRONMENT="e2e"
-    export REGION_ALIAS="e2e"
-    export AWS_REGION="${TEST_REGION}"
-    export CLUSTER_TYPE="management-cluster"
 
     # Set role assumption if cross-account
     if [ "$MC_ACCOUNT_ID" != "$CENTRAL_ACCOUNT_ID" ]; then
@@ -635,6 +626,7 @@ main() {
 
     # Clean up any orphaned resources from previous failed runs
     cleanup_orphaned_secrets
+    cleanup_orphaned_eips
 
     # Provision Regional Cluster
     if ! provision_regional_cluster; then
