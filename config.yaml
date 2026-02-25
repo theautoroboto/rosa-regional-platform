@@ -172,6 +172,7 @@ region_deployments:
     terraform_vars:
       account_id: "{{ account_id }}"
       region: "{{ aws_region }}"
+      delete: true
       alias: "regional-{{region_alias}}"
       region_alias: "{{ region_alias }}"
     management_clusters:
