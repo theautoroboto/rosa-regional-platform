@@ -94,8 +94,14 @@ phases:
         echo "Extracted REGION_ALIAS from config: $REGION_ALIAS"
 
         # Run provisioning (in same shell to preserve exports)
-        make pipeline-provision-regional
-        echo "✅ Regional cluster provisioned successfully."
+        if [ "${IS_DESTROY:-false}" == "true" ]; then
+            echo "⚠️ DESTRUCTION MODE ENABLED"
+            make pipeline-destroy-regional
+            echo "✅ Regional cluster destroyed successfully."
+        else
+            make pipeline-provision-regional
+            echo "✅ Regional cluster provisioned successfully."
+        fi
 
   post_build:
     commands:

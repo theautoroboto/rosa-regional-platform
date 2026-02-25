@@ -149,7 +149,8 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
 
 # S3 Bucket for Artifacts
 resource "aws_s3_bucket" "pipeline_artifact" {
-  bucket = local.artifact_bucket_name
+  bucket        = local.artifact_bucket_name
+  force_destroy = true # Allow deletion even if bucket contains objects
 
   timeouts {
     create = "30s" # Fail fast if bucket creation hangs (explicit names should be instant)
@@ -369,7 +370,7 @@ resource "aws_codepipeline" "central_pipeline" {
           includes = [var.github_branch]
         }
         file_paths {
-          includes = ["deploy/**", "terraform/config/pipeline-regional-cluster/**", "terraform/config/pipeline-management-cluster/**"]
+          includes = ["deploy/${var.target_environment}/${var.target_region}/terraform/regional.json", "terraform/config/pipeline-regional-cluster/**"]
         }
       }
     }
