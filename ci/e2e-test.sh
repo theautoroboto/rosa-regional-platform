@@ -542,9 +542,13 @@ provision_regional_cluster() {
     log_info "Running pipeline provisioning for Regional Cluster..."
     local provision_output=$(mktemp)
     if ! make pipeline-provision-regional 2>&1 | tee "$provision_output"; then
-        local error_summary=$(tail -20 "$provision_output" | grep -E "Error:|error:|failed" || echo "Unknown error")
+        # Try to extract error lines, otherwise show last 10 lines
+        local error_lines=$(grep -E "Error:|error:|failed|FAILED" "$provision_output" | tail -5 || true)
+        if [ -z "$error_lines" ]; then
+            error_lines=$(tail -10 "$provision_output")
+        fi
         rm -f "$provision_output"
-        record_test_error "RC provisioning failed: $error_summary"
+        record_test_error "RC provisioning failed. Last output:\n$error_lines"
         return 1
     fi
     rm -f "$provision_output"
@@ -556,9 +560,12 @@ provision_regional_cluster() {
     log_info "Building platform image..."
     local build_output=$(mktemp)
     if ! make build-platform-image 2>&1 | tee "$build_output"; then
-        local error_summary=$(tail -10 "$build_output" | grep -E "Error:|error:|failed" || echo "Unknown error")
+        local error_lines=$(grep -E "Error:|error:|failed|FAILED" "$build_output" | tail -5 || true)
+        if [ -z "$error_lines" ]; then
+            error_lines=$(tail -10 "$build_output")
+        fi
         rm -f "$build_output"
-        record_test_error "Platform image build failed: $error_summary"
+        record_test_error "Platform image build failed. Last output:\n$error_lines"
         return 1
     fi
     rm -f "$build_output"
@@ -573,9 +580,12 @@ provision_regional_cluster() {
 
     local bootstrap_output=$(mktemp)
     if ! "$REPO_ROOT/scripts/bootstrap-argocd.sh" regional-cluster 2>&1 | tee "$bootstrap_output"; then
-        local error_summary=$(tail -10 "$bootstrap_output" | grep -E "Error:|error:|failed" || echo "Unknown error")
+        local error_lines=$(grep -E "Error:|error:|failed|FAILED" "$bootstrap_output" | tail -5 || true)
+        if [ -z "$error_lines" ]; then
+            error_lines=$(tail -10 "$bootstrap_output")
+        fi
         rm -f "$bootstrap_output"
-        record_test_error "RC ArgoCD bootstrap failed: $error_summary"
+        record_test_error "RC ArgoCD bootstrap failed. Last output:\n$error_lines"
         return 1
     fi
     rm -f "$bootstrap_output"
@@ -612,9 +622,12 @@ provision_management_cluster() {
     log_info "Running pipeline provisioning for Management Cluster..."
     local provision_output=$(mktemp)
     if ! make pipeline-provision-management 2>&1 | tee "$provision_output"; then
-        local error_summary=$(tail -20 "$provision_output" | grep -E "Error:|error:|failed" || echo "Unknown error")
+        local error_lines=$(grep -E "Error:|error:|failed|FAILED" "$provision_output" | tail -5 || true)
+        if [ -z "$error_lines" ]; then
+            error_lines=$(tail -10 "$provision_output")
+        fi
         rm -f "$provision_output"
-        record_test_error "MC provisioning failed: $error_summary"
+        record_test_error "MC provisioning failed. Last output:\n$error_lines"
         return 1
     fi
     rm -f "$provision_output"
