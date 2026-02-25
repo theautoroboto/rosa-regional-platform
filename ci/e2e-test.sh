@@ -36,7 +36,8 @@ readonly REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Test identification
 readonly TEST_ID="e2e-$(date +%Y%m%d-%H%M%S)-$$"
-readonly TEST_REGION="${TEST_REGION:-us-east-1}"
+export TEST_REGION="${TEST_REGION:-us-east-1}"
+readonly TEST_REGION
 
 # Git configuration
 GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-}"
@@ -71,6 +72,11 @@ MC_CLUSTER_ID=""
 # Error tracking
 TEST_ERRORS=()
 CLEANUP_ERRORS=()
+
+# Timing tracking
+declare -A STEP_START_TIMES
+declare -A STEP_END_TIMES
+declare -A STEP_DURATIONS
 
 # =============================================================================
 # Logging Functions
@@ -115,6 +121,48 @@ record_test_error() {
 record_cleanup_error() {
     CLEANUP_ERRORS+=("$1")
     log_error "$1"
+}
+
+# =============================================================================
+# Timing Tracking
+# =============================================================================
+
+start_step() {
+    local step_name="$1"
+    STEP_START_TIMES["$step_name"]=$(date +%s)
+    log_info "Started: $step_name"
+}
+
+end_step() {
+    local step_name="$1"
+    local end_time=$(date +%s)
+    STEP_END_TIMES["$step_name"]=$end_time
+
+    if [ -n "${STEP_START_TIMES[$step_name]:-}" ]; then
+        local duration=$((end_time - STEP_START_TIMES[$step_name]))
+        STEP_DURATIONS["$step_name"]=$duration
+        log_info "Completed: $step_name ($(format_duration $duration))"
+    fi
+}
+
+format_duration() {
+    local total_seconds=$1
+    local hours=$((total_seconds / 3600))
+    local minutes=$(( (total_seconds % 3600) / 60 ))
+    local seconds=$((total_seconds % 60))
+
+    if [ $hours -gt 0 ]; then
+        printf "%dh %dm %ds" $hours $minutes $seconds
+    elif [ $minutes -gt 0 ]; then
+        printf "%dm %ds" $minutes $seconds
+    else
+        printf "%ds" $seconds
+    fi
+}
+
+format_timestamp() {
+    local epoch=$1
+    date -d "@$epoch" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || date -r "$epoch" "+%Y-%m-%d %H:%M:%S"
 }
 
 # =============================================================================
@@ -769,8 +817,8 @@ run_cleanup() {
 
     # Export necessary variables for cleanup script
     # Note: All these should be set by now since we only call cleanup after detect_central_account
+    # TEST_REGION is already exported as readonly, so we don't export it again
     export MC_CLUSTER_ID="${MC_CLUSTER_ID:-}"
-    export TEST_REGION="${TEST_REGION}"
     export RC_ACCOUNT_ID="${RC_ACCOUNT_ID}"
     export MC_ACCOUNT_ID="${MC_ACCOUNT_ID}"
     export CENTRAL_ACCOUNT_ID="${CENTRAL_ACCOUNT_ID}"
@@ -823,6 +871,7 @@ cleanup_on_exit() {
 
     # Only run cleanup if we got past account detection (TF_STATE_BUCKET is set)
     if [ -n "${TF_STATE_BUCKET:-}" ]; then
+        start_step "Cleanup"
         log_info "Running cleanup (always runs regardless of test result)..."
         if run_cleanup; then
             log_success "Cleanup successful"
@@ -830,9 +879,16 @@ cleanup_on_exit() {
             log_error "Cleanup failed - manual intervention may be required"
             exit_code=$EXIT_CLEANUP_FAILURE
         fi
+        end_step "Cleanup"
     else
         log_info "Skipping cleanup - test failed before infrastructure was provisioned"
         CLEANUP_COMPLETED=true  # No cleanup needed
+    fi
+
+    # Calculate overall duration
+    if [ -n "${STEP_START_TIMES[Overall]:-}" ]; then
+        STEP_END_TIMES["Overall"]=$(date +%s)
+        STEP_DURATIONS["Overall"]=$((STEP_END_TIMES["Overall"] - STEP_START_TIMES["Overall"]))
     fi
 
     # Summary
@@ -843,6 +899,43 @@ cleanup_on_exit() {
     log_info "MC Provisioned: $PROVISION_MC_COMPLETED"
     log_info "Validation: $VALIDATION_COMPLETED"
     log_info "Cleanup: $CLEANUP_COMPLETED"
+
+    # Display timing information
+    if [ ${#STEP_DURATIONS[@]} -gt 0 ]; then
+        echo ""
+        echo "Step Timing:"
+        echo "─────────────────────────────────────────────────────────────────────────"
+        printf "%-40s %-20s %-20s %s\n" "Step" "Start" "End" "Duration"
+        echo "─────────────────────────────────────────────────────────────────────────"
+
+        # Display steps in order
+        local ordered_steps=(
+            "Prerequisites Validation"
+            "Account Detection"
+            "Pre-flight Cleanup"
+            "Regional Cluster Provisioning"
+            "Management Cluster Provisioning"
+            "Validation"
+            "Cleanup"
+            "Overall"
+        )
+
+        for step in "${ordered_steps[@]}"; do
+            if [ -n "${STEP_START_TIMES[$step]:-}" ]; then
+                local start_time=$(format_timestamp "${STEP_START_TIMES[$step]}")
+                local end_time=$(format_timestamp "${STEP_END_TIMES[$step]:-$(date +%s)}")
+                local duration=$(format_duration "${STEP_DURATIONS[$step]:-0}")
+
+                if [ "$step" = "Overall" ]; then
+                    echo "─────────────────────────────────────────────────────────────────────────"
+                    printf "%-40s %-20s %-20s %s\n" "$step" "$start_time" "$end_time" "$duration"
+                else
+                    printf "%-40s %-20s %-20s %s\n" "$step" "$start_time" "$end_time" "$duration"
+                fi
+            fi
+        done
+        echo "─────────────────────────────────────────────────────────────────────────"
+    fi
 
     # Display test errors if any
     if [ ${#TEST_ERRORS[@]} -gt 0 ]; then
@@ -890,35 +983,51 @@ trap cleanup_on_exit EXIT INT TERM
 main() {
     log_phase "Starting End-to-End Test"
     log_info "Test ID: $TEST_ID"
+    STEP_START_TIMES["Overall"]=$(date +%s)
 
     # Validate prerequisites
+    start_step "Prerequisites Validation"
     validate_prerequisites
+    end_step "Prerequisites Validation"
 
     # Detect central account and configure state
+    start_step "Account Detection"
     detect_central_account
+    end_step "Account Detection"
 
     # Clean up any orphaned resources from previous failed runs
+    start_step "Pre-flight Cleanup"
     cleanup_orphaned_secrets
     cleanup_orphaned_nat_gateways  # Delete NAT gateways first
     cleanup_orphaned_eips          # Then release their EIPs
+    end_step "Pre-flight Cleanup"
 
     # Provision Regional Cluster
+    start_step "Regional Cluster Provisioning"
     if ! provision_regional_cluster; then
+        end_step "Regional Cluster Provisioning"
         # Error already recorded in provision_regional_cluster function
         exit $EXIT_PROVISION_FAILURE
     fi
+    end_step "Regional Cluster Provisioning"
 
     # Provision Management Cluster
+    start_step "Management Cluster Provisioning"
     if ! provision_management_cluster; then
+        end_step "Management Cluster Provisioning"
         # Error already recorded in provision_management_cluster function
         exit $EXIT_PROVISION_FAILURE
     fi
+    end_step "Management Cluster Provisioning"
 
     # Run validation tests
+    start_step "Validation"
     if ! run_validation; then
+        end_step "Validation"
         # Error already recorded in run_validation function
         exit $EXIT_VALIDATION_FAILURE
     fi
+    end_step "Validation"
 
     log_success "All tests passed"
     exit $EXIT_SUCCESS
