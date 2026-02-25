@@ -250,6 +250,8 @@ cleanup_orphaned_secrets() {
     # List of secrets that might be left over from failed runs
     local secrets=(
         "maestro/server-cert"
+        "maestro/server-key"
+        "maestro/ca-cert"
         "maestro/server-config"
         "maestro/db-credentials"
         "hyperfleet/db-credentials"
@@ -258,33 +260,64 @@ cleanup_orphaned_secrets() {
         "maestro/agent-config"
     )
 
+    local cleanup_count=0
+    local failed_count=0
+
     for secret in "${secrets[@]}"; do
         log_info "Checking for orphaned secret: $secret"
 
-        # Get secret status
-        local secret_info=$(aws secretsmanager describe-secret --secret-id "$secret" --region "$TEST_REGION" 2>&1 || echo "NOT_FOUND")
+        # Get secret status with full details
+        local secret_info=$(aws secretsmanager describe-secret \
+            --secret-id "$secret" \
+            --region "$TEST_REGION" \
+            --output json 2>&1 || echo "{}")
 
+        # Check if secret doesn't exist
         if echo "$secret_info" | grep -q "ResourceNotFoundException"; then
-            log_info "Secret $secret does not exist (clean)"
+            log_info "✓ Secret $secret does not exist (clean)"
             continue
         fi
 
         # Check if secret is scheduled for deletion
-        if echo "$secret_info" | grep -q "DeletedDate"; then
-            log_warning "Secret $secret is scheduled for deletion - canceling deletion and re-deleting..."
-            # Restore the secret first
-            aws secretsmanager restore-secret --secret-id "$secret" --region "$TEST_REGION" 2>/dev/null || true
-            sleep 2
+        if echo "$secret_info" | jq -e '.DeletedDate' &>/dev/null; then
+            log_warning "Secret $secret is scheduled for deletion - restoring and force deleting..."
+
+            # Restore the secret
+            if aws secretsmanager restore-secret \
+                --secret-id "$secret" \
+                --region "$TEST_REGION" \
+                --output json 2>&1; then
+                log_info "Restored secret $secret"
+                sleep 3  # Wait for restore to complete
+            else
+                log_warning "Failed to restore $secret, attempting force delete anyway..."
+            fi
+        else
+            log_warning "Secret $secret exists and is active - force deleting..."
         fi
 
-        # Now force delete
-        log_warning "Deleting orphaned secret: $secret"
-        aws secretsmanager delete-secret \
+        # Force delete the secret
+        if aws secretsmanager delete-secret \
             --secret-id "$secret" \
             --region "$TEST_REGION" \
             --force-delete-without-recovery \
-            2>/dev/null || log_warning "Failed to delete $secret"
+            --output json 2>&1; then
+            log_success "✓ Deleted orphaned secret: $secret"
+            ((cleanup_count++))
+        else
+            log_warning "✗ Failed to delete $secret"
+            ((failed_count++))
+        fi
+
+        sleep 1  # Brief pause between deletions
     done
+
+    if [ $cleanup_count -gt 0 ]; then
+        log_success "Cleaned up $cleanup_count orphaned secret(s)"
+    fi
+    if [ $failed_count -gt 0 ]; then
+        log_warning "$failed_count secret(s) could not be cleaned up"
+    fi
 
     log_success "Orphaned secrets cleanup complete"
 }
@@ -292,36 +325,149 @@ cleanup_orphaned_secrets() {
 cleanup_orphaned_eips() {
     log_phase "Cleaning Up Orphaned Elastic IPs from Previous Runs"
 
-    # Find all unattached EIPs with e2e tags
-    log_info "Searching for unattached EIPs with e2e tags..."
+    local cleanup_count=0
+    local failed_count=0
 
-    local eip_allocations=$(aws ec2 describe-addresses \
+    # Step 1: Find NAT gateways with e2e tags that might be orphaned
+    log_info "Searching for orphaned NAT gateways with e2e tags..."
+    local nat_gateways=$(aws ec2 describe-nat-gateways \
         --region "$TEST_REGION" \
-        --filters "Name=tag:app_code,Values=e2e" \
-        --query 'Addresses[?AssociationId==null].AllocationId' \
+        --filter "Name=tag:app_code,Values=e2e" "Name=state,Values=pending,failed,deleting,deleted" \
+        --query 'NatGateways[].NatGatewayId' \
         --output text 2>/dev/null || echo "")
 
-    if [ -z "$eip_allocations" ]; then
-        log_info "No orphaned EIPs found (clean)"
+    if [ -n "$nat_gateways" ]; then
+        log_warning "Found $(echo $nat_gateways | wc -w) failed/deleting NAT gateway(s)"
+        for nat_id in $nat_gateways; do
+            log_info "Checking NAT gateway: $nat_id"
+        done
+    fi
+
+    # Step 2: Find all EIPs with e2e tags (both attached and unattached)
+    log_info "Searching for EIPs with e2e tags..."
+    local all_eips=$(aws ec2 describe-addresses \
+        --region "$TEST_REGION" \
+        --filters "Name=tag:app_code,Values=e2e" \
+        --query 'Addresses[].[AllocationId,AssociationId,PublicIp,NetworkInterfaceId]' \
+        --output text 2>/dev/null || echo "")
+
+    if [ -z "$all_eips" ]; then
+        log_info "No EIPs with e2e tags found (clean)"
         log_success "Orphaned EIPs cleanup complete"
         return 0
     fi
 
-    local eip_count=$(echo "$eip_allocations" | wc -w)
-    log_warning "Found $eip_count orphaned EIP(s)"
+    # Process each EIP
+    while IFS=$'\t' read -r alloc_id assoc_id public_ip eni_id; do
+        [ -z "$alloc_id" ] && continue
 
-    for allocation_id in $eip_allocations; do
-        log_warning "Releasing orphaned EIP: $allocation_id"
-        if aws ec2 release-address \
-            --allocation-id "$allocation_id" \
-            --region "$TEST_REGION" 2>/dev/null; then
-            log_success "Released EIP: $allocation_id"
+        log_info "Found EIP: $alloc_id ($public_ip)"
+
+        # If EIP is unattached, release it
+        if [ -z "$assoc_id" ] || [ "$assoc_id" = "None" ]; then
+            log_warning "EIP $alloc_id is unattached - releasing..."
+            if aws ec2 release-address \
+                --allocation-id "$alloc_id" \
+                --region "$TEST_REGION" 2>&1; then
+                log_success "✓ Released EIP: $alloc_id"
+                ((cleanup_count++))
+            else
+                log_warning "✗ Failed to release EIP: $alloc_id"
+                ((failed_count++))
+            fi
         else
-            log_warning "Failed to release EIP: $allocation_id (may be in use)"
+            # EIP is attached - check if it's attached to a NAT gateway
+            if [ -n "$eni_id" ] && [ "$eni_id" != "None" ]; then
+                log_info "EIP $alloc_id is attached to ENI: $eni_id"
+
+                # Try to find the associated NAT gateway
+                local nat_id=$(aws ec2 describe-nat-gateways \
+                    --region "$TEST_REGION" \
+                    --filter "Name=nat-gateway-address.allocation-id,Values=$alloc_id" \
+                    --query 'NatGateways[0].NatGatewayId' \
+                    --output text 2>/dev/null || echo "")
+
+                if [ -n "$nat_id" ] && [ "$nat_id" != "None" ]; then
+                    local nat_state=$(aws ec2 describe-nat-gateways \
+                        --region "$TEST_REGION" \
+                        --nat-gateway-ids "$nat_id" \
+                        --query 'NatGateways[0].State' \
+                        --output text 2>/dev/null || echo "")
+
+                    log_info "EIP attached to NAT gateway $nat_id (state: $nat_state)"
+
+                    if [ "$nat_state" = "failed" ] || [ "$nat_state" = "deleted" ]; then
+                        log_warning "NAT gateway is $nat_state - EIP should be released soon"
+                    fi
+                fi
+            else
+                log_warning "EIP $alloc_id is associated but cannot determine attachment"
+            fi
         fi
-    done
+    done <<< "$all_eips"
+
+    if [ $cleanup_count -gt 0 ]; then
+        log_success "Released $cleanup_count orphaned EIP(s)"
+    else
+        log_info "No unattached EIPs to release"
+    fi
+
+    if [ $failed_count -gt 0 ]; then
+        log_warning "$failed_count EIP(s) could not be released"
+    fi
 
     log_success "Orphaned EIPs cleanup complete"
+}
+
+cleanup_orphaned_nat_gateways() {
+    log_phase "Cleaning Up Orphaned NAT Gateways from Previous Runs"
+
+    # Find NAT gateways with e2e tags in available state (from failed runs)
+    log_info "Searching for NAT gateways with e2e tags..."
+
+    local nat_gateways=$(aws ec2 describe-nat-gateways \
+        --region "$TEST_REGION" \
+        --filter "Name=tag:app_code,Values=e2e" "Name=state,Values=available,pending,failed" \
+        --query 'NatGateways[].[NatGatewayId,State,Tags[?Key==`Name`].Value|[0]]' \
+        --output text 2>/dev/null || echo "")
+
+    if [ -z "$nat_gateways" ]; then
+        log_info "No orphaned NAT gateways found (clean)"
+        log_success "Orphaned NAT gateways cleanup complete"
+        return 0
+    fi
+
+    local cleanup_count=0
+    local failed_count=0
+
+    while IFS=$'\t' read -r nat_id state name; do
+        [ -z "$nat_id" ] && continue
+
+        log_warning "Found NAT gateway: $nat_id ($name, state: $state)"
+
+        # Delete the NAT gateway
+        if aws ec2 delete-nat-gateway \
+            --nat-gateway-id "$nat_id" \
+            --region "$TEST_REGION" 2>&1; then
+            log_success "✓ Deleted NAT gateway: $nat_id"
+            ((cleanup_count++))
+        else
+            log_warning "✗ Failed to delete NAT gateway: $nat_id"
+            ((failed_count++))
+        fi
+    done <<< "$nat_gateways"
+
+    if [ $cleanup_count -gt 0 ]; then
+        log_success "Deleted $cleanup_count orphaned NAT gateway(s)"
+        log_info "Waiting 10 seconds for NAT gateway deletions to propagate..."
+        sleep 10
+    fi
+
+    if [ $failed_count -gt 0 ]; then
+        log_warning "$failed_count NAT gateway(s) could not be deleted"
+    fi
+
+    log_success "Orphaned NAT gateways cleanup complete"
 }
 
 # =============================================================================
@@ -690,7 +836,8 @@ main() {
 
     # Clean up any orphaned resources from previous failed runs
     cleanup_orphaned_secrets
-    cleanup_orphaned_eips
+    cleanup_orphaned_nat_gateways  # Delete NAT gateways first
+    cleanup_orphaned_eips          # Then release their EIPs
 
     # Provision Regional Cluster
     if ! provision_regional_cluster; then
