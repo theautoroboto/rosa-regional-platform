@@ -645,9 +645,12 @@ provision_management_cluster() {
 
     local bootstrap_output=$(mktemp)
     if ! "$REPO_ROOT/scripts/bootstrap-argocd.sh" management-cluster 2>&1 | tee "$bootstrap_output"; then
-        local error_summary=$(tail -10 "$bootstrap_output" | grep -E "Error:|error:|failed" || echo "Unknown error")
+        local error_lines=$(grep -E "Error:|error:|failed|FAILED" "$bootstrap_output" | tail -5 || true)
+        if [ -z "$error_lines" ]; then
+            error_lines=$(tail -10 "$bootstrap_output")
+        fi
         rm -f "$bootstrap_output"
-        record_test_error "MC ArgoCD bootstrap failed: $error_summary"
+        record_test_error "MC ArgoCD bootstrap failed. Last output:\n$error_lines"
         return 1
     fi
     rm -f "$bootstrap_output"
@@ -684,9 +687,12 @@ provision_iot_resources() {
     local tf_output=$(mktemp)
 
     if ! terraform init -backend=false 2>&1 | tee "$tf_output"; then
-        local error_summary=$(tail -10 "$tf_output" | grep -E "Error:|error:|failed" || echo "Terraform init failed")
+        local error_lines=$(grep -E "Error:|error:|failed|FAILED" "$tf_output" | tail -5 || true)
+        if [ -z "$error_lines" ]; then
+            error_lines=$(tail -10 "$tf_output")
+        fi
         rm -f "$tf_output"
-        record_test_error "IoT terraform init failed: $error_summary"
+        record_test_error "IoT terraform init failed. Last output:\n$error_lines"
         # Restore credentials
         export AWS_ACCESS_KEY_ID="$SAVED_AWS_ACCESS_KEY_ID"
         export AWS_SECRET_ACCESS_KEY="$SAVED_AWS_SECRET_ACCESS_KEY"
@@ -697,9 +703,12 @@ provision_iot_resources() {
     if ! terraform apply -auto-approve \
         -var="cluster_id=${MC_CLUSTER_ID}" \
         -var="region=${TEST_REGION}" 2>&1 | tee "$tf_output"; then
-        local error_summary=$(tail -20 "$tf_output" | grep -E "Error:|error:|failed" || echo "Terraform apply failed")
+        local error_lines=$(grep -E "Error:|error:|failed|FAILED" "$tf_output" | tail -5 || true)
+        if [ -z "$error_lines" ]; then
+            error_lines=$(tail -10 "$tf_output")
+        fi
         rm -f "$tf_output"
-        record_test_error "IoT terraform apply failed: $error_summary"
+        record_test_error "IoT terraform apply failed. Last output:\n$error_lines"
         # Restore credentials
         export AWS_ACCESS_KEY_ID="$SAVED_AWS_ACCESS_KEY_ID"
         export AWS_SECRET_ACCESS_KEY="$SAVED_AWS_SECRET_ACCESS_KEY"
@@ -810,9 +819,12 @@ run_validation() {
 
     local validation_output=$(mktemp)
     if ! "$SCRIPT_DIR/e2e-validate.sh" 2>&1 | tee "$validation_output"; then
-        local error_summary=$(tail -20 "$validation_output" | grep -E "Error:|error:|FAILED|failed" || echo "Unknown validation error")
+        local error_lines=$(grep -E "Error:|error:|FAILED|failed" "$validation_output" | tail -5 || true)
+        if [ -z "$error_lines" ]; then
+            error_lines=$(tail -15 "$validation_output")
+        fi
         rm -f "$validation_output"
-        record_test_error "Validation failed: $error_summary"
+        record_test_error "Validation failed. Last output:\n$error_lines"
         return 1
     fi
     rm -f "$validation_output"
