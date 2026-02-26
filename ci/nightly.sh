@@ -50,4 +50,13 @@ aws sts get-caller-identity
 REGIONAL_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 echo "Using REGIONAL_ACCOUNT_ID: ${REGIONAL_ACCOUNT_ID}"
 
-./e2e-platform-api-test.sh
+# provision the regional cluster
+RC_ACCOUNT_ID=$REGIONAL_ACCOUNT_ID RC_CREDS_FILE=$REGIONAL_CREDS ./ci/e2e-rc-test.sh
+
+sleep 60
+
+# trigger simple rc api test, no mc just yet
+./ci/e2e-platform-api-test.sh
+
+# tear down the regional cluster
+RC_ACCOUNT_ID=$REGIONAL_ACCOUNT_ID RC_CREDS_FILE=$REGIONAL_CREDS ./ci/e2e-rc-test.sh --destroy-regional
