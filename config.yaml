@@ -6,7 +6,7 @@
 #       <aws_region>:                 # dict key → {{ aws_region }}
 #         account_id: "..."           # → {{ account_id }}
 #         management_clusters:
-#           <prefix>:                 # dict key → cluster_id = "<prefix>-<aws_region>"
+#           <cluster_prefix>:         # dict key → cluster_id = "<prefix>-<aws_region>"
 #                                     #           → {{ cluster_prefix }} (inside MC templates only)
 #
 # ── Inheritance (deep merge, most-specific wins) ──────────────────────────────
@@ -88,10 +88,10 @@ environments:
         management_clusters:
           mc01: {}
       us-east-2:
+        revision: "826fa76d08fc2ce87c863196e52d5a4fa9259a82"
         management_clusters:
           mc01: {}
       eu-west-1:
-        revision: "826fa76d08fc2ce87c863196e52d5a4fa9259a82"
         management_clusters:
           mc01: {}
 
