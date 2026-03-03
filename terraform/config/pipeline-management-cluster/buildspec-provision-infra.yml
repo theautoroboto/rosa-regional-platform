@@ -117,7 +117,7 @@ phases:
             exit 1
         fi
 
-        export REGION_DEPLOYMENT=$(jq -r '.region_deployment' "$MC_CONFIG_FILE")
+        export REGION_DEPLOYMENT=$(jq -r '.region' "$MC_CONFIG_FILE")
         echo "Extracted REGION_DEPLOYMENT from config: $REGION_DEPLOYMENT"
         export ENVIRONMENT="${ENVIRONMENT:-staging}"
 

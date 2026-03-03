@@ -27,9 +27,10 @@ For us, you can go to `rover > AWS IAAS > 811....-rrp-admin > login > then switc
 ### 1.1 Required AWS accounts
 
 To provision a regional and management cluster, you require three AWS accounts:
-* one account for the `Central` configuration
-* one account for the `Regional` Cluster
-* one account for the `Management` Cluster
+
+- one account for the `Central` configuration
+- one account for the `Regional` Cluster
+- one account for the `Management` Cluster
 
 Ensure you have access to the designated Central account via environment variables or ideally AWS profiles.
 
@@ -64,11 +65,11 @@ aws iam update-assume-role-policy \
 ## 2. Define a new Sector/Region Configuration
 
 > **Note:** In case you are deploying clusters based on existing argocd configuration, you can skip this step.
-Example: You want to spin up a development cluster and re-use the existing configuration for `env = integration` and `region = us-east-1`.
+> Example: You want to spin up a development cluster and re-use the existing configuration for `env = integration` and `region = us-east-1`.
 
 ### 2.1 Define a sector configuration
 
-Edit the `config.yaml` and add a new sector configuration like below. 
+Edit the `config.yaml` and add a new sector configuration like below.
 
 New sectors are defined under the `sectors` object. The sector `name` is abitrary. The `environment` parameter is important because it denotes the association of a central account to a single pipeline that manages that central account.
 There is a pipeline to manage a central account. Each region will have its own pipeline.
@@ -98,8 +99,9 @@ sectors:
 ### 2.2 Define a region configuration
 
 Edit `config.yaml` and add a region configuration and associate to a sector.
-* There can be multiple regions to an `environment`
-* There can be multiple regions to a `sector`
+
+- There can be multiple regions to an `environment`
+- There can be multiple regions to a `sector`
 
 ```yaml
 region_deployments:
@@ -184,7 +186,7 @@ The tf script will run to completion with the last message like below, but the p
 
 You must accept the CodeStar connection to establish oauth between github and the pipeline, using the AWS Console.
 
-Log into the Central AWS Account console, by way of the [AWS SSO page](https://auth.redhat.com/auth/realms/EmployeeIDP/protocol/saml/clients/itaws).  
+Log into the Central AWS Account console, by way of the [AWS SSO page](https://auth.redhat.com/auth/realms/EmployeeIDP/protocol/saml/clients/itaws).
 
 `Developer Tools` > `Settings` > `Connections` > `Accept the pending connection`
 
@@ -195,7 +197,6 @@ The `pipeline-provisioner` is the first pipeline. Once this completes successful
 At any point, you can retrigger a pipeline by going to the CodePipeline > Pipeline view select a pipeline like `pipeline-provisioner` and click `Release change` button. If you branch has new changes, the pipeline will fetch the latest SHA and run.
 
 ### 3.3 Pipeline can be triggered from the aws cli
-
 
 ```bash
 aws codepipeline start-pipeline-execution --name MyFirstPipeline --variables name=var1,value=1 name=var2,value=2
@@ -284,8 +285,8 @@ awscurl --service execute-api --region us-east-2 \
 
 Maestro uses AWS IoT Core for secure MQTT communication between Regional and Management Clusters. This requires a two-account certificate exchange process.
 
-
 **What this creates:**
+
 - Kubernetes secret containing IoT certificate and endpoint
 - Configuration for Maestro agent to connect to regional IoT endpoint
 
@@ -343,4 +344,5 @@ argocd      root            Synced        Healthy
 ```
 
 ---
-The pipeline process current ends here.  For the remaining manual directions, follow [Consumer Registration & Verification](https://github.com/openshift-online/rosa-regional-platform/blob/main/docs/full-region-provisioning.md#6-consumer-registration--verification)
+
+The pipeline process current ends here. For the remaining manual directions, follow [Consumer Registration & Verification](https://github.com/openshift-online/rosa-regional-platform/blob/main/docs/full-region-provisioning.md#6-consumer-registration--verification)

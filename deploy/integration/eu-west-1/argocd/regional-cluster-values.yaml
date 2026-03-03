@@ -11,4 +11,6 @@
 # Generated: render.py
 #
 
-{}
+maestro:
+  mqttEndpoint: xxx.iot.eu-west-1.amazonaws.com
+someOtherSetting: value

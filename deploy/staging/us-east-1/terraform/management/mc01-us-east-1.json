@@ -4,10 +4,9 @@
   "service_phase": "staging",
   "cost_center": "000",
   "environment": "staging",
-  "account_id": "REMOVED",
+  "account_id": "ssm:/infra/staging/us-east-1/mc01/account_id",
   "region": "us-east-1",
   "alias": "mc01-us-east-1",
-  "region_deployment": "us-east-1",
   "cluster_id": "mc01-us-east-1",
-  "regional_aws_account_id": "REMOVED"
+  "regional_aws_account_id": "ssm:/infra/staging/us-east-1/account_id"
 }
