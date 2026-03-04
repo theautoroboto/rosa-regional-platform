@@ -15,24 +15,19 @@ phases:
         # Pre-flight setup (validates env vars, inits account helpers)
         source scripts/pipeline-common/setup-apply-preflight.sh
 
+        # Common environment setup (Terraform variables, container image, etc.)
+        source scripts/pipeline-common/buildspec-common.sh
+        setup_common_environment
+
         echo "Deploying to account: ${TARGET_ACCOUNT_ID}"
         echo "  Region: ${TARGET_REGION}"
         echo "  Alias: ${TARGET_ALIAS}"
         echo ""
 
         # Resolve REGIONAL_AWS_ACCOUNT_ID (supports SSM parameter references)
-        RESOLVED_REGIONAL_ACCOUNT_ID="${REGIONAL_AWS_ACCOUNT_ID}"
-        if [[ "$RESOLVED_REGIONAL_ACCOUNT_ID" =~ ^ssm:// ]]; then
-            SSM_PARAM_NAME="${RESOLVED_REGIONAL_ACCOUNT_ID#ssm://}"
-            echo "Resolving SSM parameter: $SSM_PARAM_NAME in region ${TARGET_REGION}"
-            RESOLVED_REGIONAL_ACCOUNT_ID=$(aws ssm get-parameter \
-                --name "$SSM_PARAM_NAME" \
-                --with-decryption \
-                --query 'Parameter.Value' \
-                --output text \
-                --region "${TARGET_REGION}")
-            echo "Resolved regional account ID: $RESOLVED_REGIONAL_ACCOUNT_ID"
-        fi
+        # Using shared variable-helpers.sh function (sourced via buildspec-common.sh)
+        source scripts/pipeline-common/variable-helpers.sh
+        RESOLVED_REGIONAL_ACCOUNT_ID=$(resolve_ssm_param "${REGIONAL_AWS_ACCOUNT_ID}" "${TARGET_REGION}")
 
         if [[ -z "$RESOLVED_REGIONAL_ACCOUNT_ID" ]]; then
             echo "ERROR: REGIONAL_AWS_ACCOUNT_ID must be provided"
@@ -70,48 +65,16 @@ phases:
         echo "  Region: $TF_STATE_REGION"
         echo ""
 
-        # Set Terraform variables
-        export TF_VAR_region="${TARGET_REGION}"
-        export TF_VAR_app_code="${APP_CODE}"
-        export TF_VAR_service_phase="${SERVICE_PHASE}"
-        export TF_VAR_cost_center="${COST_CENTER}"
+        # Management-cluster-specific Terraform variables
         export TF_VAR_cluster_id="${CLUSTER_ID:-mgmt-cluster-01}"
         export TF_VAR_regional_aws_account_id="${RESOLVED_REGIONAL_ACCOUNT_ID}"
 
         # TF_VAR_maestro_agent_cert_file and TF_VAR_maestro_agent_config_file
         # are already exported by read-iot-state.sh
 
-        # Set repository URL and branch
-        _REPO_BRANCH="${REPOSITORY_BRANCH:-${GITHUB_BRANCH:-main}}"
-        export TF_VAR_repository_url="${REPOSITORY_URL:-https://github.com/${GITHUB_REPOSITORY}.git}"
-        export TF_VAR_repository_branch="${_REPO_BRANCH}"
-
-        # Set container image for ECS tasks (bastion and bootstrap)
-        if [ -z "${PLATFORM_IMAGE:-}" ]; then
-            echo "ERROR: PLATFORM_IMAGE is not set or empty; cannot set TF_VAR_container_image" >&2
-            exit 1
-        fi
-        export TF_VAR_container_image="${PLATFORM_IMAGE}"
-
-        # Set enable_bastion variable (default to false if not set)
-        ENABLE_BASTION="${ENABLE_BASTION:-false}"
-        if [ "$ENABLE_BASTION" == "true" ] || [ "$ENABLE_BASTION" == "1" ]; then
-            export TF_VAR_enable_bastion="true"
-        else
-            export TF_VAR_enable_bastion="false"
-        fi
-
-        echo "Terraform variables:"
-        echo "  Region: $TF_VAR_region"
-        echo "  Target Account: $TARGET_ACCOUNT_ID"
+        echo "Management-cluster-specific Terraform variables:"
         echo "  Cluster ID: $TF_VAR_cluster_id"
         echo "  Regional AWS Account: $TF_VAR_regional_aws_account_id"
-        echo "  Enable Bastion: $TF_VAR_enable_bastion"
-        echo "  App Code: $TF_VAR_app_code"
-        echo "  Service Phase: $TF_VAR_service_phase"
-        echo "  Cost Center: $TF_VAR_cost_center"
-        echo "  Repository URL: $TF_VAR_repository_url"
-        echo "  Repository Branch: $TF_VAR_repository_branch"
         echo ""
 
         # Export required environment variables for Makefile target

@@ -18,18 +18,16 @@
 
 set -euo pipefail
 
+# Source shared validation helpers
+SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]}")"
+source "${SCRIPT_DIR}/validation-helpers.sh"
+
 echo "=========================================="
 echo "Pre-flight Setup"
 echo "=========================================="
 
-# Validate required environment variables
-if [[ -z "${TARGET_ACCOUNT_ID:-}" || -z "${TARGET_REGION:-}" || -z "${TARGET_ALIAS:-}" ]]; then
-    echo "ERROR: Required environment variables not set"
-    echo "   TARGET_ACCOUNT_ID: ${TARGET_ACCOUNT_ID:-not set}"
-    echo "   TARGET_REGION: ${TARGET_REGION:-not set}"
-    echo "   TARGET_ALIAS: ${TARGET_ALIAS:-not set}"
-    exit 1
-fi
+# Validate required environment variables using shared validation function
+validate_required_env_vars TARGET_ACCOUNT_ID TARGET_REGION TARGET_ALIAS || exit 1
 
 # Initialize account credential helpers (captures central creds)
 source "$(dirname "${BASH_SOURCE[0]}")/account-helpers.sh"
