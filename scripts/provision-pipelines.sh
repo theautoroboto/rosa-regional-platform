@@ -14,6 +14,11 @@
 set -euo pipefail
 trap 'echo "FAILED: line $LINENO, exit code $?" >&2' ERR
 
+# Source shared helper functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/pipeline-common/variable-helpers.sh"
+source "${SCRIPT_DIR}/pipeline-common/validation-helpers.sh" 2>/dev/null || true  # Will be created soon
+
 # Get central account ID for state bucket
 CENTRAL_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 TF_STATE_BUCKET="terraform-state-${CENTRAL_ACCOUNT_ID}"
@@ -145,23 +150,7 @@ retry_terraform_apply() {
     done
 }
 
-# Helper function: Resolve SSM parameter if value starts with "ssm://"
-resolve_ssm_param() {
-    local value="$1"
-    local region="${2:-${AWS_REGION}}"  # Optional region parameter, defaults to AWS_REGION
-    if [[ "$value" == ssm://* ]]; then
-        local param_name="${value#ssm://}"
-        echo "Resolving SSM parameter: $param_name in region ${region}" >&2
-        aws ssm get-parameter \
-            --name "$param_name" \
-            --with-decryption \
-            --query 'Parameter.Value' \
-            --output text \
-            --region "${region}"
-    else
-        echo "$value"
-    fi
-}
+# Note: resolve_ssm_param is now provided by scripts/pipeline-common/variable-helpers.sh
 
 # Helper function: Trigger pipeline destruction
 # Arguments: pipeline_type (regional/management)
@@ -266,9 +255,8 @@ for region_dir in deploy/${ENVIRONMENT}/*/; do
         echo "  Delete Flag: $DELETE_FLAG"
 
         # Validate TARGET_ACCOUNT_ID before using it
-        if [[ -z "$TARGET_ACCOUNT_ID" ]]; then
-            echo "❌ ERROR: TARGET_ACCOUNT_ID (account_id) must be provided for region ${AWS_REGION}"
-            echo "   Set account_id in your regional config (either direct account ID or ssm:///path/to/param)"
+        if ! validate_aws_account_id "$TARGET_ACCOUNT_ID" "TARGET_ACCOUNT_ID (for region ${AWS_REGION})"; then
+            echo "   Set account_id in your regional config (either direct account ID or ssm:///path/to/param)" >&2
             exit 1
         fi
 
@@ -390,9 +378,8 @@ for region_dir in deploy/${ENVIRONMENT}/*/; do
             echo "  Delete Flag: $DELETE_FLAG"
 
             # Validate TARGET_ACCOUNT_ID before using it
-            if [[ -z "$TARGET_ACCOUNT_ID" ]]; then
-                echo "❌ ERROR: TARGET_ACCOUNT_ID (account_id) must be provided for management cluster ${CLUSTER_NAME}"
-                echo "   Set account_id in your management cluster config (either direct account ID or ssm:///path/to/param)"
+            if ! validate_aws_account_id "$TARGET_ACCOUNT_ID" "TARGET_ACCOUNT_ID (for management cluster ${CLUSTER_NAME})"; then
+                echo "   Set account_id in your management cluster config (either direct account ID or ssm:///path/to/param)" >&2
                 exit 1
             fi
 
