@@ -1,23 +1,51 @@
+# =============================================================================
+# Common Variables Module
+# =============================================================================
+# Centralized variable definitions shared across all cluster types
+# =============================================================================
+
+module "common_vars" {
+  source = "../../modules/common-variables"
+
+  # AWS Infrastructure
+  region            = var.region
+  container_image   = var.container_image
+  target_account_id = var.target_account_id
+  target_alias      = var.target_alias
+
+  # Tagging
+  app_code      = var.app_code
+  service_phase = var.service_phase
+  cost_center   = var.cost_center
+
+  # ArgoCD Configuration
+  repository_url    = var.repository_url
+  repository_branch = var.repository_branch
+
+  # Bastion Configuration
+  enable_bastion = var.enable_bastion
+}
+
+# =============================================================================
+# AWS Provider Configuration
+# =============================================================================
+
 provider "aws" {
-  region = var.region
+  region = module.common_vars.region
 
   # Conditionally assume role for cross-account deployment (local dev only)
   # When target_account_id is set, assume OrganizationAccountAccessRole in target account
   # In pipelines, target_account_id is empty - ambient creds are already the target account
   dynamic "assume_role" {
-    for_each = var.target_account_id != "" ? [1] : []
+    for_each = module.common_vars.target_account_id != "" ? [1] : []
     content {
-      role_arn     = "arn:aws:iam::${var.target_account_id}:role/OrganizationAccountAccessRole"
-      session_name = "terraform-regional-${var.target_alias}"
+      role_arn     = "arn:aws:iam::${module.common_vars.target_account_id}:role/OrganizationAccountAccessRole"
+      session_name = "terraform-regional-${module.common_vars.target_alias}"
     }
   }
 
   default_tags {
-    tags = {
-      app-code      = var.app_code
-      service-phase = var.service_phase
-      cost-center   = var.cost_center
-    }
+    tags = module.common_vars.common_tags
   }
 }
 
@@ -45,11 +73,11 @@ module "ecs_bootstrap" {
   eks_cluster_name              = module.regional_cluster.cluster_name
   eks_cluster_security_group_id = module.regional_cluster.cluster_security_group_id
   resource_name_base            = module.regional_cluster.resource_name_base
-  container_image               = var.container_image
+  container_image               = module.common_vars.container_image
 
   # ArgoCD bootstrap configuration
-  repository_url    = var.repository_url
-  repository_branch = var.repository_branch
+  repository_url    = module.common_vars.repository_url
+  repository_branch = module.common_vars.repository_branch
 }
 
 # =============================================================================
@@ -57,7 +85,7 @@ module "ecs_bootstrap" {
 # =============================================================================
 
 module "bastion" {
-  count  = var.enable_bastion ? 1 : 0
+  count  = module.common_vars.enable_bastion ? 1 : 0
   source = "../../modules/bastion"
 
   resource_name_base        = module.regional_cluster.resource_name_base
@@ -66,7 +94,7 @@ module "bastion" {
   cluster_security_group_id = module.regional_cluster.cluster_security_group_id
   vpc_id                    = module.regional_cluster.vpc_id
   private_subnet_ids        = module.regional_cluster.private_subnets
-  container_image           = var.container_image
+  container_image           = module.common_vars.container_image
 }
 
 # =============================================================================
@@ -99,7 +127,7 @@ module "maestro_infrastructure" {
   eks_cluster_primary_security_group_id = module.regional_cluster.node_security_group_id
 
   # Bastion access (if enabled)
-  bastion_security_group_id = var.enable_bastion ? module.bastion[0].security_group_id : null
+  bastion_security_group_id = module.common_vars.enable_bastion ? module.bastion[0].security_group_id : null
 
   # Database configuration (adjust for production)
   db_instance_class      = var.maestro_db_instance_class
@@ -152,7 +180,7 @@ module "hyperfleet_infrastructure" {
   eks_cluster_primary_security_group_id = module.regional_cluster.node_security_group_id
 
   # Bastion access (if enabled)
-  bastion_security_group_id = var.enable_bastion ? module.bastion[0].security_group_id : null
+  bastion_security_group_id = module.common_vars.enable_bastion ? module.bastion[0].security_group_id : null
 
   # Database configuration
   db_instance_class      = var.hyperfleet_db_instance_class
