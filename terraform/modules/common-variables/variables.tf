@@ -92,7 +92,7 @@ variable "service_phase" {
   type        = string
 
   validation {
-    condition     = contains(["development", "staging", "production"], var.service_phase)
+    condition     = contains(["dev", "development", "staging", "production"], var.service_phase)
     error_message = "service_phase must be one of: development, staging, production"
   }
 }
