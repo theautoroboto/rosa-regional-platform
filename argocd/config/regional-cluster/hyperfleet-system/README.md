@@ -36,7 +36,7 @@ hyperfleetApi:
   image:
     registry: quay.io/cdoan0
     repository: hyperfleet-api
-    tag: "v1.0.0"  # Use specific version, not "latest"
+    tag: "v1.0.0" # Use specific version, not "latest"
 
   database:
     # Disable in-cluster PostgreSQL
@@ -48,14 +48,14 @@ hyperfleetApi:
       enabled: true
       usePodIdentity: true
       secretMountPath: /mnt/secrets-store
-      sslMode: require  # Enforce TLS connections
+      sslMode: require # Enforce TLS connections
 
   # AWS Pod Identity configuration
   aws:
     region: us-east-2
     podIdentity:
       enabled: true
-      roleArn: "arn:aws:iam::ACCOUNT_ID:role/hyperfleet-api"  # From Terraform
+      roleArn: "arn:aws:iam::ACCOUNT_ID:role/hyperfleet-api" # From Terraform
 
 # Sentinel configuration with Amazon MQ
 hyperfleetSentinel:
@@ -74,7 +74,7 @@ hyperfleetSentinel:
       enabled: true
       usePodIdentity: true
       secretMountPath: /mnt/secrets-store
-      useTLS: true  # AMQPS encryption
+      useTLS: true # AMQPS encryption
       exchange: "hyperfleet-clusters"
       exchangeType: "topic"
 
@@ -83,7 +83,7 @@ hyperfleetSentinel:
     region: us-east-2
     podIdentity:
       enabled: true
-      roleArn: "arn:aws:iam::ACCOUNT_ID:role/hyperfleet-sentinel"  # From Terraform
+      roleArn: "arn:aws:iam::ACCOUNT_ID:role/hyperfleet-sentinel" # From Terraform
 
 # Adapter configuration with Amazon MQ
 hyperfleetAdapter:
@@ -104,7 +104,7 @@ hyperfleetAdapter:
       enabled: true
       usePodIdentity: true
       secretMountPath: /mnt/secrets-store
-      useTLS: true  # AMQPS encryption
+      useTLS: true # AMQPS encryption
       queue: "hyperfleet-clusters-landing-zone"
       exchange: "hyperfleet-clusters"
       routingKey: "#"
@@ -114,7 +114,7 @@ hyperfleetAdapter:
     region: us-east-2
     podIdentity:
       enabled: true
-      roleArn: "arn:aws:iam::ACCOUNT_ID:role/hyperfleet-adapter"  # From Terraform
+      roleArn: "arn:aws:iam::ACCOUNT_ID:role/hyperfleet-adapter" # From Terraform
 ```
 
 **Note**: Role ARNs are typically populated from Terraform outputs via `config.yaml` and the GitOps rendering process, not hardcoded in `values.yaml`.
@@ -170,6 +170,7 @@ terraform apply
 ```
 
 This creates:
+
 - **Amazon RDS PostgreSQL** (db.t4g.micro for dev, configurable)
 - **Amazon MQ RabbitMQ** (mq.t3.micro for dev, configurable)
 - **AWS Secrets Manager** secrets (db-credentials, mq-credentials)
@@ -179,6 +180,7 @@ This creates:
 ### How Pod Identity Works
 
 1. **Service Account Annotation**: Each pod's service account is annotated with an IAM role ARN:
+
    ```yaml
    annotations:
      eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/hyperfleet-api
@@ -187,6 +189,7 @@ This creates:
 2. **Pod Identity Agent**: EKS Pod Identity agent authenticates the pod to AWS using the role
 
 3. **SecretProviderClass**: AWS Secrets and Configuration Provider (ASCP) CSI driver mounts secrets:
+
    ```yaml
    apiVersion: secrets-store.csi.x-k8s.io/v1
    kind: SecretProviderClass
@@ -203,6 +206,7 @@ This creates:
 4. **Secret Mounting**: Secrets mounted at `/mnt/secrets-store/` contain credentials
 
 5. **Kubernetes Secret Creation**: SecretProviderClass also creates Kubernetes Secrets for environment variables:
+
    ```yaml
    secretObjects:
      - secretName: hyperfleet-api-db-secret
@@ -219,6 +223,7 @@ This creates:
 ### AWS Secrets Format
 
 **Database Secret** (`hyperfleet/db-credentials`):
+
 ```json
 {
   "username": "hyperfleet_admin",
@@ -230,6 +235,7 @@ This creates:
 ```
 
 **Message Queue Secret** (`hyperfleet/mq-credentials`):
+
 ```json
 {
   "username": "hyperfleet_admin",
@@ -347,6 +353,7 @@ Before deploying to production:
 
 2. **Configure Pod Identity Role ARNs**:
    - Add role ARNs to `config.yaml` for your region deployment:
+
    ```yaml
    values:
      regional-cluster:
@@ -366,10 +373,11 @@ Before deploying to production:
    ```
 
 3. **Use Specific Image Tags**:
+
    ```yaml
    hyperfleetApi:
      image:
-       tag: "v1.0.0"  # Not "latest"
+       tag: "v1.0.0" # Not "latest"
    ```
 
 4. **Enable Multi-AZ for High Availability**:
@@ -382,6 +390,7 @@ Before deploying to production:
    - Set up CloudWatch alarms for critical thresholds
 
 6. **Configure Resource Limits** based on observed usage:
+
    ```yaml
    hyperfleetApi:
      resources:
@@ -512,7 +521,9 @@ kubectl exec -n hyperfleet-system deployment/hyperfleet-sentinel -- \
 This occurs when Sentinel creates an exchange as `topic` but Adapter tries to use it as `fanout` (or vice versa).
 
 **Solution**:
+
 1. Check broker ConfigMaps have `exchange_type: "topic"`:
+
    ```bash
    kubectl get configmap hyperfleet-sentinel-broker-config -n hyperfleet-system -o yaml | grep exchange_type
    kubectl get configmap hyperfleet-adapter-broker-config -n hyperfleet-system -o yaml | grep exchange_type
@@ -539,7 +550,6 @@ curl http://localhost:8080/readyz
 # List clusters (requires auth if JWT enabled)
 curl http://localhost:8000/api/hyperfleet/v1/clusters
 ```
-
 
 ## Related Documentation
 

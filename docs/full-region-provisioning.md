@@ -9,6 +9,7 @@ This comprehensive guide walks through all steps to provision a new region in th
 Before starting, ensure your environment is properly configured.
 
 ### Required Tools
+
 Verify all tools are installed and accessible:
 
 ```bash
@@ -20,7 +21,7 @@ python --version  # or python3 --version
 
 ### Required AWS accounts
 
-To provision a regional and management cluster, you require two AWS accounts. Ensure you have access to both via environment variables or ideally AWS profiles. 
+To provision a regional and management cluster, you require two AWS accounts. Ensure you have access to both via environment variables or ideally AWS profiles.
 
 ## 2. ArgoCD Configuration Region Deployment Creation (optional)
 
@@ -37,13 +38,13 @@ Edit `config.yaml` and add your new region following this pattern:
 ```yaml
 region_deployments:
   # ... existing entries ...
-  - name: "us-west-2"                # ← Region deployment name (identifier for deploy paths)
-    aws_region: "us-west-2"           # ← AWS region to deploy into
-    sector: "integration"             # ← Sector (inherits environment + defaults)
-    account_id: "123456789"           # ← Regional cluster AWS account ID
+  - name: "us-west-2" # ← Region deployment name (identifier for deploy paths)
+    aws_region: "us-west-2" # ← AWS region to deploy into
+    sector: "integration" # ← Sector (inherits environment + defaults)
+    account_id: "123456789" # ← Regional cluster AWS account ID
     management_clusters:
-      - cluster_id: "mc01-us-west-2"  # ← Management cluster identifier
-        account_id: "987654321"       # ← Management cluster AWS account ID
+      - cluster_id: "mc01-us-west-2" # ← Management cluster identifier
+        account_id: "987654321" # ← Management cluster AWS account ID
 ```
 
 ### Generate Rendered Configurations
@@ -156,6 +157,7 @@ MGMT_TFVARS=terraform/config/management-cluster/terraform.tfvars make provision-
 ```
 
 **What this creates:**
+
 - Kubernetes secret containing IoT certificate and endpoint
 - Configuration for Maestro agent to connect to regional IoT endpoint
 
@@ -201,6 +203,7 @@ export AWS_PROFILE=<management-profile>
 # Provision Management Environment
 make provision-management
 ```
+
 <details>
 <summary>🔍 Verify Management Cluster Deployment (optional)</summary>
 
@@ -241,7 +244,6 @@ This section provides comprehensive validation that both Regional and Management
 <details>
 <summary>🔍 Consumer Registration Verification</summary>
 
-
 ```bash
 # Verify the Management Cluster is properly registered
 # Access the Platform API, and query the registered consumers.
@@ -254,6 +256,7 @@ awscurl --service execute-api --region $REGION $API_GATEWAY_URL/api/v0/managemen
 ```
 
 **Expected Results:**
+
 - Your Management Cluster name appears in the consumer list
 - Consumer has appropriate labels (cluster_type, cluster_id)
 - No connection errors when accessing Maestro API
@@ -374,4 +377,3 @@ awscurl --service execute-api --region $REGION $API_GATEWAY_URL/api/v0/resource_
 ```
 
 </details>
-
