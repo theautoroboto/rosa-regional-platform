@@ -23,3 +23,8 @@ Chart.lock
 node_modules/
 
 .DS_Store
+
+# Files moved to rosa-regional-platform-internal (see MIGRATION-CONFIG-FILES.md)
+config.yaml
+deploy/
+scripts/render.py
