@@ -7,6 +7,16 @@ variable "github_repository" {
   }
 }
 
+variable "github_config_repository" {
+  type        = string
+  description = "Private GitHub Repository for config files (config.yaml, deploy/) in owner/name format"
+  default     = "openshift-online/rosa-regional-platform-internal"
+  validation {
+    condition     = can(regex("^[^/]+/[^/]+$", var.github_config_repository))
+    error_message = "github_config_repository must be in 'owner/name' format"
+  }
+}
+
 variable "github_branch" {
   type        = string
   description = "GitHub Branch to track"

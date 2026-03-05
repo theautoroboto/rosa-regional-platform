@@ -372,13 +372,13 @@ resource "aws_codepipeline" "central_pipeline" {
   trigger {
     provider_type = "CodeStarSourceConnection"
     git_configuration {
-      source_action_name = "Source"
+      source_action_name = "PublicSource"
       push {
         branches {
           includes = [var.github_branch]
         }
         file_paths {
-          includes = ["deploy/${var.target_environment}/${var.target_region}/terraform/regional.json", "terraform/config/pipeline-regional-cluster/**"]
+          includes = ["terraform/config/pipeline-regional-cluster/**"]
         }
       }
     }
@@ -387,19 +387,37 @@ resource "aws_codepipeline" "central_pipeline" {
   stage {
     name = "Source"
 
+    # Public repository - platform code, terraform modules, scripts
     action {
-      name             = "Source"
+      name             = "PublicSource"
       category         = "Source"
       owner            = "AWS"
       provider         = "CodeStarSourceConnection"
       version          = "1"
-      output_artifacts = ["source_output"]
+      output_artifacts = ["public_source"]
 
       configuration = {
         ConnectionArn    = data.aws_codestarconnections_connection.github.arn
         FullRepositoryId = var.github_repository
         BranchName       = var.github_branch
         DetectChanges    = "true"
+      }
+    }
+
+    # Private repository - config.yaml, deploy/, sensitive configs
+    action {
+      name             = "ConfigSource"
+      category         = "Source"
+      owner            = "AWS"
+      provider         = "CodeStarSourceConnection"
+      version          = "1"
+      output_artifacts = ["config_source"]
+
+      configuration = {
+        ConnectionArn    = data.aws_codestarconnections_connection.github.arn
+        FullRepositoryId = var.github_config_repository
+        BranchName       = var.github_branch
+        DetectChanges    = "false"
       }
     }
   }
@@ -412,12 +430,13 @@ resource "aws_codepipeline" "central_pipeline" {
       category         = "Build"
       owner            = "AWS"
       provider         = "CodeBuild"
-      input_artifacts  = ["source_output"]
+      input_artifacts  = ["public_source", "config_source"]
       output_artifacts = ["apply_output"]
       version          = "1"
 
       configuration = {
-        ProjectName = aws_codebuild_project.regional_apply.name
+        ProjectName          = aws_codebuild_project.regional_apply.name
+        PrimarySource        = "public_source"
         EnvironmentVariables = jsonencode([
           {
             name  = "IS_DESTROY"
@@ -437,11 +456,12 @@ resource "aws_codepipeline" "central_pipeline" {
       category        = "Build"
       owner           = "AWS"
       provider        = "CodeBuild"
-      input_artifacts = ["apply_output"]
+      input_artifacts = ["apply_output", "config_source"]
       version         = "1"
 
       configuration = {
-        ProjectName = aws_codebuild_project.regional_bootstrap.name
+        ProjectName   = aws_codebuild_project.regional_bootstrap.name
+        PrimarySource = "apply_output"
         EnvironmentVariables = jsonencode([
           {
             name  = "IS_DESTROY"

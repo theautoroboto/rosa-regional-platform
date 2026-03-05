@@ -11,6 +11,9 @@ phases:
           ./scripts/bootstrap-argocd.sh \
           ./scripts/pipeline-common/init-terraform-backend.sh \
           ./scripts/pipeline-common/bootstrap-argocd-wrapper.sh
+      # Copy deploy directory from config source to working directory
+      # bootstrap-argocd.sh expects deploy/ to be in the working directory
+      - cp -r "${CODEBUILD_SRC_DIR_config_source}/deploy" ./
 
   build:
     commands:

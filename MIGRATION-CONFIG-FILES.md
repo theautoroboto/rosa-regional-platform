@@ -135,6 +135,21 @@ rosa-regional-platform-internal/
     └── ...
 ```
 
+## Pipeline Configuration Updates
+
+The CodePipeline configurations have been updated to pull from both repositories:
+
+- **Public Repository** (`rosa-regional-platform-PR`): Platform code, terraform modules, scripts
+- **Private Repository** (`rosa-regional-platform-internal`): Configuration files, deploy manifests
+
+Each pipeline now has two source actions:
+- `PublicSource` - Monitors the public repo for platform code changes
+- `ConfigSource` - Pulls config files from the private repo
+
+**Important:** After merging these changes, existing pipelines must be updated to use the new dual-source configuration.
+
+See [docs/PIPELINE-MIGRATION-PLAN.md](docs/PIPELINE-MIGRATION-PLAN.md) for detailed migration steps and troubleshooting.
+
 ## Questions?
 
 If you have questions about this migration or need access to the private repository, contact the platform team.
