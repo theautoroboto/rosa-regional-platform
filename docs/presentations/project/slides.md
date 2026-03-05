@@ -38,7 +38,7 @@ layout: default
 - **Simpler** — no ACM, no App-Interface, no legacy dependencies
 - **CLM** replaces CS/AMS — single source of truth
 - **Clear data flows** — CLM, Maestro, ArgoCD, PKO
-- **Pipeline-based lifecycle** — regions bootstrapped and lifecycled via pipelines
+- **Pipeline driven regions** — regions lifecycled via pipelines
 - **Async**, eventually consistent
 - **New APIs, new UX** — navigate by region (like AWS console)
 
@@ -61,9 +61,9 @@ layout: default
 ## 🔐 Operations
 
 - **Zero operator access** — audited breakglass only
-- Kube APIs are **private** — no network path between clusters
+- **Private** EKS Kube APIs (RC & MCs) — no network path between
 - **Sectors** — progressive delivery via canary-style rollouts
-- **CI** — pre-merge and nightlies provision full regions and run end-to-end testing
+- **CI** — pre-merge and nightlies provision regions and run e2e tests
 - **AI** from the ground up
 
 </div>
