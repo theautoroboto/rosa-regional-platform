@@ -41,27 +41,27 @@ Detailed architecture and rationale for key technical decisions:
 | Document                                                  | Topic                                     |
 | --------------------------------------------------------- | ----------------------------------------- |
 | [FAQ](FAQ.md)                                             | Architecture Q&A and pending decisions    |
-| [ArgoCD Configuration](../argocd/README.md)               | ArgoCD setup, config modes, adding charts |
-| [CI](../ci/README.md)                                     | E2E testing, ephemeral environments       |
-| [Terraform Configurations](../terraform/config/README.md) | Pipeline architecture and cluster configs |
+| [ArgoCD Configuration](/argocd/README.md)                 | ArgoCD setup, config modes, adding charts |
+| [CI](/ci/README.md)                                       | E2E testing, ephemeral environments       |
+| [Terraform Configurations](/terraform/config/README.md)   | Pipeline architecture and cluster configs |
 
 ### Terraform Module Documentation
 
 Each module has its own README with usage, inputs, outputs, and architecture:
 
-- [`eks-cluster`](../terraform/modules/eks-cluster/README.md) - Private EKS cluster with GitOps bootstrap
-- [`ecs-bootstrap`](../terraform/modules/ecs-bootstrap/README.md) - ECS Fargate bootstrap infrastructure
-- [`api-gateway`](../terraform/modules/api-gateway/README.md) - API Gateway with VPC Link to internal ALB
-- [`authz`](../terraform/modules/authz/README.md) - Cedar/AVP authorization (DynamoDB, IAM)
-- [`bastion`](../terraform/modules/bastion/README.md) - Ephemeral bastion for private cluster access
-- [`maestro-infrastructure`](../terraform/modules/maestro-infrastructure/README.md) - IoT Core, RDS, Secrets Manager for Maestro Server
-- [`maestro-agent`](../terraform/modules/maestro-agent/README.md) - IAM and Pod Identity for Maestro Agent
-- [`hyperfleet-infrastructure`](../terraform/modules/hyperfleet-infrastructure/README.md) - RDS, Amazon MQ, IAM for HyperFleet (CLM)
+- [`eks-cluster`](/terraform/modules/eks-cluster/README.md) - Private EKS cluster with GitOps bootstrap
+- [`ecs-bootstrap`](/terraform/modules/ecs-bootstrap/README.md) - ECS Fargate bootstrap infrastructure
+- [`api-gateway`](/terraform/modules/api-gateway/README.md) - API Gateway with VPC Link to internal ALB
+- [`authz`](/terraform/modules/authz/README.md) - Cedar/AVP authorization (DynamoDB, IAM)
+- [`bastion`](/terraform/modules/bastion/README.md) - Ephemeral bastion for private cluster access
+- [`maestro-infrastructure`](/terraform/modules/maestro-infrastructure/README.md) - IoT Core, RDS, Secrets Manager for Maestro Server
+- [`maestro-agent`](/terraform/modules/maestro-agent/README.md) - IAM and Pod Identity for Maestro Agent
+- [`hyperfleet-infrastructure`](/terraform/modules/hyperfleet-infrastructure/README.md) - RDS, Amazon MQ, IAM for HyperFleet (CLM)
 
 ### ArgoCD Helm Chart Documentation
 
-- [`hyperfleet-system`](../argocd/config/regional-cluster/hyperfleet-system/README.md) - HyperFleet components (API, Sentinel, Adapter)
-- [`platform-api`](../argocd/config/regional-cluster/platform-api/README.md) - Platform API with Envoy sidecar
+- [`hyperfleet-system`](/argocd/config/regional-cluster/hyperfleet-system/README.md) - HyperFleet components (API, Sentinel, Adapter)
+- [`platform-api`](/argocd/config/regional-cluster/platform-api/README.md) - Platform API with Envoy sidecar
 
 ## Scope
 

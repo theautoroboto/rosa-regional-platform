@@ -348,11 +348,11 @@ If issues occur, revert to in-cluster services:
 
 ## Related Documentation
 
-- [HyperFleet Architecture](../../../docs/architecture/hyperfleet.md)
+- [HyperFleet Architecture](/docs/architecture/hyperfleet.md)
 - [AWS RDS Documentation](https://docs.aws.amazon.com/rds/)
 - [Amazon MQ Documentation](https://docs.aws.amazon.com/amazon-mq/)
 - [EKS Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html)
-- [Migration Plan](../../../HYPERFLEET_PRODUCTION_MIGRATION_PLAN.md)
+- [Migration Plan](/HYPERFLEET_PRODUCTION_MIGRATION_PLAN.md)
 
 ## Support
 

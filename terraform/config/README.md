@@ -2,7 +2,7 @@
 
 ## CI/CD Pipelines
 
-For the full pipeline architecture, event triggers, and lifecycle diagrams, see [Pipeline-Based Lifecycle](../../docs/design/pipeline-based-lifecycle.md).
+For the full pipeline architecture, event triggers, and lifecycle diagrams, see [Pipeline-Based Lifecycle](/docs/design/pipeline-based-lifecycle.md).
 
 ### `central-account-bootstrap/`
 

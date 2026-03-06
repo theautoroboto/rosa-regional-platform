@@ -121,4 +121,4 @@ The ApplicationSet will automatically discover and deploy new charts. Run `./scr
 
 ArgoCD uses a **Matrix Generator** pattern combining a Git Generator (discovers Helm charts) with a Cluster Generator (reads cluster identity). Charts are sourced from either a pinned commit hash or the current git revision, while rendered values always come from the latest revision.
 
-For the full architecture, alternatives considered, and implementation details, see [GitOps Cluster Configuration](../docs/design/gitops-cluster-configuration.md).
+For the full architecture, alternatives considered, and implementation details, see [GitOps Cluster Configuration](/docs/design/gitops-cluster-configuration.md).

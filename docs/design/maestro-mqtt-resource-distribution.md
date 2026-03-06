@@ -959,13 +959,13 @@ This network topology demonstrates the fundamental isolation principle: Regional
 
 ### Terraform Infrastructure Modules
 
-- **[maestro-infrastructure](../../terraform/modules/maestro-infrastructure/)** - Regional cluster Maestro server infrastructure
+- **[maestro-infrastructure](/terraform/modules/maestro-infrastructure/)** - Regional cluster Maestro server infrastructure
   - IoT Core provisioning (Things, Certificates, Policies)
   - RDS PostgreSQL database
   - Secrets Manager configuration
   - Server IAM roles and Pod Identity associations
 
-- **[maestro-agent](../../terraform/modules/maestro-agent/)** - Management cluster Maestro agent infrastructure
+- **[maestro-agent](/terraform/modules/maestro-agent/)** - Management cluster Maestro agent infrastructure
   - Agent IAM roles with cross-account IoT permissions
   - Pod Identity associations (same-account)
   - Helm chart value generation
@@ -985,8 +985,8 @@ This network topology demonstrates the fundamental isolation principle: Regional
 
 ### Configuration Files
 
-- **[argocd/config/regional-cluster/maestro/](../../argocd/config/regional-cluster/maestro/)** - Maestro Server Helm chart configurations
-- **[argocd/config/management-cluster/maestro/](../../argocd/config/management-cluster/maestro/)** - Maestro Agent Helm chart configurations
+- **[argocd/config/regional-cluster/maestro/](/argocd/config/regional-cluster/maestro/)** - Maestro Server Helm chart configurations
+- **[argocd/config/management-cluster/maestro/](/argocd/config/management-cluster/maestro/)** - Maestro Agent Helm chart configurations
 
 ---
 

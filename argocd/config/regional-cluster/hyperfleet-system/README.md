@@ -158,7 +158,7 @@ helm install hyperfleet-system ./argocd/config/regional-cluster/hyperfleet-syste
 
 ## AWS Infrastructure Setup
 
-Before deploying HyperFleet, provision the underlying AWS infrastructure (RDS, Amazon MQ, Secrets Manager, IAM roles) using Terraform. See the [HyperFleet Infrastructure module](../../../terraform/modules/hyperfleet-infrastructure/README.md) for full details on resources created, configuration options, cost estimates, and troubleshooting.
+Before deploying HyperFleet, provision the underlying AWS infrastructure (RDS, Amazon MQ, Secrets Manager, IAM roles) using Terraform. See the [HyperFleet Infrastructure module](/terraform/modules/hyperfleet-infrastructure/README.md) for full details on resources created, configuration options, cost estimates, and troubleshooting.
 
 ```bash
 cd terraform/config/regional-cluster
@@ -256,7 +256,7 @@ kubectl get namespaces | grep test-cluster
 
 ## Production Considerations
 
-1. **Provision AWS Infrastructure** with production-tier settings — see [HyperFleet Infrastructure module](../../../terraform/modules/hyperfleet-infrastructure/README.md) for recommended instance sizes, Multi-AZ, and monitoring setup
+1. **Provision AWS Infrastructure** with production-tier settings — see [HyperFleet Infrastructure module](/terraform/modules/hyperfleet-infrastructure/README.md) for recommended instance sizes, Multi-AZ, and monitoring setup
 2. **Configure Pod Identity Role ARNs** in `config.yaml` for your region deployment (role ARNs come from Terraform outputs)
 3. **Use specific image tags** (not `latest`)
 4. **Configure resource limits** based on observed usage
