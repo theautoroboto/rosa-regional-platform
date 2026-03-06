@@ -63,6 +63,13 @@ Each module has its own README with usage, inputs, outputs, and architecture:
 - [`hyperfleet-system`](/argocd/config/regional-cluster/hyperfleet-system/README.md) - HyperFleet components (API, Sentinel, Adapter)
 - [`platform-api`](/argocd/config/regional-cluster/platform-api/README.md) - Platform API with Envoy sidecar
 
+### Presentations
+
+Slidev-based presentations for project overview and milestones:
+
+- [Project Overview](/docs/presentations/project/README.md) - ROSA Regional Platform project presentation
+- [Milestone 1](/docs/presentations/milestone-1/README.md) - Full region provisioning demonstration
+
 ## Scope
 
 - This architecture is designed exclusively for **ROSA HCP** (Hosted Control Planes)
