@@ -37,30 +37,38 @@ for LOG_GROUP in $LOG_GROUPS; do
   PROJECT_NAME="${LOG_GROUP##*/}"
   echo "Downloading ${LOG_GROUP}..."
 
-  STREAMS=$(aws logs describe-log-streams \
+  STREAMS_JSON=$(aws logs describe-log-streams \
     --log-group-name "$LOG_GROUP" \
     --region "$REGION" \
     --order-by LastEventTime \
     --descending \
-    --query 'logStreams[].logStreamName' \
-    --output text)
+    --query 'logStreams[].{name:logStreamName, ts:firstEventTimestamp}' \
+    --output json)
 
-  if [[ -z "$STREAMS" || "$STREAMS" == "None" ]]; then
+  TOTAL=$(echo "$STREAMS_JSON" | jq 'length')
+  if [[ "$TOTAL" -eq 0 ]]; then
     echo "  (no log streams)"
     continue
   fi
 
-  # Streams are ordered most-recent-first (descending). Convert to an array
-  # and iterate in reverse so index 0 = oldest, giving chronological filenames.
-  read -ra STREAM_ARRAY <<< "$STREAMS"
-  TOTAL=${#STREAM_ARRAY[@]}
-
+  # Iterate in reverse (oldest first) for chronological filenames.
   for (( i = TOTAL - 1; i >= 0; i-- )); do
-    STREAM="${STREAM_ARRAY[$i]}"
-    IDX=$(( TOTAL - 1 - i ))
-    SAFE_NAME="${PROJECT_NAME}.${IDX}.log"
+    STREAM=$(echo "$STREAMS_JSON" | jq -r ".[$i].name")
+    TS_MS=$(echo "$STREAMS_JSON" | jq -r ".[$i].ts // empty")
 
-    echo "  stream ${IDX}: ${STREAM} -> ${OUT_DIR}/${SAFE_NAME}"
+    if [[ -n "$TS_MS" ]]; then
+      # Convert epoch millis to human-readable timestamp
+      TS_SEC=$(( TS_MS / 1000 ))
+      TS_LABEL=$(date -u -r "$TS_SEC" '+%Y%m%d-%H%M%S' 2>/dev/null \
+        || date -u -d "@$TS_SEC" '+%Y%m%d-%H%M%S' 2>/dev/null \
+        || echo "unknown")
+    else
+      TS_LABEL="unknown"
+    fi
+
+    SAFE_NAME="${PROJECT_NAME}.${TS_LABEL}.log"
+
+    echo "  ${STREAM} -> ${OUT_DIR}/${SAFE_NAME}"
 
     aws logs get-log-events \
       --log-group-name "$LOG_GROUP" \

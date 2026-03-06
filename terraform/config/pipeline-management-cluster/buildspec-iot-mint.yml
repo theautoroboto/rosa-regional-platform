@@ -7,10 +7,12 @@ phases:
   build:
     on-failure: RETRY-1
     commands:
-      - echo "=========================================="
-      - echo "Minting IoT Certificate in RC Account"
-      - echo "=========================================="
       - |
+        echo "=========================================="
+        echo "Minting IoT Certificate in RC Account"
+        echo "Build #${CODEBUILD_BUILD_NUMBER:-?} | ${CODEBUILD_BUILD_ID:-unknown}"
+        echo "=========================================="
+
         set -euo pipefail
 
         # Initialize account helpers and switch to RC account
@@ -45,6 +47,14 @@ phases:
         DELETE_FLAG=$(jq -r '.delete // false' "$MC_CONFIG_FILE")
         # Manual override: IS_DESTROY pipeline variable takes precedence
         [ "${IS_DESTROY:-false}" == "true" ] && DELETE_FLAG="true"
+
+        echo ""
+        if [ "${DELETE_FLAG}" == "true" ]; then
+            echo ">>> MODE: TEARDOWN <<<"
+        else
+            echo ">>> MODE: PROVISION <<<"
+        fi
+        echo ""
 
         # Generate temporary tfvars for the IoT provisioning
         TEMP_TFVARS=$(mktemp /tmp/maestro-iot-XXXXXX.tfvars)

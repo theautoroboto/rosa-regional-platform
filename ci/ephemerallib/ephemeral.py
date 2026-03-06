@@ -1,3 +1,4 @@
+import datetime
 import logging
 import os
 import re
@@ -145,7 +146,14 @@ class EphemeralEnvOrchestrator:
 
                 for idx, stream_info in enumerate(stream_list):
                     stream_name = stream_info["logStreamName"]
-                    safe_name = f"{project_name}.{idx}.log"
+                    ts_ms = stream_info.get("firstEventTimestamp")
+                    if ts_ms:
+                        ts_label = datetime.datetime.fromtimestamp(
+                            ts_ms / 1000, tz=datetime.timezone.utc
+                        ).strftime("%Y%m%d-%H%M%S")
+                    else:
+                        ts_label = "unknown"
+                    safe_name = f"{project_name}.{ts_label}.log"
                     out_file = artifact_path / safe_name
 
                     events = []
