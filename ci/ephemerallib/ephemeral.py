@@ -78,7 +78,7 @@ class EphemeralEnvOrchestrator:
         if save_state:
             self._save_terraform_outputs(git, save_state)
 
-    def teardown(self):
+    def teardown(self, fire_and_forget: bool = False):
         """Tear down a previously provisioned ephemeral environment.
 
         Can run independently of provision() — reconnects to the existing
@@ -96,7 +96,7 @@ class EphemeralEnvOrchestrator:
         git.checkout_ci_branch(self.ci_prefix)
 
         self.monitor = PipelineMonitor(self.aws.session)
-        self._run_teardown(git)
+        self._run_teardown(git, fire_and_forget=fire_and_forget)
 
     def collect_codebuild_logs(self):
         """Download CloudWatch logs for all CodeBuild projects matching our CI prefix.
@@ -308,7 +308,7 @@ class EphemeralEnvOrchestrator:
         dest_path.write_text(result.stdout)
         log.info("Terraform outputs written to %s", dest)
 
-    def _run_teardown(self, git: GitManager):
+    def _run_teardown(self, git: GitManager, fire_and_forget: bool = False):
         """Tear down infrastructure via GitOps and destroy the pipeline-provisioner."""
 
         # Phase 1: Infrastructure teardown
@@ -332,6 +332,10 @@ class EphemeralEnvOrchestrator:
                     mc_config["delete"] = True
 
         git.modify_config(TARGET_ENVIRONMENT, set_delete_flag)
+
+        if fire_and_forget:
+            log.info("Fire-and-forget mode enabled — not waiting for pipelines to complete.")
+            return
 
         # Wait for pipeline-provisioner to pick up the change
         provisioner_exec_id = self.monitor.wait_for_new_execution(
