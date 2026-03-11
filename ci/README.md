@@ -52,10 +52,17 @@ BUILD_ID=abc123 ./ci/pre-merge.py --teardown --repo owner/repo --branch my-featu
 3. Start the job:
 
 ```bash
+# Trigger nightly-ephemeral
 curl -X POST \
     -H "Authorization: Bearer $(oc whoami -t)" \
     'https://gangway-ci.apps.ci.l2s4.p1.openshiftapps.com/v1/executions/' \
     -d '{"job_name": "periodic-ci-openshift-online-rosa-regional-platform-main-nightly-ephemeral", "job_execution_type": "1"}'
+
+# Trigger nightly-integration
+curl -X POST \
+    -H "Authorization: Bearer $(oc whoami -t)" \
+    'https://gangway-ci.apps.ci.l2s4.p1.openshiftapps.com/v1/executions/' \
+    -d '{"job_name": "periodic-ci-openshift-online-rosa-regional-platform-main-nightly-integration", "job_execution_type": "1"}'
 ```
 
 4. Copy the `id` from the response and check the execution to get the Prow URL:
