@@ -84,6 +84,10 @@ module "api_gateway" {
   regional_id            = var.regional_id
   node_security_group_id = module.regional_cluster.node_security_group_id
   cluster_name           = module.regional_cluster.cluster_name
+
+  # Custom domain (e.g. api.us-east-1.int0.rosa.devshift.net)
+  api_domain_name         = var.api_domain_name
+  regional_hosted_zone_id = var.regional_hosted_zone_id
 }
 
 # Maestro Infrastructure Module

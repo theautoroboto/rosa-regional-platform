@@ -84,3 +84,38 @@ output "test_command" {
       ${aws_api_gateway_stage.main.invoke_url}/v0/live
   EOT
 }
+
+# -----------------------------------------------------------------------------
+# Custom Domain (only populated when api_domain_name is set)
+# -----------------------------------------------------------------------------
+
+output "api_domain_name" {
+  description = "Custom domain name for the API (e.g. api.us-east-1.int0.rosa.devshift.net)"
+  value       = var.api_domain_name != null ? aws_api_gateway_domain_name.api[0].domain_name : null
+}
+
+output "api_domain_regional_domain_name" {
+  description = "API Gateway regional domain name — target for DNS alias/CNAME (e.g. d-abc123.execute-api.us-east-1.amazonaws.com)"
+  value       = var.api_domain_name != null ? aws_api_gateway_domain_name.api[0].regional_domain_name : null
+}
+
+output "api_domain_regional_zone_id" {
+  description = "API Gateway regional hosted zone ID for Route53 alias records"
+  value       = var.api_domain_name != null ? aws_api_gateway_domain_name.api[0].regional_zone_id : null
+}
+
+output "acm_certificate_arn" {
+  description = "ACM certificate ARN for the API custom domain"
+  value       = var.api_domain_name != null ? aws_acm_certificate.api[0].arn : null
+}
+
+output "acm_certificate_validation_records" {
+  description = "DNS records needed to validate the ACM certificate (only populated when hosted_zone_id is not provided and validation must be done externally)"
+  value = var.api_domain_name != null && var.regional_hosted_zone_id == null ? {
+    for dvo in aws_acm_certificate.api[0].domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      type   = dvo.resource_record_type
+      record = dvo.resource_record_value
+    }
+  } : {}
+}

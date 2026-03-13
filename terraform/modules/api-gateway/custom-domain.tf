@@ -1,0 +1,107 @@
+# =============================================================================
+# Custom Domain (Optional)
+#
+# When api_domain_name is set, creates:
+# - ACM certificate with DNS validation
+# - Route53 validation records (if regional_hosted_zone_id is provided)
+# - API Gateway custom domain name (REGIONAL)
+# - Base path mapping to the prod stage
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# ACM Certificate
+# -----------------------------------------------------------------------------
+
+resource "aws_acm_certificate" "api" {
+  count = var.api_domain_name != null ? 1 : 0
+
+  domain_name       = var.api_domain_name
+  validation_method = "DNS"
+
+  tags = {
+    Name = "${var.regional_id}-api-cert"
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# -----------------------------------------------------------------------------
+# Route53 DNS Validation Records (optional, requires hosted_zone_id)
+# -----------------------------------------------------------------------------
+
+resource "aws_route53_record" "cert_validation" {
+  for_each = var.api_domain_name != null && var.regional_hosted_zone_id != null ? {
+    for dvo in aws_acm_certificate.api[0].domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
+    }
+  } : {}
+
+  zone_id         = var.regional_hosted_zone_id
+  name            = each.value.name
+  type            = each.value.type
+  ttl             = 300
+  records         = [each.value.record]
+  allow_overwrite = true
+}
+
+resource "aws_acm_certificate_validation" "api" {
+  count = var.api_domain_name != null && var.regional_hosted_zone_id != null ? 1 : 0
+
+  certificate_arn         = aws_acm_certificate.api[0].arn
+  validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
+}
+
+# -----------------------------------------------------------------------------
+# API Gateway Custom Domain Name
+# -----------------------------------------------------------------------------
+
+resource "aws_api_gateway_domain_name" "api" {
+  count = var.api_domain_name != null ? 1 : 0
+
+  domain_name              = var.api_domain_name
+  regional_certificate_arn = var.regional_hosted_zone_id != null ? aws_acm_certificate_validation.api[0].certificate_arn : aws_acm_certificate.api[0].arn
+
+  endpoint_configuration {
+    types = ["REGIONAL"]
+  }
+
+  tags = {
+    Name = "${var.regional_id}-api-domain"
+  }
+}
+
+# -----------------------------------------------------------------------------
+# Base Path Mapping
+# -----------------------------------------------------------------------------
+
+resource "aws_api_gateway_base_path_mapping" "api" {
+  count = var.api_domain_name != null ? 1 : 0
+
+  api_id      = aws_api_gateway_rest_api.main.id
+  stage_name  = aws_api_gateway_stage.main.stage_name
+  domain_name = aws_api_gateway_domain_name.api[0].domain_name
+}
+
+# -----------------------------------------------------------------------------
+# Route53 Alias Record (optional, requires hosted_zone_id)
+#
+# Points the custom domain to the API Gateway regional domain name.
+# -----------------------------------------------------------------------------
+
+resource "aws_route53_record" "api" {
+  count = var.api_domain_name != null && var.regional_hosted_zone_id != null ? 1 : 0
+
+  zone_id = var.regional_hosted_zone_id
+  name    = var.api_domain_name
+  type    = "A"
+
+  alias {
+    name                   = aws_api_gateway_domain_name.api[0].regional_domain_name
+    zone_id                = aws_api_gateway_domain_name.api[0].regional_zone_id
+    evaluate_target_health = true
+  }
+}
