@@ -109,13 +109,3 @@ output "acm_certificate_arn" {
   value       = var.api_domain_name != null ? aws_acm_certificate.api[0].arn : null
 }
 
-output "acm_certificate_validation_records" {
-  description = "DNS records needed to validate the ACM certificate (only populated when hosted_zone_id is not provided and validation must be done externally)"
-  value = var.api_domain_name != null && var.regional_hosted_zone_id == null ? {
-    for dvo in aws_acm_certificate.api[0].domain_validation_options : dvo.domain_name => {
-      name   = dvo.resource_record_name
-      type   = dvo.resource_record_type
-      record = dvo.resource_record_value
-    }
-  } : {}
-}
