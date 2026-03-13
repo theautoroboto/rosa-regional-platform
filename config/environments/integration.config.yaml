@@ -1,5 +1,8 @@
 region_deployments:
   us-east-1:
     account_id: {}
+    delete: true
     management_clusters:
-      mc01: {}
+      mc01: {
+        delete: true
+      }
