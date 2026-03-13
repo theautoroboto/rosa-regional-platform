@@ -87,3 +87,15 @@ variable "codebuild_image" {
   type        = string
   description = "ECR image URI for CodeBuild projects (platform image with pre-installed tools)"
 }
+
+variable "environment_domain" {
+  type        = string
+  description = "Environment domain name (e.g. int0.rosa.devshift.net). When set, the regional pipeline creates DNS zones and custom API domain."
+  default     = ""
+}
+
+variable "environment_hosted_zone_id" {
+  type        = string
+  description = "Route53 hosted zone ID for the environment domain in the central account. Used by the regional pipeline for NS delegation."
+  default     = ""
+}

@@ -229,6 +229,47 @@ fi
 echo "Found ${#region_dirs[@]} region(s) in environment '${ENVIRONMENT}'"
 echo ""
 
+# =============================================================================
+# DNS Environment Zone (optional)
+#
+# When environment_domain is configured in regional.json, create the environment
+# hosted zone (e.g. int0.rosa.devshift.net) in the central account before
+# processing regions. The zone ID is passed to regional pipelines for NS delegation.
+# =============================================================================
+
+ENVIRONMENT_DOMAIN=""
+ENVIRONMENT_HOSTED_ZONE_ID=""
+
+ENVIRONMENT_DOMAIN=$(jq -r '.environment_domain // empty' "deploy/${ENVIRONMENT}/accounts.json" 2>/dev/null || echo "")
+
+if [ -n "$ENVIRONMENT_DOMAIN" ]; then
+    echo "=========================================="
+    echo "Provisioning DNS Environment Zone: $ENVIRONMENT_DOMAIN"
+    echo "=========================================="
+
+    cd terraform/config/dns-environment-zone
+
+    terraform init \
+        -reconfigure \
+        -backend-config="bucket=$TF_STATE_BUCKET" \
+        -backend-config="key=dns/environment-zone-${ENVIRONMENT}.tfstate" \
+        -backend-config="region=$TF_STATE_REGION" \
+        -backend-config="use_lockfile=true"
+
+    if retry_terraform_apply \
+        -var="environment_domain=${ENVIRONMENT_DOMAIN}" \
+        -var="environment=${ENVIRONMENT}"; then
+        ENVIRONMENT_HOSTED_ZONE_ID=$(terraform output -raw zone_id)
+        echo "✅ Environment zone created: $ENVIRONMENT_DOMAIN (zone ID: $ENVIRONMENT_HOSTED_ZONE_ID)"
+    else
+        echo "❌ Failed to create environment zone: $ENVIRONMENT_DOMAIN"
+        exit 1
+    fi
+
+    cd ../../..
+    echo ""
+fi
+
 # Process each region_deployment directory in the target environment
 for region_dir in deploy/${ENVIRONMENT}/*/; do
     [ -d "$region_dir" ] || continue
@@ -317,6 +358,9 @@ for region_dir in deploy/${ENVIRONMENT}/*/; do
             -var="repository_branch=${GITHUB_BRANCH}"
             -var="codebuild_image=${PLATFORM_IMAGE}"
         )
+        # DNS configuration (optional)
+        [ -n "$ENVIRONMENT_DOMAIN" ] && TF_ARGS+=( -var="environment_domain=${ENVIRONMENT_DOMAIN}" )
+        [ -n "$ENVIRONMENT_HOSTED_ZONE_ID" ] && TF_ARGS+=( -var="environment_hosted_zone_id=${ENVIRONMENT_HOSTED_ZONE_ID}" )
 
         if [ "$DELETE_FLAG" == "true" ]; then
             if destroy_pipeline "regional"; then

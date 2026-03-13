@@ -61,6 +61,15 @@ else
     export TF_VAR_enable_bastion="false"
 fi
 
+# Set DNS variables (optional — when ENVIRONMENT_DOMAIN is set, creates regional
+# DNS zone and custom API domain)
+if [ -n "${ENVIRONMENT_DOMAIN:-}" ]; then
+    export TF_VAR_environment_domain="${ENVIRONMENT_DOMAIN}"
+fi
+if [ -n "${ENVIRONMENT_HOSTED_ZONE_ID:-}" ]; then
+    export TF_VAR_environment_hosted_zone_id="${ENVIRONMENT_HOSTED_ZONE_ID}"
+fi
+
 echo "Terraform variables:"
 echo "  Region: $TF_VAR_region"
 echo "  App Code: $TF_VAR_app_code"
@@ -70,6 +79,8 @@ echo "  Repository URL: $TF_VAR_repository_url"
 echo "  Repository Branch: $TF_VAR_repository_branch"
 echo "  API Additional Allowed Accounts: $TF_VAR_api_additional_allowed_accounts"
 echo "  Enable Bastion: $TF_VAR_enable_bastion"
+echo "  Environment Domain: ${TF_VAR_environment_domain:-<not set>}"
+echo "  Environment Hosted Zone ID: ${TF_VAR_environment_hosted_zone_id:-<not set>}"
 echo ""
 
 # Export required environment variables for Makefile target

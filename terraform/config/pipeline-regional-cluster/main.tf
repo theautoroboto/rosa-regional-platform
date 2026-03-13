@@ -68,6 +68,8 @@ resource "aws_iam_role_policy" "codebuild_policy" {
           "elasticloadbalancing:*",
           "autoscaling:*",
           "cloudwatch:*",
+          "route53:*",
+          "acm:*",
           "tag:*"
         ]
         Resource = "*"
@@ -275,6 +277,14 @@ resource "aws_codebuild_project" "regional_apply" {
     environment_variable {
       name  = "PLATFORM_IMAGE"
       value = var.codebuild_image
+    }
+    environment_variable {
+      name  = "ENVIRONMENT_DOMAIN"
+      value = var.environment_domain
+    }
+    environment_variable {
+      name  = "ENVIRONMENT_HOSTED_ZONE_ID"
+      value = var.environment_hosted_zone_id
     }
   }
 

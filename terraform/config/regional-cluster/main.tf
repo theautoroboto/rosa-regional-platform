@@ -23,6 +23,13 @@ provider "aws" {
   }
 }
 
+# Central account provider (no assume_role) for cross-account DNS delegation.
+# Uses ambient credentials which are the central account in pipeline context.
+provider "aws" {
+  alias  = "central"
+  region = var.region
+}
+
 # =============================================================================
 # Data Sources
 # =============================================================================
@@ -86,8 +93,38 @@ module "api_gateway" {
   cluster_name           = module.regional_cluster.cluster_name
 
   # Custom domain (e.g. api.us-east-1.int0.rosa.devshift.net)
-  api_domain_name         = var.api_domain_name
-  regional_hosted_zone_id = var.regional_hosted_zone_id
+  api_domain_name         = var.environment_domain != null ? "api.${var.region}.${var.environment_domain}" : null
+  regional_hosted_zone_id = var.environment_domain != null ? aws_route53_zone.regional[0].zone_id : null
+}
+
+# =============================================================================
+# Regional DNS Zone (Optional)
+#
+# When environment_domain is set, creates:
+# - Regional hosted zone (<region>.<environment_domain>) in the RC account
+# - NS delegation records in the environment zone (central account)
+# =============================================================================
+
+resource "aws_route53_zone" "regional" {
+  count = var.environment_domain != null ? 1 : 0
+
+  name = "${var.region}.${var.environment_domain}"
+
+  tags = {
+    Name = "${var.region}.${var.environment_domain}"
+  }
+}
+
+# NS delegation from the environment zone (central account) to the regional zone
+resource "aws_route53_record" "regional_delegation" {
+  count    = var.environment_domain != null && var.environment_hosted_zone_id != null ? 1 : 0
+  provider = aws.central
+
+  zone_id = var.environment_hosted_zone_id
+  name    = "${var.region}.${var.environment_domain}"
+  type    = "NS"
+  ttl     = 300
+  records = aws_route53_zone.regional[0].name_servers
 }
 
 # Maestro Infrastructure Module
