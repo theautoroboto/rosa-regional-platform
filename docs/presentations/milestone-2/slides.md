@@ -53,7 +53,7 @@ awscurl --service execute-api --region us-east-1 https://api.us-east-1.int.rosa.
 {"status":"ok"}
 ```
 
-API supports **Management Clusters** and **Manifest Works** CRUD with status feedback. See the [OpenAPI spec](https://api.us-east-1.int.rosa.devshift.net/).
+API supports **Management Clusters** and **Manifest Works** CRUD with status feedback. See the [OpenAPI spec](https://api.us-east-1.int0.rosa.devshift.net/).
 
 ---
 
