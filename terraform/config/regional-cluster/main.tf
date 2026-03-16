@@ -210,3 +210,35 @@ module "hyperfleet_infrastructure" {
   mq_instance_type   = var.hyperfleet_mq_instance_type
   mq_deployment_mode = var.hyperfleet_mq_deployment_mode
 }
+
+# =============================================================================
+# RHOBS Infrastructure Module (Optional)
+# =============================================================================
+
+# Call the RHOBS infrastructure module for observability (metrics and logs)
+# This is optional and can be enabled with var.enable_rhobs = true
+module "rhobs_infrastructure" {
+  count  = var.enable_rhobs ? 1 : 0
+  source = "../../modules/rhobs-infrastructure"
+
+  # Required variables from EKS cluster
+  regional_id                           = var.regional_id
+  vpc_id                                = module.regional_cluster.vpc_id
+  private_subnets                       = module.regional_cluster.private_subnets
+  eks_cluster_name                      = module.regional_cluster.cluster_name
+  eks_cluster_security_group_id         = module.regional_cluster.cluster_security_group_id
+  eks_cluster_primary_security_group_id = module.regional_cluster.node_security_group_id
+
+  # Bastion access (if enabled)
+  bastion_security_group_id = var.enable_bastion ? module.bastion[0].security_group_id : null
+
+  # S3 retention configuration
+  metrics_retention_days = var.rhobs_metrics_retention_days
+  logs_retention_days    = var.rhobs_logs_retention_days
+  enable_s3_versioning   = var.rhobs_enable_s3_versioning
+
+  # ElastiCache configuration
+  cache_node_type      = var.rhobs_cache_node_type
+  cache_num_nodes      = var.rhobs_cache_num_nodes
+  cache_engine_version = var.rhobs_cache_engine_version
+}

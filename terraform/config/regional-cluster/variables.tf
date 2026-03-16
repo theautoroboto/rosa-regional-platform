@@ -209,3 +209,49 @@ variable "hyperfleet_mq_deployment_mode" {
     error_message = "Deployment mode must be SINGLE_INSTANCE or CLUSTER_MULTI_AZ"
   }
 }
+
+# =============================================================================
+# RHOBS Observability Configuration Variables
+# =============================================================================
+
+variable "enable_rhobs" {
+  description = "Enable RHOBS observability infrastructure (S3, ElastiCache, IAM roles)"
+  type        = bool
+  default     = false
+}
+
+variable "rhobs_metrics_retention_days" {
+  description = "Number of days to retain metrics in S3 before deletion"
+  type        = number
+  default     = 90
+}
+
+variable "rhobs_logs_retention_days" {
+  description = "Number of days to retain logs in S3 before deletion"
+  type        = number
+  default     = 90
+}
+
+variable "rhobs_enable_s3_versioning" {
+  description = "Enable S3 versioning for RHOBS buckets (recommended for production)"
+  type        = bool
+  default     = false
+}
+
+variable "rhobs_cache_node_type" {
+  description = "ElastiCache node type for RHOBS query caching"
+  type        = string
+  default     = "cache.r6g.large"
+}
+
+variable "rhobs_cache_num_nodes" {
+  description = "Number of ElastiCache nodes in the Memcached cluster"
+  type        = number
+  default     = 3
+}
+
+variable "rhobs_cache_engine_version" {
+  description = "Memcached engine version for RHOBS caching"
+  type        = string
+  default     = "1.6.17"
+}

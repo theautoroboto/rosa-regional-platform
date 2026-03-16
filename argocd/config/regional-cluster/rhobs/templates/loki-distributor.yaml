@@ -1,0 +1,125 @@
+{{- if and .Values.rhobs.loki.enabled .Values.rhobs.loki.distributor.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-config
+  namespace: {{ .Values.rhobs.namespace }}
+  labels:
+    {{- include "rhobs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: loki
+data:
+  loki.yaml: |
+    auth_enabled: false
+    server:
+      http_listen_port: 3100
+      grpc_listen_port: 9095
+    common:
+      path_prefix: /loki
+      replication_factor: 3
+      storage:
+        s3:
+          s3: s3://{{ include "rhobs.awsRegion" . }}/{{ .Values.rhobs.s3.logs_bucket }}
+          region: {{ include "rhobs.awsRegion" . }}
+    schema_config:
+      configs:
+        - from: 2024-01-01
+          store: tsdb
+          object_store: s3
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+    storage_config:
+      tsdb_shipper:
+        active_index_directory: /loki/index
+        cache_location: /loki/cache
+    limits_config:
+      retention_period: 90d
+      max_query_lookback: 90d
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loki-distributor
+  namespace: {{ .Values.rhobs.namespace }}
+  labels:
+    {{- include "rhobs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: loki-distributor
+  {{- with .Values.rhobs.loki.distributor.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.rhobs.loki.distributor.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.rhobs.loki.distributor.service.port }}
+      targetPort: http
+      protocol: TCP
+    - name: grpc
+      port: 9095
+      targetPort: grpc
+      protocol: TCP
+  selector:
+    app.kubernetes.io/component: loki-distributor
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loki-distributor
+  namespace: {{ .Values.rhobs.namespace }}
+  labels:
+    {{- include "rhobs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: loki-distributor
+spec:
+  replicas: {{ .Values.rhobs.loki.distributor.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: loki-distributor
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: loki-distributor
+        {{- include "rhobs.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.rhobs.loki.serviceAccount.name }}
+      containers:
+        - name: loki
+          image: "{{ .Values.rhobs.loki.image.registry }}/{{ .Values.rhobs.loki.image.repository }}:{{ .Values.rhobs.loki.image.tag }}"
+          imagePullPolicy: {{ .Values.rhobs.loki.image.pullPolicy }}
+          args:
+            - -config.file=/etc/loki/loki.yaml
+            - -target=distributor
+          ports:
+            - name: http
+              containerPort: 3100
+            - name: grpc
+              containerPort: 9095
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: {{ .Values.rhobs.loki.distributor.requests.cpu }}
+              memory: {{ .Values.rhobs.loki.distributor.requests.memory }}
+            limits:
+              cpu: {{ .Values.rhobs.loki.distributor.limits.cpu }}
+              memory: {{ .Values.rhobs.loki.distributor.limits.memory }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/loki
+      volumes:
+        - name: config
+          configMap:
+            name: loki-config
+{{- end }}

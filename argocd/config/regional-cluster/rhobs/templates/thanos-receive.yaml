@@ -1,0 +1,107 @@
+{{- if and .Values.rhobs.thanos.enabled .Values.rhobs.thanos.receive.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: thanos-receive
+  namespace: {{ .Values.rhobs.namespace }}
+  labels:
+    {{- include "rhobs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: thanos-receive
+  {{- with .Values.rhobs.thanos.receive.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.rhobs.thanos.receive.service.type }}
+  ports:
+    - name: grpc
+      port: {{ .Values.rhobs.thanos.receive.service.port }}
+      targetPort: grpc
+      protocol: TCP
+    - name: http
+      port: 10902
+      targetPort: http
+      protocol: TCP
+  selector:
+    app.kubernetes.io/component: thanos-receive
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: thanos-receive
+  namespace: {{ .Values.rhobs.namespace }}
+  labels:
+    {{- include "rhobs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: thanos-receive
+spec:
+  replicas: {{ .Values.rhobs.thanos.receive.replicas }}
+  serviceName: thanos-receive
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: thanos-receive
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: thanos-receive
+        {{- include "rhobs.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.rhobs.thanos.serviceAccount.name }}
+      containers:
+        - name: thanos-receive
+          image: "{{ .Values.rhobs.thanos.image.registry }}/{{ .Values.rhobs.thanos.image.repository }}:{{ .Values.rhobs.thanos.image.tag }}"
+          imagePullPolicy: {{ .Values.rhobs.thanos.image.pullPolicy }}
+          args:
+            - receive
+            - --grpc-address=0.0.0.0:{{ .Values.rhobs.thanos.receive.service.port }}
+            - --http-address=0.0.0.0:10902
+            - --remote-write.address=0.0.0.0:19291
+            - --objstore.config=$(OBJSTORE_CONFIG)
+            - --tsdb.path=/var/thanos/receive
+            - --tsdb.retention={{ .Values.rhobs.thanos.receive.retention }}
+            - --label=receive="true"
+            - --label=region={{ include "rhobs.awsRegion" . | quote }}
+          env:
+            - name: OBJSTORE_CONFIG
+              value: |
+                type: S3
+                config:
+                  bucket: {{ .Values.rhobs.s3.metrics_bucket | quote }}
+                  endpoint: s3.{{ include "rhobs.awsRegion" . }}.amazonaws.com
+                  region: {{ include "rhobs.awsRegion" . | quote }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.rhobs.thanos.receive.service.port }}
+            - name: http
+              containerPort: 10902
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: {{ .Values.rhobs.thanos.receive.requests.cpu }}
+              memory: {{ .Values.rhobs.thanos.receive.requests.memory }}
+            limits:
+              cpu: {{ .Values.rhobs.thanos.receive.limits.cpu }}
+              memory: {{ .Values.rhobs.thanos.receive.limits.memory }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/thanos/receive
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 50Gi
+{{- end }}
