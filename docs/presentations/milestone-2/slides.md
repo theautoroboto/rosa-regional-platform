@@ -180,7 +180,7 @@ Teardown is also **GitOps-driven**. `delete: true` is committed to the config, a
 
 Our goal is to hook up ephemeral pre-merge tests to **every component repository** that constitutes the platform (e.g. Hypershift, CLM, RHOBS, Platform API, etc).
 
-The goal is to **validate** new versions of components do *not break* ROSA Regional Platform before they are merged.
+The goal is to **validate** new versions of components do _not break_ ROSA Regional Platform before they are merged.
 
 - Environment provisioned from `main` of rosa-regional-platform
 - **Only the tested component is replaced** with the PR version

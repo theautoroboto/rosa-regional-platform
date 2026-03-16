@@ -11,6 +11,7 @@ drawings:
 transition: slide-left
 mdc: true
 ---
+
 <!-- markdownlint-disable MD003 -->
 
 # The ROSA Regional Platform
@@ -24,8 +25,8 @@ Building the next generation of ROSA HCP
 </div>
 
 ---
-layout: default
----
+
+## layout: default
 
 # The New Architecture — Design Principles
 
@@ -71,8 +72,8 @@ layout: default
 </div>
 
 ---
-layout: default
----
+
+## layout: default
 
 # Architecture
 
@@ -85,8 +86,8 @@ layout: default
 </div>
 
 ---
-layout: default
----
+
+## layout: default
 
 # Team
 
@@ -107,38 +108,38 @@ layout: default
 </div>
 
 ---
-layout: default
----
+
+## layout: default
 
 # Contributing Teams
 
 <div class="pt-2 text-sm">
 
-| Team | Collaboration Area |
-| --- | --- |
-| **HyperShift Operator** | HyperShift on EKS — networking, storage, IAM integration |
-| **HyperShift ROSA** | Upstream contributions — request serving nodes, SG optimization, ECR |
-| **ROSA PKO** | Content delivery and image management for hosted clusters |
-| **Hyperfleet** | CLM (Cluster Lifecycle Manager) — new API replacing CS/AMS |
-| **Platform Engineering** | ArgoCD patterns, progressive delivery (ADR-300) |
-| **RHOBS** | Observability stack (RHOBS v2) — metrics, logs, dashboards, alerting |
-| **GCP** | Cross-cloud alignment — shared components and patterns |
+| Team                     | Collaboration Area                                                   |
+| ------------------------ | -------------------------------------------------------------------- |
+| **HyperShift Operator**  | HyperShift on EKS — networking, storage, IAM integration             |
+| **HyperShift ROSA**      | Upstream contributions — request serving nodes, SG optimization, ECR |
+| **ROSA PKO**             | Content delivery and image management for hosted clusters            |
+| **Hyperfleet**           | CLM (Cluster Lifecycle Manager) — new API replacing CS/AMS           |
+| **Platform Engineering** | ArgoCD patterns, progressive delivery (ADR-300)                      |
+| **RHOBS**                | Observability stack (RHOBS v2) — metrics, logs, dashboards, alerting |
+| **GCP**                  | Cross-cloud alignment — shared components and patterns               |
 
 </div>
 
 ---
-layout: default
----
+
+## layout: default
 
 # Main Repositories
 
 <div class="pt-8">
 
-| Repository | Description |
-| --- | --- |
-| [rosa-regional-platform](https://github.com/openshift-online/rosa-regional-platform) | Main project repository — infrastructure, ArgoCD configs, docs |
-| [rosa-regional-platform-internal](https://github.com/openshift-online/rosa-regional-platform-internal/) | Internal configurations and deployment values |
-| [rosa-regional-platform-api](https://github.com/openshift-online/rosa-regional-platform-api/) | Platform API specification and implementation |
+| Repository                                                                                              | Description                                                    |
+| ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| [rosa-regional-platform](https://github.com/openshift-online/rosa-regional-platform)                    | Main project repository — infrastructure, ArgoCD configs, docs |
+| [rosa-regional-platform-internal](https://github.com/openshift-online/rosa-regional-platform-internal/) | Internal configurations and deployment values                  |
+| [rosa-regional-platform-api](https://github.com/openshift-online/rosa-regional-platform-api/)           | Platform API specification and implementation                  |
 
 </div>
 
@@ -154,18 +155,18 @@ layout: default
 </div>
 
 ---
-layout: default
----
+
+## layout: default
 
 # CI Strategy
 
 <div style="position: absolute; top: 5rem; right: 2rem; font-size: 0.6rem; border: 1px solid #888; border-radius: 0.5rem; padding: 0.75rem 1rem;">
 
-| | Source | Env |
-|---|---|---|
-| **Pre-merge** | PR branch | Ephemeral |
-| **Nightly** | main | Persistent |
-| **Nightly** | main | Ephemeral x N |
+|               | Source    | Env           |
+| ------------- | --------- | ------------- |
+| **Pre-merge** | PR branch | Ephemeral     |
+| **Nightly**   | main      | Persistent    |
+| **Nightly**   | main      | Ephemeral x N |
 
 **Testing suite:** Hosted Cluster lifecycle → workload validation
 
@@ -218,8 +219,8 @@ flowchart LR
 </div>
 
 ---
-layout: default
----
+
+## layout: default
 
 # Roadmap
 

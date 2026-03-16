@@ -41,9 +41,9 @@ Detailed architecture and rationale for key technical decisions:
 | Document                                                  | Topic                                     |
 | --------------------------------------------------------- | ----------------------------------------- |
 | [FAQ](FAQ.md)                                             | Architecture Q&A and pending decisions    |
-| [ArgoCD Configuration](../argocd/README.md)                 | ArgoCD setup, config modes, adding charts |
-| [CI](../ci/README.md)                                       | E2E testing, ephemeral environments       |
-| [Terraform Configurations](../terraform/config/README.md)   | Pipeline architecture and cluster configs |
+| [ArgoCD Configuration](../argocd/README.md)               | ArgoCD setup, config modes, adding charts |
+| [CI](../ci/README.md)                                     | E2E testing, ephemeral environments       |
+| [Terraform Configurations](../terraform/config/README.md) | Pipeline architecture and cluster configs |
 
 ### Terraform Module Documentation
 
