@@ -1,0 +1,173 @@
+# RHOBS Agent Helm Chart Values - Fleet Cluster Observability Collection
+# Deploys OTEL Collector for metrics and Fluent Bit for logs
+
+# Global configuration (injected by ApplicationSet)
+global:
+  cluster_type: ""
+  environment: ""
+  aws_region: ""
+  cluster_name: ""
+
+rhobsAgent:
+  # Namespace configuration
+  namespace: observability
+
+  # RHOBS endpoint configuration (populated via values-override.yaml)
+  rhobs:
+    # Regional RHOBS endpoint (NLB DNS name or custom domain)
+    endpoint: ""  # e.g., "rhobs.us-east-1.example.com" or NLB DNS
+    # Thanos Receive endpoint for metrics
+    thanosReceiveUrl: ""  # e.g., "https://rhobs.us-east-1.example.com:19291"
+    # Loki Distributor endpoint for logs
+    lokiPushUrl: ""       # e.g., "https://rhobs.us-east-1.example.com:3100/loki/api/v1/push"
+
+  # mTLS authentication
+  mtls:
+    enabled: true
+    # cert-manager certificate for client authentication
+    certificateIssuer: "rhobs-ca-issuer"
+    certificateIssuerKind: "ClusterIssuer"
+    certificateName: "rhobs-client-cert"
+
+  # OpenTelemetry Collector configuration
+  otelCollector:
+    enabled: true
+    image:
+      registry: "ghcr.io"
+      repository: "open-telemetry/opentelemetry-collector-k8s"
+      tag: "0.104.0"
+      pullPolicy: IfNotPresent
+
+    # Deployment mode (deployment for centralized collection)
+    mode: deployment
+    replicas: 2
+
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "512Mi"
+      limits:
+        cpu: "1000m"
+        memory: "2Gi"
+
+    # Service account
+    serviceAccount:
+      create: true
+      name: "otel-collector"
+
+    # OTEL configuration
+    config:
+      # Receivers
+      receivers:
+        prometheus:
+          config:
+            scrape_configs:
+              # Federate from in-cluster Prometheus
+              - job_name: 'federate'
+                honor_labels: true
+                metrics_path: '/federate'
+                params:
+                  'match[]':
+                    - '{__name__=~"ALERTS|cluster:.*|namespace:.*"}'
+                static_configs:
+                  - targets: ['prometheus-operated.monitoring:9090']
+                scheme: https
+                tls_config:
+                  ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+                bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+      # Processors
+      processors:
+        batch:
+          timeout: 10s
+          send_batch_size: 1000
+        resource:
+          attributes:
+            - key: cluster_id
+              value: ""  # Populated from cluster_name
+              action: upsert
+            - key: region
+              value: ""  # Populated from aws_region
+              action: upsert
+            - key: environment
+              value: ""  # Populated from environment
+              action: upsert
+
+      # Exporters
+      exporters:
+        prometheusremotewrite:
+          endpoint: ""  # Populated from thanosReceiveUrl
+          tls:
+            cert_file: /certs/tls.crt
+            key_file: /certs/tls.key
+            ca_file: /certs/ca.crt
+
+  # Fluent Bit configuration
+  fluentBit:
+    enabled: true
+    image:
+      registry: "cr.fluentbit.io"
+      repository: "fluent/fluent-bit"
+      tag: "3.0.4"
+      pullPolicy: IfNotPresent
+
+    # DaemonSet for log collection on all nodes
+    daemonSet:
+      enabled: true
+
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "200m"
+        memory: "256Mi"
+
+    # Service account
+    serviceAccount:
+      create: true
+      name: "fluent-bit"
+
+    # Fluent Bit configuration
+    config:
+      service:
+        flush: 5
+        log_level: info
+
+      inputs:
+        - name: tail
+          tag: kube.*
+          path: /var/log/containers/*.log
+          parser: docker
+          db: /var/log/flb_kube.db
+          mem_buf_limit: 50MB
+          skip_long_lines: "On"
+          refresh_interval: 10
+
+      filters:
+        - name: kubernetes
+          match: kube.*
+          kube_url: https://kubernetes.default.svc:443
+          kube_ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          kube_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+          merge_log: "On"
+          k8s_logging_parser: "On"
+          k8s_logging_exclude: "On"
+
+      outputs:
+        - name: loki
+          match: "*"
+          host: ""  # Populated from RHOBS endpoint
+          port: 3100
+          tls: "On"
+          tls_verify: "On"
+          tls_ca_file: /certs/ca.crt
+          tls_crt_file: /certs/tls.crt
+          tls_key_file: /certs/tls.key
+          labels: cluster=${CLUSTER_ID}, region=${REGION}, environment=${ENVIRONMENT}
+          label_keys: $kubernetes['namespace_name'],$kubernetes['pod_name']
+          line_format: json
+
+  # cert-manager integration for mTLS client certificates
+  certManager:
+    enabled: true

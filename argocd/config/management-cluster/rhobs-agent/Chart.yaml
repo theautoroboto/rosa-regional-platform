@@ -1,0 +1,18 @@
+apiVersion: v2
+name: rhobs-agent
+description: RHOBS Observability Agents - Metrics and Logs Collection for Fleet Clusters
+type: application
+version: 0.1.0
+appVersion: "1.0"
+home: https://github.com/openshift-online/rosa-regional-platform
+keywords:
+  - observability
+  - metrics
+  - logs
+  - otel
+  - fluent-bit
+  - prometheus
+  - rosa
+  - eks
+maintainers:
+  - name: ROSA Regional Platform Team

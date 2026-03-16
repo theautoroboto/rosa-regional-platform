@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.rhobsAgent.namespace }}
+  labels:
+    {{- include "rhobs-agent.labels" . | nindent 4 }}
+    environment: {{ .Values.global.environment | quote }}
+    aws-region: {{ .Values.global.aws_region | quote }}
