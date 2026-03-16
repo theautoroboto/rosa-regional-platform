@@ -1,0 +1,279 @@
+# RHOBS Helm Chart Values - Observability Stack for Regional Cluster
+# Deploys Thanos, Loki, Grafana, and supporting components
+
+# Global configuration (injected by ApplicationSet)
+global:
+  cluster_type: ""
+  environment: ""
+  aws_region: ""
+  cluster_name: ""
+
+rhobs:
+  # Namespace configuration
+  namespace: observability
+
+  # S3 configuration (populated from Terraform outputs via values-override.yaml)
+  s3:
+    metrics_bucket: ""  # e.g., "regional-us-east-1-rhobs-metrics"
+    logs_bucket: ""     # e.g., "regional-us-east-1-rhobs-logs"
+    region: ""          # AWS region
+
+  # ElastiCache configuration (populated from Terraform outputs)
+  memcached:
+    address: ""  # ElastiCache configuration endpoint
+    port: 11211
+
+  # mTLS configuration for fleet cluster authentication
+  mtls:
+    enabled: true
+    # cert-manager issuer for generating client certificates
+    issuerName: "rhobs-ca-issuer"
+    issuerKind: "ClusterIssuer"
+
+  # Thanos configuration
+  thanos:
+    enabled: true
+    image:
+      registry: "quay.io"
+      repository: "thanos/thanos"
+      tag: "v0.36.1"
+      pullPolicy: IfNotPresent
+
+    # ServiceAccount (uses Pod Identity for S3 access)
+    serviceAccount:
+      name: "thanos"
+      roleArn: ""  # Populated from Terraform
+
+    # Thanos Receive - metrics ingestion endpoint
+    receive:
+      enabled: true
+      replicas: 3
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2000m"
+        memory: "4Gi"
+      # Public service for fleet cluster ingestion
+      service:
+        type: LoadBalancer
+        port: 19291
+        annotations:
+          service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+          service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+          service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+      # Retention in local storage before upload to S3
+      retention: "2h"
+
+    # Thanos Query - query interface for metrics
+    query:
+      enabled: true
+      replicas: 2
+      requests:
+        cpu: "200m"
+        memory: "512Mi"
+      limits:
+        cpu: "1000m"
+        memory: "2Gi"
+      service:
+        type: ClusterIP
+        port: 9090
+      # Query frontend caching
+      cache:
+        enabled: true
+        backend: "memcached"
+
+    # Thanos Store - query historical data from S3
+    store:
+      enabled: true
+      replicas: 2
+      requests:
+        cpu: "200m"
+        memory: "1Gi"
+      limits:
+        cpu: "1000m"
+        memory: "4Gi"
+      # Index cache configuration
+      cache:
+        enabled: true
+        backend: "memcached"
+
+    # Thanos Compactor - compact and downsample metrics in S3
+    compact:
+      enabled: true
+      replicas: 1
+      requests:
+        cpu: "200m"
+        memory: "1Gi"
+      limits:
+        cpu: "1000m"
+        memory: "4Gi"
+      # Retention policy
+      retention:
+        raw: "30d"      # Raw samples
+        5m: "90d"       # 5-minute resolution
+        1h: "365d"      # 1-hour resolution
+
+  # Loki configuration
+  loki:
+    enabled: true
+    image:
+      registry: "docker.io"
+      repository: "grafana/loki"
+      tag: "3.0.0"
+      pullPolicy: IfNotPresent
+
+    # ServiceAccount (uses Pod Identity for S3 access)
+    serviceAccount:
+      name: "loki"
+      roleArn: ""  # Populated from Terraform
+
+    # Loki Distributor - logs ingestion endpoint
+    distributor:
+      enabled: true
+      replicas: 3
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2000m"
+        memory: "4Gi"
+      # Public service for fleet cluster ingestion
+      service:
+        type: LoadBalancer
+        port: 3100
+        annotations:
+          service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+          service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+          service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+
+    # Loki Ingester - process and batch logs
+    ingester:
+      enabled: true
+      replicas: 3
+      requests:
+        cpu: "500m"
+        memory: "2Gi"
+      limits:
+        cpu: "2000m"
+        memory: "8Gi"
+
+    # Loki Querier - query logs
+    querier:
+      enabled: true
+      replicas: 2
+      requests:
+        cpu: "200m"
+        memory: "512Mi"
+      limits:
+        cpu: "1000m"
+        memory: "2Gi"
+      service:
+        type: ClusterIP
+        port: 3100
+
+    # Loki Query Frontend - caching layer
+    queryFrontend:
+      enabled: true
+      replicas: 2
+      requests:
+        cpu: "200m"
+        memory: "512Mi"
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
+      cache:
+        enabled: true
+        backend: "memcached"
+
+  # Grafana configuration
+  grafana:
+    enabled: true
+    image:
+      registry: "docker.io"
+      repository: "grafana/grafana"
+      tag: "11.0.0"
+      pullPolicy: IfNotPresent
+
+    replicas: 2
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
+
+    # Service configuration
+    service:
+      type: ClusterIP
+      port: 3000
+
+    # Admin credentials (use Secrets Manager for production)
+    admin:
+      user: "admin"
+      # Password should come from Secrets Manager via External Secrets
+      existingSecret: "grafana-admin"
+      existingSecretKey: "password"
+
+    # Data sources
+    datasources:
+      thanos:
+        enabled: true
+        url: "http://thanos-query.observability.svc.cluster.local:9090"
+      loki:
+        enabled: true
+        url: "http://loki-query-frontend.observability.svc.cluster.local:3100"
+
+  # cert-manager integration for mTLS
+  certManager:
+    enabled: true
+    # CA issuer for signing client certificates
+    caIssuer:
+      create: true
+      name: "rhobs-ca-issuer"
+      # Self-signed root CA (for development)
+      # For production, use external CA
+      selfSigned: true
+
+  # Alertmanager configuration
+  alertmanager:
+    enabled: true
+    image:
+      registry: "quay.io"
+      repository: "prometheus/alertmanager"
+      tag: "v0.27.0"
+      pullPolicy: IfNotPresent
+
+    replicas: 3
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+
+    service:
+      type: ClusterIP
+      port: 9093
+
+    # Configuration (receivers for PagerDuty, Slack, etc.)
+    config:
+      global:
+        resolve_timeout: "5m"
+      route:
+        receiver: "null"
+        group_by: ["alertname", "cluster", "region"]
+        group_wait: "30s"
+        group_interval: "5m"
+        repeat_interval: "4h"
+      receivers:
+        - name: "null"
+        # Additional receivers configured via ConfigMap
+
+  # Network policies
+  networkPolicy:
+    enabled: false
+
+  # Monitoring and metrics
+  serviceMonitor:
+    enabled: false  # Enable when prometheus-operator is available
