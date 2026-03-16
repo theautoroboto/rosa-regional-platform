@@ -1,0 +1,146 @@
+# Helmfile for RHOBS on EKS
+# Usage: helmfile -e prod apply
+
+# Environment-specific values
+environments:
+  staging:
+    values:
+      - environment: staging
+      - region: us-east-1
+      - dnsZone: staging.example.com
+  prod:
+    values:
+      - environment: prod
+      - region: us-east-1
+      - dnsZone: example.com
+
+# Helm repositories
+repositories:
+  - name: bitnami
+    url: https://charts.bitnami.com/bitnami
+  - name: grafana
+    url: https://grafana.github.io/helm-charts
+  - name: prometheus-community
+    url: https://prometheus-community.github.io/helm-charts
+  - name: jetstack
+    url: https://charts.jetstack.io
+  - name: external-secrets
+    url: https://charts.external-secrets.io
+  - name: open-telemetry
+    url: https://open-telemetry.github.io/opentelemetry-helm-charts
+  - name: fluent
+    url: https://fluent.github.io/helm-charts
+
+# Common labels for all releases
+commonLabels:
+  app.kubernetes.io/part-of: rhobs
+  app.kubernetes.io/managed-by: helmfile
+
+---
+# RHOBS Cell releases (deploy to central observability cluster)
+releases:
+  # cert-manager - first, provides certificate management
+  - name: cert-manager
+    namespace: cert-manager
+    createNamespace: true
+    chart: jetstack/cert-manager
+    version: v1.14.4
+    values:
+      - cert-manager-values.yaml
+    set:
+      - name: installCRDs
+        value: "true"
+    wait: true
+    waitForJobs: true
+
+  # external-secrets - second, syncs secrets from AWS
+  - name: external-secrets
+    namespace: external-secrets
+    createNamespace: true
+    chart: external-secrets/external-secrets
+    version: 0.9.13
+    values:
+      - external-secrets-values.yaml
+    needs:
+      - cert-manager/cert-manager
+    wait: true
+
+  # kube-prometheus-stack - Prometheus Operator and Alertmanager
+  - name: kube-prometheus-stack
+    namespace: observability
+    createNamespace: true
+    chart: prometheus-community/kube-prometheus-stack
+    version: 57.1.1
+    values:
+      - kube-prometheus-stack-values.yaml
+    needs:
+      - external-secrets/external-secrets
+    wait: true
+    timeout: 600
+
+  # thanos - metrics storage and query
+  - name: thanos
+    namespace: observability
+    chart: bitnami/thanos
+    version: 14.0.2
+    values:
+      - thanos-values.yaml
+    needs:
+      - observability/kube-prometheus-stack
+    wait: true
+    timeout: 600
+
+  # loki - logs storage and query
+  - name: loki
+    namespace: observability
+    chart: grafana/loki-distributed
+    version: 0.79.0
+    values:
+      - loki-values.yaml
+    needs:
+      - observability/kube-prometheus-stack
+    wait: true
+    timeout: 600
+
+  # grafana - dashboards
+  - name: grafana
+    namespace: observability
+    chart: grafana/grafana
+    version: 7.3.7
+    values:
+      - grafana-values.yaml
+    needs:
+      - observability/thanos
+      - observability/loki
+    wait: true
+
+---
+# Fleet cluster releases (deploy to workload clusters)
+# Use: helmfile -e prod -l tier=fleet apply
+releases:
+  # OTEL Collector for metrics
+  - name: otel-collector
+    namespace: observability
+    createNamespace: true
+    chart: open-telemetry/opentelemetry-collector
+    version: 0.84.0
+    values:
+      - otel-collector-values.yaml
+    labels:
+      tier: fleet
+    needs:
+      - cert-manager/cert-manager
+    wait: true
+
+  # Fluent Bit for logs
+  - name: fluent-bit
+    namespace: observability
+    chart: fluent/fluent-bit
+    version: 0.43.0
+    values:
+      - fluent-bit-values.yaml
+    labels:
+      tier: fleet
+    needs:
+      - cert-manager/cert-manager
+    wait: true

@@ -1,0 +1,274 @@
+# Grafana Helm Values for RHOBS Cell
+# Chart: grafana/grafana
+# Docs: https://github.com/grafana/helm-charts/tree/main/charts/grafana
+
+replicas: 2
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+
+# Persistence
+persistence:
+  enabled: true
+  type: pvc
+  storageClassName: gp3
+  size: 20Gi
+
+# Pod anti-affinity
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+          topologyKey: kubernetes.io/hostname
+
+# Admin credentials from secret
+admin:
+  existingSecret: grafana-admin-credentials
+  userKey: admin-user
+  passwordKey: admin-password
+
+# Grafana configuration
+grafana.ini:
+  server:
+    root_url: https://grafana.${REGION}.internal
+    serve_from_sub_path: false
+
+  security:
+    admin_user: admin
+    disable_gravatar: true
+    cookie_secure: true
+    strict_transport_security: true
+
+  users:
+    allow_sign_up: false
+    auto_assign_org: true
+    auto_assign_org_role: Viewer
+
+  auth:
+    disable_login_form: false
+    oauth_auto_login: true
+
+  # OIDC Authentication (AWS Cognito or Okta)
+  auth.generic_oauth:
+    enabled: true
+    name: SSO
+    allow_sign_up: true
+    client_id: ${OAUTH_CLIENT_ID}
+    client_secret: ${OAUTH_CLIENT_SECRET}
+    scopes: openid profile email
+    auth_url: https://${OAUTH_DOMAIN}/oauth2/authorize
+    token_url: https://${OAUTH_DOMAIN}/oauth2/token
+    api_url: https://${OAUTH_DOMAIN}/oauth2/userInfo
+    role_attribute_path: contains(groups[*], 'sre-admins') && 'Admin' || contains(groups[*], 'sre-viewers') && 'Viewer' || 'Viewer'
+    role_attribute_strict: false
+    allow_assign_grafana_admin: true
+
+  # Feature toggles
+  feature_toggles:
+    enable: traceqlEditor tempoSearch tempoBackendSearch tempoApmTable
+
+  analytics:
+    reporting_enabled: false
+    check_for_updates: false
+
+  log:
+    mode: console
+    level: info
+
+  alerting:
+    enabled: false  # Using Alertmanager
+
+  unified_alerting:
+    enabled: false
+
+  explore:
+    enabled: true
+
+  dashboards:
+    default_home_dashboard_path: /var/lib/grafana/dashboards/default/cluster-overview.json
+
+# Datasources
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      # Regional Thanos for metrics
+      - name: RHOBS-Metrics-${REGION}
+        type: prometheus
+        uid: rhobs-metrics-${REGION}
+        url: http://thanos-query-frontend.observability.svc.cluster.local:9090
+        access: proxy
+        isDefault: true
+        jsonData:
+          httpMethod: POST
+          timeInterval: 30s
+          queryTimeout: 120s
+          httpHeaderName1: X-Scope-OrgID
+        secureJsonData:
+          httpHeaderValue1: eks
+
+      # Regional Loki for logs
+      - name: RHOBS-Logs-${REGION}
+        type: loki
+        uid: rhobs-logs-${REGION}
+        url: http://loki-gateway.observability.svc.cluster.local:80
+        access: proxy
+        jsonData:
+          httpHeaderName1: X-Scope-OrgID
+          maxLines: 5000
+          timeout: 120
+        secureJsonData:
+          httpHeaderValue1: eks
+
+      # Alertmanager
+      - name: Alertmanager
+        type: alertmanager
+        uid: alertmanager
+        url: http://alertmanager-operated.observability.svc.cluster.local:9093
+        access: proxy
+        jsonData:
+          implementation: prometheus
+
+# Dashboard providers
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+
+      - name: 'rhobs'
+        orgId: 1
+        folder: 'RHOBS'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/rhobs
+
+      - name: 'kubernetes'
+        orgId: 1
+        folder: 'Kubernetes'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/kubernetes
+
+# Dashboard ConfigMaps
+dashboardsConfigMaps:
+  default: grafana-dashboards-default
+  rhobs: grafana-dashboards-rhobs
+  kubernetes: grafana-dashboards-kubernetes
+
+# Sidecar for dynamic dashboard loading
+sidecar:
+  dashboards:
+    enabled: true
+    label: grafana_dashboard
+    labelValue: "1"
+    folder: /var/lib/grafana/dashboards
+    folderAnnotation: grafana_folder
+    searchNamespace: ALL
+    provider:
+      foldersFromFilesStructure: true
+
+  datasources:
+    enabled: true
+    label: grafana_datasource
+    labelValue: "1"
+    searchNamespace: ALL
+
+  notifiers:
+    enabled: false
+
+  alerts:
+    enabled: false
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# Plugins
+plugins:
+  - grafana-piechart-panel
+  - grafana-clock-panel
+  - grafana-polystat-panel
+  - yesoreyeram-infinity-datasource
+
+# Service
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+# Ingress (disabled - using external gateway)
+ingress:
+  enabled: false
+
+# ServiceMonitor
+serviceMonitor:
+  enabled: true
+  labels:
+    release: kube-prometheus-stack
+
+# Pod security
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 472
+  fsGroup: 472
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 472
+
+# Network policy
+networkPolicy:
+  enabled: true
+  ingress: true
+  egress:
+    enabled: true
+    ports:
+      - port: 53
+        protocol: UDP
+      - port: 53
+        protocol: TCP
+      - port: 443
+        protocol: TCP
+
+# Environment variables
+envFromSecrets:
+  - name: grafana-oauth-credentials
+    optional: false
+
+# Init containers for plugin installation
+initChownData:
+  enabled: false
+
+# Test framework
+testFramework:
+  enabled: false

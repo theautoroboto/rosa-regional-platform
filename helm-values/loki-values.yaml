@@ -1,0 +1,325 @@
+# Loki Distributed Helm Values for RHOBS Cell
+# Chart: grafana/loki-distributed
+# Docs: https://github.com/grafana/helm-charts/tree/main/charts/loki-distributed
+
+global:
+  clusterDomain: cluster.local
+  dnsService: kube-dns
+
+loki:
+  # Schema configuration
+  schemaConfig:
+    configs:
+      - from: "2024-01-01"
+        store: tsdb
+        object_store: s3
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+
+  # Storage configuration - S3
+  storage:
+    type: s3
+    bucketNames:
+      chunks: rhobs-logs-${REGION}
+      ruler: rhobs-logs-${REGION}
+      admin: rhobs-logs-${REGION}
+    s3:
+      region: ${REGION}
+      endpoint: s3.${REGION}.amazonaws.com
+      s3ForcePathStyle: false
+      insecure: false
+      # IRSA handles authentication
+
+  # Structured metadata for better querying
+  structuredConfig:
+    auth_enabled: true  # Multi-tenant mode
+
+    server:
+      http_listen_port: 3100
+      grpc_listen_port: 9095
+      log_level: info
+
+    common:
+      path_prefix: /var/loki
+      replication_factor: 3
+      storage:
+        s3:
+          region: ${REGION}
+          bucketnames: rhobs-logs-${REGION}
+          endpoint: s3.${REGION}.amazonaws.com
+
+    limits_config:
+      ingestion_rate_mb: 50
+      ingestion_burst_size_mb: 100
+      per_stream_rate_limit: 10MB
+      per_stream_rate_limit_burst: 30MB
+      max_entries_limit_per_query: 50000
+      max_query_parallelism: 32
+      max_query_series: 10000
+      retention_period: 2160h  # 90 days
+      split_queries_by_interval: 1h
+      max_global_streams_per_user: 50000
+
+    query_range:
+      align_queries_with_step: true
+      cache_results: true
+      results_cache:
+        cache:
+          memcached_client:
+            addresses: rhobs-cache.${REGION}.cache.amazonaws.com:11211
+            timeout: 500ms
+
+    ruler:
+      storage:
+        type: s3
+        s3:
+          region: ${REGION}
+          bucketnames: rhobs-logs-${REGION}
+      alertmanager_url: http://alertmanager-operated.observability.svc.cluster.local:9093
+      enable_api: true
+      enable_alertmanager_v2: true
+
+    compactor:
+      working_directory: /var/loki/compactor
+      shared_store: s3
+      retention_enabled: true
+      retention_delete_delay: 2h
+      delete_request_store: s3
+
+# Distributor - receives and distributes logs
+distributor:
+  replicas: 3
+  maxUnavailable: 1
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+  affinity: |
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                {{- include "loki.distributorSelectorLabels" . | nindent 12 }}
+            topologyKey: kubernetes.io/hostname
+
+# Ingester - writes logs to storage
+ingester:
+  replicas: 3
+  maxUnavailable: 1
+
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 4Gi
+    limits:
+      cpu: 4000m
+      memory: 16Gi
+
+  persistence:
+    enabled: true
+    size: 50Gi
+    storageClass: gp3
+
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              {{- include "loki.ingesterSelectorLabels" . | nindent 10 }}
+          topologyKey: kubernetes.io/hostname
+
+# Querier - handles log queries
+querier:
+  replicas: 3
+  maxUnavailable: 1
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: 2000m
+      memory: 8Gi
+
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: gp3
+
+  affinity: |
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                {{- include "loki.querierSelectorLabels" . | nindent 12 }}
+            topologyKey: kubernetes.io/hostname
+
+# Query Frontend - caching and query scheduling
+queryFrontend:
+  replicas: 2
+  maxUnavailable: 1
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+  affinity: |
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                {{- include "loki.queryFrontendSelectorLabels" . | nindent 12 }}
+            topologyKey: kubernetes.io/hostname
+
+# Query Scheduler - distributes queries
+queryScheduler:
+  enabled: true
+  replicas: 2
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Index Gateway - serves index queries
+indexGateway:
+  enabled: true
+  replicas: 2
+  maxUnavailable: 1
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+  persistence:
+    enabled: true
+    size: 50Gi
+    storageClass: gp3
+
+# Compactor - handles retention and compaction
+compactor:
+  enabled: true
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: 2000m
+      memory: 8Gi
+
+  persistence:
+    enabled: true
+    size: 100Gi
+    storageClass: gp3
+
+# Ruler - alerting and recording rules
+ruler:
+  enabled: true
+  replicas: 2
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: gp3
+
+  directories:
+    tenant_eks:
+      rules.yaml: |
+        groups:
+          - name: loki-recording-rules
+            rules:
+              - record: logs:error_count:1h
+                expr: sum(count_over_time({level="error"}[1h])) by (cluster, namespace)
+              - record: logs:warn_count:1h
+                expr: sum(count_over_time({level="warn"}[1h])) by (cluster, namespace)
+
+# Gateway - nginx-based gateway
+gateway:
+  enabled: true
+  replicas: 2
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  ingress:
+    enabled: false  # Use external gateway with mTLS
+
+  basicAuth:
+    enabled: false  # Using external auth
+
+# Service account with IRSA
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::${AWS_ACCOUNT_ID}:role/rhobs-loki-${REGION}
+
+# Monitoring
+monitoring:
+  dashboards:
+    enabled: true
+    namespace: observability
+    labels:
+      grafana_dashboard: "1"
+
+  rules:
+    enabled: true
+    namespace: observability
+    labels:
+      release: kube-prometheus-stack
+
+  serviceMonitor:
+    enabled: true
+    namespace: observability
+    labels:
+      release: kube-prometheus-stack
+
+  selfMonitoring:
+    enabled: true
+    grafanaAgent:
+      installOperator: false
+
+# Network policy
+networkPolicy:
+  enabled: true

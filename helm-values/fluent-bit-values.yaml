@@ -1,0 +1,393 @@
+# Fluent Bit Helm Values for Fleet Clusters
+# Chart: fluent/fluent-bit
+# Docs: https://github.com/fluent/helm-charts/tree/main/charts/fluent-bit
+
+# Deploy as DaemonSet
+kind: DaemonSet
+
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Service account
+serviceAccount:
+  create: true
+  annotations: {}
+
+# Tolerations to run on all nodes
+tolerations:
+  - key: node-role.kubernetes.io/master
+    operator: Exists
+    effect: NoSchedule
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+  - operator: Exists
+    effect: NoExecute
+  - operator: Exists
+    effect: NoSchedule
+
+# Node selector (optional)
+nodeSelector: {}
+
+# Update strategy
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1
+
+# Fluent Bit configuration
+config:
+  # Service configuration
+  service: |
+    [SERVICE]
+        Daemon Off
+        Flush {{ .Values.flush }}
+        Log_Level {{ .Values.logLevel }}
+        Parsers_File /fluent-bit/etc/parsers.conf
+        Parsers_File /fluent-bit/etc/conf/custom_parsers.conf
+        HTTP_Server On
+        HTTP_Listen 0.0.0.0
+        HTTP_Port {{ .Values.metricsPort }}
+        Health_Check On
+        storage.path /var/log/flb-storage/
+        storage.sync normal
+        storage.checksum off
+        storage.backlog.mem_limit 50M
+
+  # Input configuration
+  inputs: |
+    [INPUT]
+        Name tail
+        Path /var/log/containers/*.log
+        multiline.parser docker, cri
+        Tag kube.*
+        Mem_Buf_Limit 50MB
+        Skip_Long_Lines On
+        Refresh_Interval 10
+        DB /var/log/flb_kube.db
+        DB.locking true
+        storage.type filesystem
+
+    [INPUT]
+        Name systemd
+        Tag host.*
+        Systemd_Filter _SYSTEMD_UNIT=kubelet.service
+        Systemd_Filter _SYSTEMD_UNIT=containerd.service
+        Read_From_Tail On
+        Strip_Underscores On
+        storage.type filesystem
+
+    [INPUT]
+        Name tail
+        Path /var/log/audit/audit.log
+        Tag audit.*
+        Parser audit
+        Mem_Buf_Limit 35MB
+        Buffer_Chunk_Size 2MB
+        Buffer_Max_Size 10MB
+        storage.type filesystem
+
+  # Filter configuration
+  filters: |
+    [FILTER]
+        Name kubernetes
+        Match kube.*
+        Kube_URL https://kubernetes.default.svc:443
+        Kube_CA_File /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        Kube_Token_File /var/run/secrets/kubernetes.io/serviceaccount/token
+        Kube_Tag_Prefix kube.var.log.containers.
+        Merge_Log On
+        Merge_Log_Key log_processed
+        K8S-Logging.Parser On
+        K8S-Logging.Exclude On
+        Labels On
+        Annotations Off
+        Buffer_Size 0
+
+    [FILTER]
+        Name modify
+        Match kube.*
+        Add cluster_id ${CLUSTER_ID}
+        Add cluster_name ${CLUSTER_NAME}
+        Add region ${REGION}
+        Add environment ${ENVIRONMENT}
+
+    [FILTER]
+        Name modify
+        Match host.*
+        Add cluster_id ${CLUSTER_ID}
+        Add cluster_name ${CLUSTER_NAME}
+        Add region ${REGION}
+        Add environment ${ENVIRONMENT}
+        Add log_type systemd
+
+    [FILTER]
+        Name modify
+        Match audit.*
+        Add cluster_id ${CLUSTER_ID}
+        Add cluster_name ${CLUSTER_NAME}
+        Add region ${REGION}
+        Add environment ${ENVIRONMENT}
+        Add log_type audit
+
+    [FILTER]
+        Name nest
+        Match kube.*
+        Operation lift
+        Nested_under kubernetes
+        Add_prefix kubernetes_
+
+    [FILTER]
+        Name grep
+        Match kube.*
+        Exclude kubernetes_namespace_name kube-system
+        Exclude kubernetes_namespace_name observability
+
+    [FILTER]
+        Name lua
+        Match kube.*
+        script /fluent-bit/scripts/dedot.lua
+        call dedot
+
+  # Output configuration
+  outputs: |
+    [OUTPUT]
+        Name loki
+        Match kube.*
+        Host rhobs.${REGION}.internal
+        Port 443
+        TLS On
+        TLS.Verify On
+        TLS.CA_File /certs/ca.crt
+        TLS.Cert_File /certs/client.crt
+        TLS.Key_File /certs/client.key
+        Tenant_ID eks
+        Labels job=fluent-bit, cluster_id=${CLUSTER_ID}, region=${REGION}
+        Label_Keys $kubernetes_namespace_name, $kubernetes_pod_name, $kubernetes_container_name
+        Remove_Keys kubernetes_pod_id, kubernetes_docker_id, kubernetes_container_hash
+        Auto_Kubernetes_Labels Off
+        Line_Format json
+        Retry_Limit 5
+        storage.total_limit_size 1G
+
+    [OUTPUT]
+        Name loki
+        Match host.*
+        Host rhobs.${REGION}.internal
+        Port 443
+        TLS On
+        TLS.Verify On
+        TLS.CA_File /certs/ca.crt
+        TLS.Cert_File /certs/client.crt
+        TLS.Key_File /certs/client.key
+        Tenant_ID eks
+        Labels job=fluent-bit-systemd, cluster_id=${CLUSTER_ID}, region=${REGION}, log_type=systemd
+        Line_Format json
+        Retry_Limit 5
+        storage.total_limit_size 500M
+
+    [OUTPUT]
+        Name loki
+        Match audit.*
+        Host rhobs.${REGION}.internal
+        Port 443
+        TLS On
+        TLS.Verify On
+        TLS.CA_File /certs/ca.crt
+        TLS.Cert_File /certs/client.crt
+        TLS.Key_File /certs/client.key
+        Tenant_ID eks
+        Labels job=fluent-bit-audit, cluster_id=${CLUSTER_ID}, region=${REGION}, log_type=audit
+        Line_Format json
+        Retry_Limit 5
+        storage.total_limit_size 500M
+
+  # Custom parsers
+  customParsers: |
+    [PARSER]
+        Name docker_no_time
+        Format json
+        Time_Keep Off
+        Time_Key time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L
+
+    [PARSER]
+        Name audit
+        Format json
+        Time_Key @timestamp
+        Time_Format %Y-%m-%dT%H:%M:%S.%L
+
+    [PARSER]
+        Name cri
+        Format regex
+        Regex ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<logtag>[^ ]*) (?<log>.*)$
+        Time_Key time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+
+# Lua scripts for log processing
+luaScripts:
+  dedot.lua: |
+    function dedot(tag, timestamp, record)
+        if record["kubernetes"] == nil then
+            return 0, 0, 0
+        end
+        new_record = {}
+        for key, val in pairs(record) do
+            new_key = string.gsub(key, "%.", "_")
+            new_record[new_key] = val
+        end
+        return 1, timestamp, new_record
+    end
+
+# Flush interval
+flush: 5
+
+# Log level
+logLevel: info
+
+# Metrics port
+metricsPort: 2020
+
+# Volume mounts
+extraVolumes:
+  - name: certs
+    secret:
+      secretName: rhobs-client-cert
+  - name: varlog
+    hostPath:
+      path: /var/log
+  - name: varlibdockercontainers
+    hostPath:
+      path: /var/lib/docker/containers
+  - name: etcmachineid
+    hostPath:
+      path: /etc/machine-id
+      type: File
+  - name: flb-storage
+    hostPath:
+      path: /var/log/flb-storage
+      type: DirectoryOrCreate
+
+extraVolumeMounts:
+  - name: certs
+    mountPath: /certs
+    readOnly: true
+  - name: varlog
+    mountPath: /var/log
+    readOnly: true
+  - name: varlibdockercontainers
+    mountPath: /var/lib/docker/containers
+    readOnly: true
+  - name: etcmachineid
+    mountPath: /etc/machine-id
+    readOnly: true
+  - name: flb-storage
+    mountPath: /var/log/flb-storage
+
+# Environment variables
+env:
+  - name: CLUSTER_ID
+    valueFrom:
+      configMapKeyRef:
+        name: cluster-info
+        key: cluster-id
+  - name: CLUSTER_NAME
+    valueFrom:
+      configMapKeyRef:
+        name: cluster-info
+        key: cluster-name
+  - name: REGION
+    valueFrom:
+      configMapKeyRef:
+        name: cluster-info
+        key: region
+  - name: ENVIRONMENT
+    valueFrom:
+      configMapKeyRef:
+        name: cluster-info
+        key: environment
+
+# Service monitor
+serviceMonitor:
+  enabled: true
+  namespace: observability
+  interval: 30s
+  scrapeTimeout: 10s
+  selector:
+    release: kube-prometheus-stack
+
+# Prometheus rules
+prometheusRule:
+  enabled: true
+  namespace: observability
+  rules:
+    - alert: FluentBitDown
+      expr: up{job="fluent-bit"} == 0
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Fluent Bit is down"
+        description: "Fluent Bit on {{ $labels.instance }} has been down for more than 5 minutes"
+
+    - alert: FluentBitHighRetryRate
+      expr: rate(fluentbit_output_retries_total[5m]) > 10
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High Fluent Bit retry rate"
+        description: "Fluent Bit is experiencing high retry rates, logs may be delayed"
+
+    - alert: FluentBitBufferFull
+      expr: fluentbit_storage_chunks_total - fluentbit_storage_chunks_available_total > 100
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Fluent Bit buffer filling up"
+        description: "Fluent Bit storage buffer is filling up, consider increasing capacity"
+
+# Pod security
+podSecurityContext:
+  runAsNonRoot: false  # Required for reading host logs
+
+securityContext:
+  privileged: false
+  capabilities:
+    drop:
+      - ALL
+    add:
+      - DAC_READ_SEARCH
+  readOnlyRootFilesystem: true
+
+# RBAC
+rbac:
+  create: true
+  nodeAccess: true
+
+# Liveness and readiness probes
+livenessProbe:
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /api/v1/health
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3

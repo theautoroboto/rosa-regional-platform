@@ -1,0 +1,244 @@
+# cert-manager Helm Values
+# Chart: jetstack/cert-manager
+# Docs: https://cert-manager.io/docs/installation/helm/
+
+# Install CRDs
+installCRDs: true
+
+# Replicas
+replicaCount: 2
+
+# Resources
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 512Mi
+
+# Leader election
+global:
+  leaderElection:
+    namespace: cert-manager
+
+# Pod anti-affinity
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: cert-manager
+          topologyKey: kubernetes.io/hostname
+
+# Webhook configuration
+webhook:
+  replicaCount: 2
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  timeoutSeconds: 10
+
+# CA injector
+cainjector:
+  replicaCount: 2
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 512Mi
+
+# Prometheus ServiceMonitor
+prometheus:
+  enabled: true
+  servicemonitor:
+    enabled: true
+    namespace: observability
+    labels:
+      release: kube-prometheus-stack
+    interval: 30s
+    scrapeTimeout: 10s
+
+# Pod security
+securityContext:
+  runAsNonRoot: true
+  fsGroup: 1000
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+
+# Extra args
+extraArgs:
+  - --enable-certificate-owner-ref=true
+  - --dns01-recursive-nameservers-only
+  - --dns01-recursive-nameservers=8.8.8.8:53,1.1.1.1:53
+
+---
+# ClusterIssuer for RHOBS mTLS CA
+# This creates a self-signed CA that signs client certificates
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: rhobs-ca-bootstrap
+spec:
+  selfSigned: {}
+
+---
+# CA Certificate for RHOBS
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: rhobs-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: rhobs-ca
+  secretName: rhobs-ca-secret
+  duration: 87600h  # 10 years
+  renewBefore: 8760h  # 1 year
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: rhobs-ca-bootstrap
+    kind: ClusterIssuer
+    group: cert-manager.io
+
+---
+# ClusterIssuer using the RHOBS CA
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: rhobs-ca-issuer
+spec:
+  ca:
+    secretName: rhobs-ca-secret
+
+---
+# Certificate template for fleet cluster client certs
+# Deploy this to each fleet cluster with appropriate values
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: rhobs-client-cert
+  namespace: observability
+spec:
+  secretName: rhobs-client-cert
+  duration: 8760h  # 1 year
+  renewBefore: 720h  # 30 days
+  subject:
+    organizations:
+      - ${ORGANIZATION}
+  commonName: ${CLUSTER_NAME}
+  dnsNames:
+    - ${CLUSTER_NAME}
+    - ${CLUSTER_NAME}.${REGION}.eks.internal
+  usages:
+    - client auth
+    - digital signature
+    - key encipherment
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  issuerRef:
+    name: rhobs-ca-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+
+---
+# ClusterIssuer for Let's Encrypt (production)
+# For public-facing endpoints
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: ${ACME_EMAIL}
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - selector:
+          dnsZones:
+            - "${DNS_ZONE}"
+        dns01:
+          route53:
+            region: ${REGION}
+            # Uses IRSA for authentication
+
+---
+# ClusterIssuer for Let's Encrypt (staging)
+# For testing
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: ${ACME_EMAIL}
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - selector:
+          dnsZones:
+            - "${DNS_ZONE}"
+        dns01:
+          route53:
+            region: ${REGION}
+
+---
+# Certificate for RHOBS Gateway (public endpoint)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: rhobs-gateway-tls
+  namespace: observability
+spec:
+  secretName: rhobs-gateway-tls
+  duration: 2160h  # 90 days
+  renewBefore: 360h  # 15 days
+  commonName: rhobs.${REGION}.${DNS_ZONE}
+  dnsNames:
+    - rhobs.${REGION}.${DNS_ZONE}
+    - "*.rhobs.${REGION}.${DNS_ZONE}"
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+    group: cert-manager.io
+
+---
+# Certificate for Grafana
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: grafana-tls
+  namespace: observability
+spec:
+  secretName: grafana-tls
+  duration: 2160h
+  renewBefore: 360h
+  commonName: grafana.${REGION}.${DNS_ZONE}
+  dnsNames:
+    - grafana.${REGION}.${DNS_ZONE}
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+    group: cert-manager.io

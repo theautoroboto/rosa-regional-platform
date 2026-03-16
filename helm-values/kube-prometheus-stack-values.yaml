@@ -1,0 +1,309 @@
+# kube-prometheus-stack Helm Values for RHOBS Cell
+# Chart: prometheus-community/kube-prometheus-stack
+# Docs: https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
+
+global:
+  rbac:
+    create: true
+    pspEnabled: false
+
+# Prometheus Operator
+prometheusOperator:
+  enabled: true
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  admissionWebhooks:
+    enabled: true
+    patch:
+      enabled: true
+
+  serviceMonitor:
+    selfMonitor: true
+
+# Prometheus - local metrics for the RHOBS cell itself
+prometheus:
+  enabled: true
+
+  prometheusSpec:
+    replicas: 2
+    retention: 24h  # Short retention, Thanos handles long-term
+    retentionSize: 50GB
+
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 4Gi
+      limits:
+        cpu: 4000m
+        memory: 16Gi
+
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 100Gi
+
+    # Thanos sidecar for long-term storage
+    thanos:
+      image: quay.io/thanos/thanos:v0.34.1
+      objectStorageConfig:
+        existingSecret:
+          name: thanos-objstore-config
+          key: objstore.yml
+
+    # External labels for federation
+    externalLabels:
+      cluster: rhobs-cell-${REGION}
+      region: ${REGION}
+      environment: ${ENVIRONMENT}
+
+    # Pod anti-affinity
+    podAntiAffinity: hard
+    podAntiAffinityTopologyKey: kubernetes.io/hostname
+
+    # Service discovery
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    podMonitorSelector: {}
+    podMonitorNamespaceSelector: {}
+    ruleSelector: {}
+    ruleNamespaceSelector: {}
+
+    # Security context
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 65534
+      fsGroup: 65534
+
+    # Additional scrape configs for fleet metrics (if needed)
+    additionalScrapeConfigs: []
+
+  service:
+    type: ClusterIP
+    port: 9090
+
+  serviceMonitor:
+    selfMonitor: true
+
+# Alertmanager
+alertmanager:
+  enabled: true
+
+  alertmanagerSpec:
+    replicas: 3
+    retention: 120h
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+
+    podAntiAffinity: hard
+    podAntiAffinityTopologyKey: kubernetes.io/hostname
+
+    externalUrl: https://alertmanager.${REGION}.internal
+
+  config:
+    global:
+      resolve_timeout: 5m
+      slack_api_url_file: /etc/alertmanager/secrets/slack-webhook-url
+
+    route:
+      receiver: 'null'
+      group_by: ['alertname', 'cluster', 'region', 'namespace']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        # Critical alerts - page on-call
+        - match:
+            severity: critical
+          receiver: pagerduty-critical
+          continue: true
+
+        # Warning alerts - Slack only
+        - match:
+            severity: warning
+          receiver: slack-warning
+
+        # Watchdog/heartbeat
+        - match:
+            alertname: Watchdog
+          receiver: deadmanssnitch
+
+    receivers:
+      - name: 'null'
+
+      - name: pagerduty-critical
+        pagerduty_configs:
+          - routing_key_file: /etc/alertmanager/secrets/pagerduty-routing-key
+            severity: critical
+            description: '{{ .CommonAnnotations.summary }}'
+            client: 'RHOBS EKS {{ .CommonLabels.region }}'
+            client_url: 'https://grafana.${REGION}.internal/alerting/list'
+            details:
+              firing: '{{ template "pagerduty.default.instances" .Alerts.Firing }}'
+              resolved: '{{ template "pagerduty.default.instances" .Alerts.Resolved }}'
+              cluster: '{{ .CommonLabels.cluster }}'
+              region: '{{ .CommonLabels.region }}'
+              namespace: '{{ .CommonLabels.namespace }}'
+
+      - name: slack-warning
+        slack_configs:
+          - channel: '#eks-alerts-warning'
+            username: 'RHOBS Alertmanager'
+            icon_emoji: ':warning:'
+            send_resolved: true
+            title: '{{ .CommonAnnotations.summary }}'
+            text: |-
+              {{ range .Alerts }}
+              *Alert:* {{ .Annotations.summary }}
+              *Severity:* {{ .Labels.severity }}
+              *Cluster:* {{ .Labels.cluster }}
+              *Namespace:* {{ .Labels.namespace }}
+              *Description:* {{ .Annotations.description }}
+              {{ end }}
+
+      - name: deadmanssnitch
+        webhook_configs:
+          - url_file: /etc/alertmanager/secrets/deadmanssnitch-url
+            send_resolved: false
+
+    inhibit_rules:
+      - source_matchers:
+          - severity = critical
+        target_matchers:
+          - severity =~ warning|info
+        equal: ['alertname', 'cluster', 'namespace']
+
+      - source_matchers:
+          - alertname = InfoInhibitor
+        target_matchers:
+          - severity = info
+        equal: ['namespace']
+
+  # Secret for sensitive config
+  templateFiles:
+    pagerduty.tmpl: |-
+      {{ define "pagerduty.default.instances" }}
+      {{ range . }}
+        - {{ .Labels.alertname }} on {{ .Labels.instance }}
+      {{ end }}
+      {{ end }}
+
+  service:
+    type: ClusterIP
+    port: 9093
+
+  serviceMonitor:
+    selfMonitor: true
+
+# Grafana - managed separately, disable here
+grafana:
+  enabled: false
+
+# Node Exporter
+nodeExporter:
+  enabled: true
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  serviceMonitor:
+    enabled: true
+
+# Kube State Metrics
+kubeStateMetrics:
+  enabled: true
+
+# Default Prometheus rules
+defaultRules:
+  create: true
+  rules:
+    alertmanager: true
+    etcd: false  # Not applicable for EKS
+    configReloaders: true
+    general: true
+    k8s: true
+    kubeApiserverAvailability: true
+    kubeApiserverBurnrate: true
+    kubeApiserverHistogram: true
+    kubeApiserverSlos: true
+    kubeControllerManager: false  # Not accessible in EKS
+    kubelet: true
+    kubeProxy: false  # Managed by EKS
+    kubePrometheusGeneral: true
+    kubePrometheusNodeRecording: true
+    kubernetesApps: true
+    kubernetesResources: true
+    kubernetesStorage: true
+    kubernetesSystem: true
+    kubeSchedulerAlerting: false  # Not accessible in EKS
+    kubeSchedulerRecording: false  # Not accessible in EKS
+    kubeStateMetrics: true
+    network: true
+    node: true
+    nodeExporterAlerting: true
+    nodeExporterRecording: true
+    prometheus: true
+    prometheusOperator: true
+
+# Additional PrometheusRules for RHOBS
+additionalPrometheusRulesMap:
+  rhobs-rules:
+    groups:
+      - name: rhobs-cell-health
+        rules:
+          - alert: RHOBSCellDown
+            expr: up{job=~"thanos.*|loki.*"} == 0
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "RHOBS component {{ $labels.job }} is down"
+              description: "{{ $labels.instance }} has been down for more than 5 minutes"
+
+          - alert: RHOBSHighIngestionLatency
+            expr: histogram_quantile(0.99, sum(rate(thanos_receive_write_request_duration_seconds_bucket[5m])) by (le)) > 1
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High ingestion latency on Thanos Receive"
+              description: "99th percentile ingestion latency is above 1 second"
+
+          - alert: RHOBSHighQueryLatency
+            expr: histogram_quantile(0.99, sum(rate(thanos_query_frontend_queries_duration_seconds_bucket[5m])) by (le)) > 30
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High query latency on Thanos Query"
+              description: "99th percentile query latency is above 30 seconds"

@@ -1,0 +1,247 @@
+# Thanos Helm Values for RHOBS Cell
+# Chart: bitnami/thanos
+# Docs: https://github.com/bitnami/charts/tree/main/bitnami/thanos
+
+global:
+  storageClass: gp3
+
+# Object storage configuration for S3
+objstoreConfig: |-
+  type: s3
+  config:
+    bucket: rhobs-metrics-${REGION}
+    endpoint: s3.${REGION}.amazonaws.com
+    region: ${REGION}
+    # Use IRSA (IAM Roles for Service Accounts) - no explicit credentials needed
+    # Ensure the ServiceAccount has the appropriate IAM role annotation
+
+# Thanos Query - aggregates data from Store and Receive
+query:
+  enabled: true
+  replicaCount: 2
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+  # Store discovery via DNS
+  stores:
+    - dnssrv+_grpc._tcp.thanos-storegateway-headless.observability.svc.cluster.local
+    - dnssrv+_grpc._tcp.thanos-receive-headless.observability.svc.cluster.local
+
+  # Enable query frontend for caching
+  queryFrontend:
+    enabled: true
+
+  podAntiAffinityPreset: soft
+
+  extraFlags:
+    - --query.auto-downsampling
+    - --query.partial-response
+
+  service:
+    type: ClusterIP
+    ports:
+      http: 9090
+      grpc: 10901
+
+# Thanos Query Frontend - caching layer
+queryFrontend:
+  enabled: true
+  replicaCount: 2
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+  # Query caching with Memcached
+  extraFlags:
+    - |
+      --query-range.response-cache-config=
+      type: memcached
+      config:
+        addresses:
+          - rhobs-cache.${REGION}.cache.amazonaws.com:11211
+        timeout: 500ms
+        max_idle_connections: 100
+        max_async_concurrency: 50
+        max_async_buffer_size: 10000
+        max_get_multi_concurrency: 100
+        max_get_multi_batch_size: 100
+
+  podAntiAffinityPreset: soft
+
+# Thanos Receive - ingestion endpoint for remote-write
+receive:
+  enabled: true
+  mode: dual-mode  # Both routing and ingesting
+  replicaCount: 3
+  replicationFactor: 2
+
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 4Gi
+    limits:
+      cpu: 4000m
+      memory: 16Gi
+
+  persistence:
+    enabled: true
+    size: 100Gi
+    storageClass: gp3
+
+  # TSDB configuration
+  tsdbRetention: 6h  # Short retention, data goes to S3
+
+  # Receive limits
+  extraFlags:
+    - --receive.replication-factor=2
+    - --tsdb.retention=6h
+    - --tsdb.wal-compression
+    - --receive.hashrings-algorithm=ketama
+
+  podAntiAffinityPreset: hard
+
+  service:
+    type: ClusterIP
+    ports:
+      http: 19291
+      grpc: 10901
+      remote-write: 19291
+
+# Thanos Store Gateway - serves historical data from S3
+storegateway:
+  enabled: true
+  replicaCount: 2
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: 2000m
+      memory: 8Gi
+
+  persistence:
+    enabled: true
+    size: 50Gi  # Local cache
+    storageClass: gp3
+
+  # Index cache with Memcached
+  extraFlags:
+    - |
+      --index-cache.config=
+      type: memcached
+      config:
+        addresses:
+          - rhobs-cache.${REGION}.cache.amazonaws.com:11211
+        timeout: 500ms
+        max_idle_connections: 100
+        max_async_concurrency: 50
+        max_item_size: 1MiB
+    - |
+      --store.caching-bucket.config=
+      type: memcached
+      config:
+        addresses:
+          - rhobs-cache.${REGION}.cache.amazonaws.com:11211
+        timeout: 500ms
+        max_idle_connections: 100
+        max_async_concurrency: 50
+        max_item_size: 32MiB
+
+  podAntiAffinityPreset: soft
+
+# Thanos Compactor - downsampling and compaction
+compactor:
+  enabled: true
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: 2000m
+      memory: 8Gi
+
+  persistence:
+    enabled: true
+    size: 100Gi
+    storageClass: gp3
+
+  # Retention configuration - 90 days
+  retentionResolutionRaw: 15d
+  retentionResolution5m: 30d
+  retentionResolution1h: 90d
+
+  extraFlags:
+    - --compact.concurrency=4
+    - --downsample.concurrency=4
+    - --delete-delay=48h
+    - --compact.cleanup-interval=15m
+
+  strategyType: Recreate
+
+# Thanos Ruler - alerting and recording rules
+ruler:
+  enabled: true
+  replicaCount: 2
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+  alertmanagers:
+    - http://alertmanager-operated.observability.svc.cluster.local:9093
+
+  extraFlags:
+    - --resend-delay=1m
+
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: gp3
+
+  podAntiAffinityPreset: soft
+
+# Metrics for Thanos components
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    namespace: observability
+    labels:
+      release: kube-prometheus-stack
+
+# Service account with IRSA for S3 access
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::${AWS_ACCOUNT_ID}:role/rhobs-thanos-${REGION}
+
+podSecurityContext:
+  enabled: true
+  fsGroup: 1001
+
+containerSecurityContext:
+  enabled: true
+  runAsUser: 1001
+  runAsNonRoot: true
+  readOnlyRootFilesystem: true
+
+networkPolicy:
+  enabled: true
+  allowExternal: false
