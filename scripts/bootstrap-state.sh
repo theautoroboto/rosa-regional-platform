@@ -74,14 +74,31 @@ apply_bucket_security() {
 }
 EOF
     else
-        echo "⚠️  Warning: Not in an AWS Organization, skipping cross-account bucket policy"
-        echo "⚠️  Cross-account access will not work without a bucket policy"
+        echo "⚠️  Warning: Not in an AWS Organization"
+        echo "⚠️  Bucket policy will restrict access to this account only"
         cat > /tmp/bucket-policy.json <<EOF
 {
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "DenyAll",
+      "Sid": "AllowCurrentAccount",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::${ACCOUNT_ID}:root"
+      },
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::${BUCKET_NAME}",
+        "arn:aws:s3:::${BUCKET_NAME}/*"
+      ]
+    },
+    {
+      "Sid": "DenyOtherAccounts",
       "Effect": "Deny",
       "Principal": "*",
       "Action": "s3:*",
@@ -107,7 +124,7 @@ EOF
 
     rm -f /tmp/bucket-policy.json
 
-    echo "✅ Security settings and cross-account policy applied"
+    echo "✅ Security settings and bucket policy applied"
 }
 
 # Create S3 Bucket
