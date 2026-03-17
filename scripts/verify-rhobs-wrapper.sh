@@ -275,10 +275,15 @@ echo "RHOBS verification completed successfully!"
 VERIFY_EOF
 )
 
-# Base64 encode the verification command to avoid JSON escaping issues
-VERIFICATION_CMD_B64=$(echo "$VERIFICATION_CMD" | base64 -w 0)
+# Upload verification script to S3 (avoiding 8KB container override limit)
+SCRIPT_KEY="verification-scripts/rhobs-regional-${TASK_START_TIME:-$(date +%s)}.sh"
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+STATE_BUCKET="terraform-state-${ACCOUNT_ID}"
 
-# Run ECS task with verification command
+echo "Uploading verification script to s3://${STATE_BUCKET}/${SCRIPT_KEY}..."
+echo "$VERIFICATION_CMD" | aws s3 cp - "s3://${STATE_BUCKET}/${SCRIPT_KEY}"
+
+# Run ECS task with script download command
 echo "Starting ECS verification task..."
 set +e
 RUN_TASK_OUTPUT=$(aws ecs run-task \
@@ -289,11 +294,10 @@ RUN_TASK_OUTPUT=$(aws ecs run-task \
   --overrides "{
     \"containerOverrides\": [{
       \"name\": \"bootstrap\",
-      \"command\": [\"echo \$VERIFICATION_SCRIPT | base64 -d | /bin/bash\"],
+      \"command\": [\"aws s3 cp s3://${STATE_BUCKET}/${SCRIPT_KEY} /tmp/verify.sh && chmod +x /tmp/verify.sh && /tmp/verify.sh\"],
       \"environment\": [
         {\"name\": \"CLUSTER_NAME\", \"value\": \"$CLUSTER_NAME\"},
-        {\"name\": \"AWS_REGION\", \"value\": \"$AWS_REGION\"},
-        {\"name\": \"VERIFICATION_SCRIPT\", \"value\": \"$VERIFICATION_CMD_B64\"}
+        {\"name\": \"AWS_REGION\", \"value\": \"$AWS_REGION\"}
       ]
     }]
   }" 2>&1)
@@ -408,6 +412,10 @@ while true; do
         EXIT_CODE=$(echo "$TASK_DETAILS" | jq -r '.tasks[0].containers[0].exitCode // "null"')
         STOP_REASON=$(echo "$TASK_DETAILS" | jq -r '.tasks[0].stoppedReason // "unknown"')
         CONTAINER_REASON=$(echo "$TASK_DETAILS" | jq -r '.tasks[0].containers[0].reason // "unknown"')
+
+        # Cleanup S3 script
+        echo "Cleaning up S3 script..."
+        aws s3 rm "s3://${STATE_BUCKET}/${SCRIPT_KEY}" 2>/dev/null || true
 
         if [[ "$EXIT_CODE" == "0" ]]; then
             echo "✅ RHOBS verification completed successfully!"
