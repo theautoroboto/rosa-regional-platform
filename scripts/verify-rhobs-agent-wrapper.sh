@@ -205,7 +205,7 @@ RUN_TASK_OUTPUT=$(aws ecs run-task \
   --overrides "{
     \"containerOverrides\": [{
       \"name\": \"bootstrap\",
-      \"command\": [\"${VERIFICATION_CMD}\"],
+      \"command\": [\"/bin/bash\", \"-c\", \"${VERIFICATION_CMD}\"],
       \"environment\": [
         {\"name\": \"CLUSTER_NAME\", \"value\": \"$CLUSTER_NAME\"},
         {\"name\": \"AWS_REGION\", \"value\": \"$AWS_REGION\"}
