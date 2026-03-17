@@ -85,22 +85,42 @@ fi
 echo "✓ observability namespace exists"
 
 # Check OTEL Collector
+echo "Checking for OTEL Collector pods..."
 OTEL_PODS=$(kubectl get pods -n observability -l app.kubernetes.io/component=otel-collector --no-headers 2>/dev/null | grep Running | wc -l)
 if [ "$OTEL_PODS" -gt 0 ]; then
     echo "✓ OTEL Collector running ($OTEL_PODS pods)"
 else
     echo "✗ OTEL Collector pods not running"
-    kubectl get pods -n observability -l app.kubernetes.io/component=otel-collector 2>/dev/null || true
+    echo ""
+    echo "Expected pods with label: app.kubernetes.io/component=otel-collector"
+    echo "Current pods in observability namespace:"
+    kubectl get pods -n observability -l app.kubernetes.io/component=otel-collector 2>/dev/null || echo "  No OTEL Collector pods found"
+    echo ""
+    echo "All pods in observability namespace:"
+    kubectl get pods -n observability 2>/dev/null || echo "  No pods found"
+    echo ""
+    echo "TROUBLESHOOTING:"
+    echo "  - Check if RHOBS agents are deployed via ArgoCD"
+    echo "  - Verify ArgoCD application for management cluster agents"
+    echo "  - Check repository path: deploy/\${ENVIRONMENT}/\${REGION}/argocd/management-cluster-manifests/"
     exit 1
 fi
 
 # Check Fluent Bit
+echo "Checking for Fluent Bit pods..."
 FB_PODS=$(kubectl get pods -n observability -l app.kubernetes.io/component=fluent-bit --no-headers 2>/dev/null | grep Running | wc -l)
 if [ "$FB_PODS" -gt 0 ]; then
     echo "✓ Fluent Bit running ($FB_PODS pods)"
 else
     echo "✗ Fluent Bit pods not running"
-    kubectl get pods -n observability -l app.kubernetes.io/component=fluent-bit 2>/dev/null || true
+    echo ""
+    echo "Expected pods with label: app.kubernetes.io/component=fluent-bit"
+    echo "Current pods in observability namespace:"
+    kubectl get pods -n observability -l app.kubernetes.io/component=fluent-bit 2>/dev/null || echo "  No Fluent Bit pods found"
+    echo ""
+    echo "TROUBLESHOOTING:"
+    echo "  - Check if RHOBS agents are deployed via ArgoCD"
+    echo "  - Verify ArgoCD application for management cluster agents"
     exit 1
 fi
 
