@@ -23,8 +23,6 @@ oauth_config:
   scopes:
     bot:
       - incoming-webhook
-      - chat:write
-      - chat:write.public
 
 settings:
   org_deploy_enabled: false
