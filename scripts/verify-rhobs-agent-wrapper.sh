@@ -194,6 +194,9 @@ echo "RHOBS agent verification completed successfully!"
 VERIFY_EOF
 )
 
+# Base64 encode the verification command to avoid JSON escaping issues
+VERIFICATION_CMD_B64=$(echo "$VERIFICATION_CMD" | base64 -w 0)
+
 # Run ECS task with verification command
 echo "Starting ECS verification task..."
 set +e
@@ -205,10 +208,11 @@ RUN_TASK_OUTPUT=$(aws ecs run-task \
   --overrides "{
     \"containerOverrides\": [{
       \"name\": \"bootstrap\",
-      \"command\": [\"/bin/bash\", \"-c\", \"${VERIFICATION_CMD}\"],
+      \"command\": [\"/bin/bash\", \"-c\", \"echo \$VERIFICATION_SCRIPT | base64 -d | /bin/bash\"],
       \"environment\": [
         {\"name\": \"CLUSTER_NAME\", \"value\": \"$CLUSTER_NAME\"},
-        {\"name\": \"AWS_REGION\", \"value\": \"$AWS_REGION\"}
+        {\"name\": \"AWS_REGION\", \"value\": \"$AWS_REGION\"},
+        {\"name\": \"VERIFICATION_SCRIPT\", \"value\": \"$VERIFICATION_CMD_B64\"}
       ]
     }]
   }" 2>&1)

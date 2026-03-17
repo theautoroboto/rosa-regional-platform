@@ -11,6 +11,9 @@ echo "=========================================="
 # Pre-flight setup (validates env vars, inits account helpers)
 source scripts/pipeline-common/setup-apply-preflight.sh
 
+# Export MANAGEMENT_CLUSTER_ID for use in verification scripts
+export MANAGEMENT_CLUSTER_ID="${MANAGEMENT_ID}"
+
 # Read delete flag from config
 ENVIRONMENT="${ENVIRONMENT:-staging}"
 

@@ -608,7 +608,7 @@ resource "aws_codebuild_project" "verify_rhobs_agent" {
     }
     # Unique identifier for the cluster
     environment_variable {
-      name  = "MANAGEMENT_CLUSTER_ID"
+      name  = "MANAGEMENT_ID"
       value = var.management_id
     }
     # Target environment name (dev/staging/prod)
