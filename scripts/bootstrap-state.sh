@@ -42,89 +42,85 @@ apply_bucket_security() {
     # Get AWS Organization ID to restrict access to organization members only
     ORG_ID=$(aws organizations describe-organization --query 'Organization.Id' --output text 2>/dev/null || echo "")
 
-    # Add bucket policy to allow cross-account access from OrganizationAccountAccessRole
-    # This allows target accounts in the same organization to access their state files
+    # Add bucket policy to allow cross-account access
+    # Note: For AWS Organizations, we rely on IAM policies instead of bucket policies
+    # to avoid issues with Principal: "*" which AWS may reject in some configurations
     if [ -n "$ORG_ID" ]; then
         echo "Detected AWS Organization: $ORG_ID"
-        cat > /tmp/bucket-policy.json <<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "AllowOrganizationAccountAccess",
-      "Effect": "Allow",
-      "Principal": "*",
-      "Action": [
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:DeleteObject",
-        "s3:ListBucket"
-      ],
-      "Resource": [
-        "arn:aws:s3:::${BUCKET_NAME}",
-        "arn:aws:s3:::${BUCKET_NAME}/*"
-      ],
-      "Condition": {
-        "StringEquals": {
-          "aws:PrincipalOrgID": "${ORG_ID}"
-        }
-      }
-    }
-  ]
-}
-EOF
+        echo "⚠️  Skipping bucket policy for Organization accounts"
+        echo "⚠️  Access control will be managed via IAM policies (OrganizationAccountAccessRole)"
+        echo "⚠️  Ensure cross-account roles have s3:* permissions for ${BUCKET_NAME}"
+        # No bucket policy needed for org accounts - IAM handles it
+        echo '{"Version":"2012-10-17","Statement":[]}' > /tmp/bucket-policy.json
+        SKIP_POLICY=true
     else
         echo "⚠️  Warning: Not in an AWS Organization"
         echo "⚠️  Bucket policy will restrict access to this account only"
-        cat > /tmp/bucket-policy.json <<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "AllowCurrentAccount",
-      "Effect": "Allow",
-      "Principal": {
-        "AWS": "arn:aws:iam::${ACCOUNT_ID}:root"
-      },
-      "Action": [
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:DeleteObject",
-        "s3:ListBucket"
-      ],
-      "Resource": [
-        "arn:aws:s3:::${BUCKET_NAME}",
-        "arn:aws:s3:::${BUCKET_NAME}/*"
-      ]
-    },
-    {
-      "Sid": "DenyOtherAccounts",
-      "Effect": "Deny",
-      "Principal": "*",
-      "Action": "s3:*",
-      "Resource": [
-        "arn:aws:s3:::${BUCKET_NAME}",
-        "arn:aws:s3:::${BUCKET_NAME}/*"
-      ],
-      "Condition": {
-        "StringNotEquals": {
-          "aws:PrincipalAccount": "${ACCOUNT_ID}"
-        }
-      }
-    }
-  ]
-}
-EOF
+        # Use jq to generate policy to avoid heredoc/escaping issues
+        jq -n \
+          --arg bucket "arn:aws:s3:::${BUCKET_NAME}" \
+          --arg bucketObjects "arn:aws:s3:::${BUCKET_NAME}/*" \
+          --arg accountRoot "arn:aws:iam::${ACCOUNT_ID}:root" \
+          '{
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "AllowCurrentAccountBucket",
+                "Effect": "Allow",
+                "Principal": {
+                  "AWS": $accountRoot
+                },
+                "Action": [
+                  "s3:ListBucket",
+                  "s3:GetBucketVersioning",
+                  "s3:GetBucketLocation"
+                ],
+                "Resource": $bucket
+              },
+              {
+                "Sid": "AllowCurrentAccountObjects",
+                "Effect": "Allow",
+                "Principal": {
+                  "AWS": $accountRoot
+                },
+                "Action": [
+                  "s3:GetObject",
+                  "s3:PutObject",
+                  "s3:DeleteObject",
+                  "s3:GetObjectVersion"
+                ],
+                "Resource": $bucketObjects
+              }
+            ]
+          }' > /tmp/bucket-policy.json
     fi
 
-    aws s3api put-bucket-policy \
-        --bucket "$BUCKET_NAME" \
-        --policy file:///tmp/bucket-policy.json \
-        --region "$REGION"
+    if [ "${SKIP_POLICY:-false}" != "true" ]; then
+        echo ""
+        echo "Generated bucket policy:"
+        cat /tmp/bucket-policy.json
+        echo ""
 
-    rm -f /tmp/bucket-policy.json
+        # Validate JSON before applying
+        if ! jq empty /tmp/bucket-policy.json 2>/dev/null; then
+            echo "❌ ERROR: Generated policy is not valid JSON"
+            cat /tmp/bucket-policy.json
+            rm -f /tmp/bucket-policy.json
+            exit 1
+        fi
 
-    echo "✅ Security settings and bucket policy applied"
+        echo "Applying bucket policy..."
+        aws s3api put-bucket-policy \
+            --bucket "$BUCKET_NAME" \
+            --policy file:///tmp/bucket-policy.json \
+            --region "$REGION"
+
+        rm -f /tmp/bucket-policy.json
+        echo "✅ Security settings and bucket policy applied"
+    else
+        rm -f /tmp/bucket-policy.json
+        echo "✅ Security settings applied (bucket policy skipped for Organization account)"
+    fi
 }
 
 # Create S3 Bucket
