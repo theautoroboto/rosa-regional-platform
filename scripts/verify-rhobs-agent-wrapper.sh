@@ -235,6 +235,7 @@ else
 fi
 
 echo "Starting log monitoring..."
+echo "Log group: $LOG_GROUP"
 
 # Track last seen event timestamp
 LAST_EVENT_TIME=0
@@ -242,18 +243,21 @@ LAST_EVENT_TIME=0
 # Monitor task status
 while true; do
     # Fetch recent log events
-    START_TIME=$(($(date +%s) * 1000 - 30000))
+    LOG_START_TIME=$(($(date +%s) * 1000 - 30000))
     if [[ $LAST_EVENT_TIME -gt 0 ]]; then
-        START_TIME=$LAST_EVENT_TIME
+        LOG_START_TIME=$LAST_EVENT_TIME
     fi
 
     LOG_EVENTS=$(aws logs filter-log-events \
         --log-group-name "$LOG_GROUP" \
-        --start-time "$START_TIME" \
+        --start-time "$LOG_START_TIME" \
         --output json 2>/dev/null || echo '{"events":[]}')
 
     # Print new log events
-    echo "$LOG_EVENTS" | jq -r '.events[] | .message' 2>/dev/null || true
+    NEW_MESSAGES=$(echo "$LOG_EVENTS" | jq -r '.events[] | .message' 2>/dev/null || true)
+    if [ -n "$NEW_MESSAGES" ]; then
+        echo "$NEW_MESSAGES"
+    fi
 
     # Update last event timestamp
     NEW_LAST_TIME=$(echo "$LOG_EVENTS" | jq -r '[.events[].timestamp] | max // 0' 2>/dev/null || echo "0")
@@ -264,15 +268,29 @@ while true; do
     TASK_STATUS=$(aws ecs describe-tasks --cluster "$ECS_CLUSTER_ARN" --tasks "$TASK_ARN" --query 'tasks[0].lastStatus' --output text)
 
     if [[ "$TASK_STATUS" == "STOPPED" ]]; then
-        # Fetch any remaining logs
-        sleep 2
+        echo ""
+        echo "Task stopped. Fetching final logs..."
+        # Wait for CloudWatch to flush final logs (can take up to 5-10 seconds)
+        sleep 5
+
+        # Fetch remaining logs with extended time window
+        FINAL_LOG_START=$(($(date +%s) * 1000 - 60000))
+        if [[ $LAST_EVENT_TIME -gt 0 ]]; then
+            FINAL_LOG_START=$LAST_EVENT_TIME
+        fi
+
         FINAL_LOGS=$(aws logs filter-log-events \
             --log-group-name "$LOG_GROUP" \
-            --start-time "$LAST_EVENT_TIME" \
+            --start-time "$FINAL_LOG_START" \
             --output json 2>/dev/null || echo '{"events":[]}')
-        echo "$FINAL_LOGS" | jq -r '.events[] | .message' 2>/dev/null || true
+
+        FINAL_MESSAGES=$(echo "$FINAL_LOGS" | jq -r '.events[] | .message' 2>/dev/null || true)
+        if [ -n "$FINAL_MESSAGES" ]; then
+            echo "$FINAL_MESSAGES"
+        fi
+
         echo ""
-        echo "Task stopped. Getting task details..."
+        echo "Getting task details..."
 
         # Get full task details
         TASK_DETAILS=$(aws ecs describe-tasks --cluster "$ECS_CLUSTER_ARN" --tasks "$TASK_ARN")
