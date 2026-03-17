@@ -86,7 +86,23 @@ echo "✓ observability namespace exists"
 
 # Check OTEL Collector
 echo "Checking for OTEL Collector pods..."
-OTEL_PODS=$(kubectl get pods -n observability -l app.kubernetes.io/component=otel-collector --no-headers 2>/dev/null | grep Running | wc -l)
+set +e  # Don't exit on error for diagnostics
+OTEL_OUTPUT=$(timeout 30 kubectl get pods -n observability -l app.kubernetes.io/component=otel-collector --no-headers 2>&1)
+KUBECTL_EXIT=$?
+set -e
+
+if [ $KUBECTL_EXIT -eq 124 ]; then
+    echo "✗ ERROR: kubectl command timed out after 30 seconds"
+    echo "   This may indicate cluster API connectivity issues"
+    exit 1
+elif [ $KUBECTL_EXIT -ne 0 ]; then
+    echo "✗ ERROR: kubectl command failed with exit code $KUBECTL_EXIT"
+    echo "   Output: $OTEL_OUTPUT"
+    exit 1
+fi
+
+OTEL_PODS=$(echo "$OTEL_OUTPUT" | grep Running | wc -l)
+
 if [ "$OTEL_PODS" -gt 0 ]; then
     echo "✓ OTEL Collector running ($OTEL_PODS pods)"
 else
@@ -94,10 +110,14 @@ else
     echo ""
     echo "Expected pods with label: app.kubernetes.io/component=otel-collector"
     echo "Current pods in observability namespace:"
-    kubectl get pods -n observability -l app.kubernetes.io/component=otel-collector 2>/dev/null || echo "  No OTEL Collector pods found"
+    if [ -n "$OTEL_OUTPUT" ]; then
+        echo "$OTEL_OUTPUT"
+    else
+        echo "  No OTEL Collector pods found"
+    fi
     echo ""
     echo "All pods in observability namespace:"
-    kubectl get pods -n observability 2>/dev/null || echo "  No pods found"
+    timeout 30 kubectl get pods -n observability 2>&1 || echo "  Failed to get pods"
     echo ""
     echo "TROUBLESHOOTING:"
     echo "  - Check if RHOBS agents are deployed via ArgoCD"
@@ -108,7 +128,22 @@ fi
 
 # Check Fluent Bit
 echo "Checking for Fluent Bit pods..."
-FB_PODS=$(kubectl get pods -n observability -l app.kubernetes.io/component=fluent-bit --no-headers 2>/dev/null | grep Running | wc -l)
+set +e
+FB_OUTPUT=$(timeout 30 kubectl get pods -n observability -l app.kubernetes.io/component=fluent-bit --no-headers 2>&1)
+KUBECTL_EXIT=$?
+set -e
+
+if [ $KUBECTL_EXIT -eq 124 ]; then
+    echo "✗ ERROR: kubectl command timed out after 30 seconds"
+    exit 1
+elif [ $KUBECTL_EXIT -ne 0 ]; then
+    echo "✗ ERROR: kubectl command failed with exit code $KUBECTL_EXIT"
+    echo "   Output: $FB_OUTPUT"
+    exit 1
+fi
+
+FB_PODS=$(echo "$FB_OUTPUT" | grep Running | wc -l)
+
 if [ "$FB_PODS" -gt 0 ]; then
     echo "✓ Fluent Bit running ($FB_PODS pods)"
 else
@@ -116,7 +151,11 @@ else
     echo ""
     echo "Expected pods with label: app.kubernetes.io/component=fluent-bit"
     echo "Current pods in observability namespace:"
-    kubectl get pods -n observability -l app.kubernetes.io/component=fluent-bit 2>/dev/null || echo "  No Fluent Bit pods found"
+    if [ -n "$FB_OUTPUT" ]; then
+        echo "$FB_OUTPUT"
+    else
+        echo "  No Fluent Bit pods found"
+    fi
     echo ""
     echo "TROUBLESHOOTING:"
     echo "  - Check if RHOBS agents are deployed via ArgoCD"
