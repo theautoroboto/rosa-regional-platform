@@ -260,6 +260,11 @@ fi
 
 echo "Starting log monitoring..."
 echo "Log group: $LOG_GROUP"
+echo ""
+
+# Extract task ID from ARN for log stream matching
+TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
+echo "Task ID: $TASK_ID"
 
 # Track last seen event timestamp
 LAST_EVENT_TIME=0
@@ -268,20 +273,30 @@ TASK_START_TIME=$(date +%s)
 # Monitor task status
 while true; do
     # Fetch recent log events
-    LOG_START_TIME=$(($(date +%s) * 1000 - 30000))
+    LOG_START_TIME=$(($(date +%s) * 1000 - 60000))  # Extended to 60 seconds
     if [[ $LAST_EVENT_TIME -gt 0 ]]; then
         LOG_START_TIME=$LAST_EVENT_TIME
     fi
 
+    # Query with log stream pattern matching the task ID
     LOG_EVENTS=$(aws logs filter-log-events \
         --log-group-name "$LOG_GROUP" \
+        --log-stream-name-prefix "bootstrap/$TASK_ID" \
         --start-time "$LOG_START_TIME" \
-        --output json 2>/dev/null || echo '{"events":[]}')
+        --output json 2>&1)
 
-    # Print new log events
-    NEW_MESSAGES=$(echo "$LOG_EVENTS" | jq -r '.events[] | .message' 2>/dev/null || true)
-    if [ -n "$NEW_MESSAGES" ]; then
-        echo "$NEW_MESSAGES"
+    # Check if we got valid JSON
+    if echo "$LOG_EVENTS" | jq empty 2>/dev/null; then
+        # Print new log events
+        NEW_MESSAGES=$(echo "$LOG_EVENTS" | jq -r '.events[] | .message' 2>/dev/null || true)
+        if [ -n "$NEW_MESSAGES" ]; then
+            echo "$NEW_MESSAGES"
+        fi
+    else
+        # Not valid JSON - might be an error message
+        if [[ "$LOG_EVENTS" != *"ResourceNotFoundException"* ]]; then
+            echo "Log query error: $LOG_EVENTS"
+        fi
     fi
 
     # Update last event timestamp
@@ -296,22 +311,33 @@ while true; do
         echo ""
         echo "Task stopped. Fetching final logs..."
         # Wait for CloudWatch to flush final logs (can take up to 5-10 seconds)
-        sleep 5
+        sleep 8
 
-        # Fetch remaining logs with extended time window
-        FINAL_LOG_START=$(($(date +%s) * 1000 - 60000))
-        if [[ $LAST_EVENT_TIME -gt 0 ]]; then
-            FINAL_LOG_START=$LAST_EVENT_TIME
-        fi
+        # Fetch ALL logs for this task (from task start time)
+        FINAL_LOG_START=$((TASK_START_TIME * 1000))
 
+        echo "Querying all logs for task (stream: bootstrap/$TASK_ID)..."
         FINAL_LOGS=$(aws logs filter-log-events \
             --log-group-name "$LOG_GROUP" \
+            --log-stream-name-prefix "bootstrap/$TASK_ID" \
             --start-time "$FINAL_LOG_START" \
-            --output json 2>/dev/null || echo '{"events":[]}')
+            --output json 2>&1)
 
-        FINAL_MESSAGES=$(echo "$FINAL_LOGS" | jq -r '.events[] | .message' 2>/dev/null || true)
-        if [ -n "$FINAL_MESSAGES" ]; then
-            echo "$FINAL_MESSAGES"
+        if echo "$FINAL_LOGS" | jq empty 2>/dev/null; then
+            FINAL_MESSAGES=$(echo "$FINAL_LOGS" | jq -r '.events[] | .message' 2>/dev/null || true)
+            if [ -n "$FINAL_MESSAGES" ]; then
+                echo "$FINAL_MESSAGES"
+            else
+                echo "No log messages found in CloudWatch"
+                echo "Checking if log stream exists..."
+                aws logs describe-log-streams \
+                    --log-group-name "$LOG_GROUP" \
+                    --log-stream-name-prefix "bootstrap/$TASK_ID" \
+                    --max-items 5 || true
+            fi
+        else
+            echo "Error fetching logs:"
+            echo "$FINAL_LOGS"
         fi
 
         echo ""
