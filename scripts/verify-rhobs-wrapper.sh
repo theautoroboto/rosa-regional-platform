@@ -90,7 +90,7 @@ if ! kubectl get namespace observability > /dev/null 2>&1; then
 fi
 echo "✓ observability namespace exists"
 
-# Check required components
+# Check required components with autonomous troubleshooting
 REQUIRED_COMPONENTS=(thanos-receive thanos-query loki-distributor loki-querier grafana)
 
 for component in "${REQUIRED_COMPONENTS[@]}"; do
@@ -98,7 +98,64 @@ for component in "${REQUIRED_COMPONENTS[@]}"; do
         echo "✓ ${component} pods are running"
     else
         echo "✗ ${component} pods not found or not running"
+        echo ""
         kubectl get pods -n observability -l "app.kubernetes.io/component=${component}" 2>/dev/null || true
+        echo ""
+
+        # Autonomous troubleshooting agent
+        echo "🔍 AUTONOMOUS DIAGNOSTIC AGENT"
+        echo "========================================"
+
+        POD_NAME=$(kubectl get pods -n observability -l "app.kubernetes.io/component=${component}" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+
+        if [ -n "$POD_NAME" ]; then
+            echo "Analyzing pod: $POD_NAME"
+            echo ""
+
+            # Get pod events
+            echo "Pod Events:"
+            EVENTS=$(kubectl get events -n observability --field-selector involvedObject.name=$POD_NAME --sort-by='.lastTimestamp' 2>/dev/null | tail -10)
+            echo "$EVENTS"
+            echo ""
+
+            # Diagnose common issues
+            echo "Root Cause Analysis:"
+            if echo "$EVENTS" | grep -qi "FailedScheduling"; then
+                echo "  ❌ ISSUE: Pod cannot be scheduled"
+                if echo "$EVENTS" | grep -qi "Insufficient"; then
+                    echo "     Cause: Insufficient cluster resources (CPU/Memory)"
+                    echo "     Fix: Scale cluster nodes or reduce resource requests"
+                elif echo "$EVENTS" | grep -qi "node(s) didn't match"; then
+                    echo "     Cause: Node selector/affinity constraints not met"
+                    echo "     Fix: Check node labels and pod affinity rules"
+                fi
+            elif echo "$EVENTS" | grep -qi "FailedMount\|FailedAttachVolume"; then
+                echo "  ❌ ISSUE: Volume mount failure"
+                echo "     Cause: PVC not bound or volume unavailable"
+                echo "     Fix: Check PVC status and storage class"
+            elif echo "$EVENTS" | grep -qi "ImagePullBackOff\|ErrImagePull"; then
+                echo "  ❌ ISSUE: Cannot pull container image"
+                echo "     Cause: Image not found or registry auth failure"
+                echo "     Fix: Verify image name and pull secrets"
+            elif echo "$EVENTS" | grep -qi "CrashLoopBackOff"; then
+                echo "  ❌ ISSUE: Container crashing on startup"
+                echo "     Cause: Application configuration error"
+                echo "     Fix: Check pod logs with: kubectl logs -n observability $POD_NAME"
+            else
+                echo "  ⚠️  Unable to determine root cause from events"
+                echo "     Manual investigation required"
+            fi
+            echo ""
+
+            # Get detailed pod description
+            echo "Detailed Pod Status:"
+            kubectl describe pod -n observability $POD_NAME 2>/dev/null | grep -A 20 "^Conditions:\|^Events:" | head -30
+        else
+            echo "⚠️  No pods found for component: ${component}"
+            echo "   This component may not be deployed yet"
+        fi
+
+        echo "========================================"
         exit 1
     fi
 done
