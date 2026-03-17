@@ -11,6 +11,8 @@ Two verification stages are available:
 
 ## Architecture
 
+### Pipeline Flow
+
 ```mermaid
 graph LR
     subgraph "Regional Cluster Pipeline"
@@ -30,6 +32,46 @@ graph LR
     style V1 fill:#99ff99
     style V2 fill:#99ff99
 ```
+
+### ECS Fargate Verification Architecture
+
+Since EKS clusters are **fully private** with no public API endpoints, verification must run inside the VPC:
+
+```mermaid
+graph TB
+    subgraph "CodeBuild (Public)"
+        CB[CodeBuild Job]
+    end
+
+    subgraph "VPC - Private Subnets"
+        subgraph "ECS Fargate"
+            Task[Verification Task<br/>kubectl, curl, jq]
+        end
+
+        subgraph "EKS Cluster"
+            API[Private API Endpoint]
+            Pods[RHOBS Pods]
+        end
+    end
+
+    CB -->|1. Read Terraform outputs| CB
+    CB -->|2. Launch ECS task| Task
+    Task -->|3. Configure kubectl| API
+    Task -->|4. Port-forward & query| Pods
+    Task -->|5. Exit code 0/1| CB
+    CB -->|6. Monitor logs| Task
+
+    style CB fill:#ffcc99
+    style Task fill:#99ccff
+    style API fill:#ff9999
+```
+
+**Key Points:**
+
+- **No Direct Access**: CodeBuild cannot reach private EKS API endpoints
+- **ECS Fargate Bridge**: Verification runs as ECS Fargate tasks in the same VPC
+- **Same Pattern as Bootstrap**: Uses the existing ECS bootstrap infrastructure
+- **Security**: Verification task has IAM permissions to access EKS and CloudWatch Logs
 
 ## Regional Cluster Verification
 
@@ -168,22 +210,27 @@ export REGIONAL_ID=regional-us-east-1
 - ✅ mTLS client certificate ready
 - ✅ Agent configurations valid
 - ✅ No critical errors in agent logs
-- ✅ Network connectivity to RHOBS endpoints
 
 ### How It Works
 
-The verification script:
+The verification runs as an **ECS Fargate task** inside the VPC:
 
-1. Validates all agent pods are running
-2. Checks mTLS certificate status
-3. Validates agent configurations (remote_write, Loki output)
-4. Scans logs for errors
-5. Tests network connectivity to Thanos and Loki endpoints
+1. CodeBuild triggers the verification buildspec
+2. Launches an ECS Fargate task in the management cluster's private subnets
+3. Inside the ECS task:
+   - Configures kubectl to access the private EKS API
+   - Validates all agent pods are running
+   - Checks mTLS certificate status
+   - Validates agent configurations (remote_write, Loki output)
+   - Scans logs for errors
+4. CodeBuild monitors the ECS task logs and exit code
+5. Exits with status code 1 if agents aren't properly configured
 
 ### Files
 
 - **Buildspec**: [terraform/config/pipeline-management-cluster/buildspec-verify-rhobs-agent.yml](../terraform/config/pipeline-management-cluster/buildspec-verify-rhobs-agent.yml)
-- **Script**: [scripts/buildspec/verify-rhobs-agent.sh](../scripts/buildspec/verify-rhobs-agent.sh)
+- **Pipeline Script**: [scripts/buildspec/verify-rhobs-agent.sh](../scripts/buildspec/verify-rhobs-agent.sh) - Sets up environment and calls wrapper
+- **ECS Wrapper**: [scripts/verify-rhobs-agent-wrapper.sh](../scripts/verify-rhobs-agent-wrapper.sh) - Launches ECS Fargate task with verification logic
 
 ### Adding to CodePipeline
 

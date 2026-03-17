@@ -13,6 +13,10 @@ source scripts/pipeline-common/setup-apply-preflight.sh
 
 # Read delete flag from config
 ENVIRONMENT="${ENVIRONMENT:-staging}"
+
+# Extract serial from management cluster ID (e.g., management-us-east-1-01 -> 01)
+MANAGEMENT_CLUSTER_SERIAL=$(echo "${MANAGEMENT_CLUSTER_ID}" | grep -oE '[0-9]+$')
+
 MC_CONFIG_FILE="deploy/${ENVIRONMENT}/${TARGET_REGION}/terraform/management-${MANAGEMENT_CLUSTER_SERIAL}.json"
 if [ ! -f "$MC_CONFIG_FILE" ]; then
     echo "ERROR: Config file not found: $MC_CONFIG_FILE" >&2

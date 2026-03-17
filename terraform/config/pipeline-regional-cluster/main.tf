@@ -11,12 +11,13 @@ locals {
   account_suffix = substr(data.aws_caller_identity.current.account_id, -8, 8)
 
   # Resource naming: {name_prefix}-{resource-type}
-  artifact_bucket_name   = "${local.name_prefix}-artifacts-${local.account_suffix}"
-  codebuild_role_name    = "${local.name_prefix}-codebuild-role"
-  codepipeline_role_name = "${local.name_prefix}-codepipeline-role"
-  apply_project_name     = "${local.name_prefix}-apply"
-  bootstrap_project_name = "${local.name_prefix}-bootstrap"
-  pipeline_name          = "${local.name_prefix}-pipe"
+  artifact_bucket_name       = "${local.name_prefix}-artifacts-${local.account_suffix}"
+  codebuild_role_name        = "${local.name_prefix}-codebuild-role"
+  codepipeline_role_name     = "${local.name_prefix}-codepipeline-role"
+  apply_project_name         = "${local.name_prefix}-apply"
+  bootstrap_project_name     = "${local.name_prefix}-bootstrap"
+  verify_rhobs_project_name  = "${local.name_prefix}-verify-rhobs"
+  pipeline_name              = "${local.name_prefix}-pipe"
 
   # Repository URL constructed from github_repository variable
   repository_url = "https://github.com/${var.github_repository}.git"
@@ -136,7 +137,8 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
         ]
         Resource = [
           aws_codebuild_project.regional_apply.arn,
-          aws_codebuild_project.regional_bootstrap.arn
+          aws_codebuild_project.regional_bootstrap.arn,
+          aws_codebuild_project.verify_rhobs.arn
         ]
       }
     ]
@@ -358,6 +360,50 @@ resource "aws_codebuild_project" "regional_bootstrap" {
   }
 }
 
+# CodeBuild Project - Verify RHOBS
+resource "aws_codebuild_project" "verify_rhobs" {
+  name          = local.verify_rhobs_project_name
+  service_role  = aws_iam_role.codebuild_role.arn
+  build_timeout = 30 # 30 minutes for metric/log flow retries
+
+  artifacts {
+    type = "CODEPIPELINE"
+  }
+
+  environment {
+    compute_type                = "BUILD_GENERAL1_SMALL"
+    image                       = var.codebuild_image
+    type                        = "LINUX_CONTAINER"
+    image_pull_credentials_type = "CODEBUILD"
+
+    # AWS account ID where resources will be deployed
+    environment_variable {
+      name  = "TARGET_ACCOUNT_ID"
+      value = var.target_account_id
+    }
+    # AWS region for deployment
+    environment_variable {
+      name  = "TARGET_REGION"
+      value = var.target_region
+    }
+    # Human-readable alias for the target environment
+    environment_variable {
+      name  = "REGIONAL_ID"
+      value = var.regional_id
+    }
+    # Target environment name (dev/staging/prod)
+    environment_variable {
+      name  = "ENVIRONMENT"
+      value = var.target_environment
+    }
+  }
+
+  source {
+    type      = "CODEPIPELINE"
+    buildspec = "terraform/config/pipeline-regional-cluster/buildspec-verify-rhobs.yml"
+  }
+}
+
 # Allow time for IAM policy propagation before creating the pipeline.
 # Pipelines auto-trigger on creation; without this delay the Source action
 # can fail with "Access Denied" on the CodeStar connection.
@@ -460,6 +506,30 @@ resource "aws_codepipeline" "central_pipeline" {
 
       configuration = {
         ProjectName = aws_codebuild_project.regional_bootstrap.name
+        EnvironmentVariables = jsonencode([
+          {
+            name  = "IS_DESTROY"
+            value = "#{variables.IS_DESTROY}"
+            type  = "PLAINTEXT"
+          }
+        ])
+      }
+    }
+  }
+
+  stage {
+    name = "Verify-RHOBS"
+
+    action {
+      name            = "VerifyObservability"
+      category        = "Build"
+      owner           = "AWS"
+      provider        = "CodeBuild"
+      input_artifacts = ["source_output"]
+      version         = "1"
+
+      configuration = {
+        ProjectName = aws_codebuild_project.verify_rhobs.name
         EnvironmentVariables = jsonencode([
           {
             name  = "IS_DESTROY"

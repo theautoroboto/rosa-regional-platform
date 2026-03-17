@@ -11,14 +11,15 @@ locals {
   account_suffix = substr(data.aws_caller_identity.current.account_id, -8, 8)
 
   # Resource naming: {name_prefix}-{resource-type}
-  artifact_bucket_name   = "${local.name_prefix}-artifacts-${local.account_suffix}"
-  codebuild_role_name    = "${local.name_prefix}-codebuild-role"
-  codepipeline_role_name = "${local.name_prefix}-codepipeline-role"
-  apply_project_name     = "${local.name_prefix}-apply"
-  bootstrap_project_name = "${local.name_prefix}-bootstrap"
-  iot_mint_project_name  = "${local.name_prefix}-iot-mint"
-  register_project_name  = "${local.name_prefix}-register"
-  pipeline_name          = "${local.name_prefix}-pipe"
+  artifact_bucket_name       = "${local.name_prefix}-artifacts-${local.account_suffix}"
+  codebuild_role_name        = "${local.name_prefix}-codebuild-role"
+  codepipeline_role_name     = "${local.name_prefix}-codepipeline-role"
+  apply_project_name         = "${local.name_prefix}-apply"
+  bootstrap_project_name     = "${local.name_prefix}-bootstrap"
+  iot_mint_project_name      = "${local.name_prefix}-iot-mint"
+  register_project_name      = "${local.name_prefix}-register"
+  verify_rhobs_agent_project_name = "${local.name_prefix}-verify-rhobs-agent"
+  pipeline_name              = "${local.name_prefix}-pipe"
 
   # Repository URL constructed from github_repository variable
   repository_url = "https://github.com/${var.github_repository}.git"
@@ -68,7 +69,9 @@ resource "aws_iam_role_policy" "codebuild_policy" {
           "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.iot_mint.name}",
           "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.iot_mint.name}:*",
           "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.register.name}",
-          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.register.name}:*"
+          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.register.name}:*",
+          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.verify_rhobs_agent.name}",
+          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.verify_rhobs_agent.name}:*"
         ]
       },
       {
@@ -246,7 +249,8 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
           aws_codebuild_project.management_apply.arn,
           aws_codebuild_project.management_bootstrap.arn,
           aws_codebuild_project.iot_mint.arn,
-          aws_codebuild_project.register.arn
+          aws_codebuild_project.register.arn,
+          aws_codebuild_project.verify_rhobs_agent.arn
         ]
       },
       {
@@ -258,7 +262,8 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
           "arn:aws:codebuild:*:*:project/${aws_codebuild_project.management_apply.name}",
           "arn:aws:codebuild:*:*:project/${aws_codebuild_project.management_bootstrap.name}",
           "arn:aws:codebuild:*:*:project/${aws_codebuild_project.iot_mint.name}",
-          "arn:aws:codebuild:*:*:project/${aws_codebuild_project.register.name}"
+          "arn:aws:codebuild:*:*:project/${aws_codebuild_project.register.name}",
+          "arn:aws:codebuild:*:*:project/${aws_codebuild_project.verify_rhobs_agent.name}"
         ]
       }
     ]
@@ -575,6 +580,50 @@ resource "aws_codebuild_project" "register" {
   }
 }
 
+# CodeBuild Project - Verify RHOBS Agent
+resource "aws_codebuild_project" "verify_rhobs_agent" {
+  name          = local.verify_rhobs_agent_project_name
+  service_role  = aws_iam_role.codebuild_role.arn
+  build_timeout = 20 # 20 minutes for agent verification
+
+  artifacts {
+    type = "CODEPIPELINE"
+  }
+
+  environment {
+    compute_type                = "BUILD_GENERAL1_SMALL"
+    image                       = var.codebuild_image
+    type                        = "LINUX_CONTAINER"
+    image_pull_credentials_type = "CODEBUILD"
+
+    # AWS account where Management Cluster is deployed
+    environment_variable {
+      name  = "TARGET_ACCOUNT_ID"
+      value = var.target_account_id
+    }
+    # AWS region for deployment
+    environment_variable {
+      name  = "TARGET_REGION"
+      value = var.target_region
+    }
+    # Unique identifier for the cluster
+    environment_variable {
+      name  = "MANAGEMENT_CLUSTER_ID"
+      value = var.management_id
+    }
+    # Target environment name (dev/staging/prod)
+    environment_variable {
+      name  = "ENVIRONMENT"
+      value = var.target_environment
+    }
+  }
+
+  source {
+    type      = "CODEPIPELINE"
+    buildspec = "terraform/config/pipeline-management-cluster/buildspec-verify-rhobs-agent.yml"
+  }
+}
+
 # Allow time for IAM policy propagation before creating the pipeline.
 # Pipelines auto-trigger on creation; without this delay the Source action
 # can fail with "Access Denied" on the CodeStar connection.
@@ -701,6 +750,30 @@ resource "aws_codepipeline" "regional_pipeline" {
 
       configuration = {
         ProjectName = aws_codebuild_project.management_bootstrap.name
+        EnvironmentVariables = jsonencode([
+          {
+            name  = "IS_DESTROY"
+            value = "#{variables.IS_DESTROY}"
+            type  = "PLAINTEXT"
+          }
+        ])
+      }
+    }
+  }
+
+  stage {
+    name = "Verify-RHOBS-Agent"
+
+    action {
+      name            = "VerifyObservabilityAgent"
+      category        = "Build"
+      owner           = "AWS"
+      provider        = "CodeBuild"
+      input_artifacts = ["source_output"]
+      version         = "1"
+
+      configuration = {
+        ProjectName = aws_codebuild_project.verify_rhobs_agent.name
         EnvironmentVariables = jsonencode([
           {
             name  = "IS_DESTROY"
