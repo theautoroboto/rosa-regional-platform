@@ -1,0 +1,24 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  install:
+    commands:
+      - |
+        chmod +x \
+          ./scripts/buildspec/verify-rhobs-agent.sh \
+          ./scripts/pipeline-common/init-terraform-backend.sh
+
+  build:
+    on-failure: ABORT
+    commands:
+      - ./scripts/buildspec/verify-rhobs-agent.sh
+
+  post_build:
+    commands:
+      - echo "RHOBS agent verification complete."
+
+artifacts:
+  files: []

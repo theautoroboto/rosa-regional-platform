@@ -1,0 +1,490 @@
+<mxfile host="app.diagrams.net" modified="2026-03-17T00:00:00.000Z" agent="5.0" version="21.0.0" etag="rhobs-comm-flow" type="device">
+  <diagram name="RHOBS Communication Flow" id="rhobs-main">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Management Cluster 1 -->
+        <mxCell id="mc1-container" value="Management Cluster 1 (Fleet)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontSize=14;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="80" y="80" width="320" height="280" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="mc1-otel" value="OTEL Collector&#xa;(Deployment)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="120" y="140" width="120" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="mc1-fluentbit" value="Fluent Bit&#xa;(DaemonSet)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="260" y="140" width="120" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="mc1-prometheus" value="Prometheus&#xa;Operator" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="120" y="220" width="120" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="mc1-cert" value="mTLS Client Cert" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="260" y="220" width="120" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Management Cluster 2 -->
+        <mxCell id="mc2-container" value="Management Cluster 2 (Fleet)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontSize=14;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="80" y="400" width="320" height="160" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="mc2-otel" value="OTEL Collector" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="120" y="460" width="120" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="mc2-fluentbit" value="Fluent Bit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="260" y="460" width="120" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Internet / NLB Layer -->
+        <mxCell id="internet-container" value="Internet (Public mTLS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;verticalAlign=top;fontSize=14;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="480" y="200" width="240" height="240" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="nlb-metrics" value="NLB - Metrics&#xa;Port 19291&#xa;(internet-facing)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcc99;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="520" y="250" width="160" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="nlb-logs" value="NLB - Logs&#xa;Port 3100&#xa;(internet-facing)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcc99;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="520" y="350" width="160" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- Regional Cluster -->
+        <mxCell id="rc-container" value="Regional Cluster (Observability Hub)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontSize=14;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="800" y="40" width="720" height="680" as="geometry"/>
+        </mxCell>
+
+        <!-- Ingestion Layer -->
+        <mxCell id="rc-ingestion" value="Ingestion Layer" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1f5e1;strokeColor=#82b366;verticalAlign=top;fontSize=12;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="820" y="80" width="340" height="140" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="thanos-receive" value="Thanos Receive&#xa;StatefulSet (3 replicas)&#xa;Local TSDB (2h)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" vertex="1" parent="1">
+          <mxGeometry x="840" y="120" width="140" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="loki-distributor" value="Loki Distributor&#xa;Deployment (3 replicas)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="120" width="140" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- Processing Layer -->
+        <mxCell id="rc-processing" value="Processing &amp; Storage Layer" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1f5e1;strokeColor=#82b366;verticalAlign=top;fontSize=12;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="820" y="240" width="680" height="240" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="thanos-query" value="Thanos Query&#xa;Deployment (2)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" vertex="1" parent="1">
+          <mxGeometry x="840" y="280" width="130" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="thanos-store" value="Thanos Store&#xa;Deployment (2)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" vertex="1" parent="1">
+          <mxGeometry x="840" y="360" width="130" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="thanos-compact" value="Thanos&#xa;Compactor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" vertex="1" parent="1">
+          <mxGeometry x="990" y="280" width="100" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="loki-ingester" value="Loki Ingester&#xa;Deployment (3)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="280" width="130" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="loki-querier" value="Loki Querier&#xa;Deployment (2)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="360" width="130" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="loki-query-frontend" value="Loki Query&#xa;Frontend (2)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="280" width="120" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="elasticache" value="ElastiCache&#xa;Memcached&#xa;(3 nodes)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#d0cee2;strokeColor=#56517e;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="370" width="90" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- Frontend Layer -->
+        <mxCell id="rc-frontend" value="Frontend Layer" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1f5e1;strokeColor=#82b366;verticalAlign=top;fontSize=12;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="820" y="500" width="340" height="140" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="grafana" value="Grafana&#xa;Deployment (2)&#xa;Port 3000" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fad7ac;strokeColor=#b46504;" vertex="1" parent="1">
+          <mxGeometry x="840" y="540" width="140" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="alertmanager" value="Alertmanager&#xa;StatefulSet (3)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fad7ac;strokeColor=#b46504;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="540" width="140" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- AWS Services -->
+        <mxCell id="aws-container" value="AWS Services" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;fontSize=14;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="1200" y="500" width="300" height="200" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="s3-metrics" value="S3 Metrics Bucket&#xa;90-day retention&#xa;+ downsampling" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#b0e3e6;strokeColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="540" width="120" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="s3-logs" value="S3 Logs Bucket&#xa;90-day retention" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#b0e3e6;strokeColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="540" width="120" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- Arrows: Management Cluster 1 to Internet -->
+        <mxCell id="arrow1" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#d79b00;endArrow=block;endFill=1;" edge="1" parent="1" source="mc1-otel" target="nlb-metrics">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow1-label" value="remote-write&#xa;HTTPS + mTLS" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;fontColor=#d79b00;" vertex="1" connectable="0" parent="arrow1">
+          <mxGeometry x="-0.2" y="2" relative="1" as="geometry">
+            <mxPoint as="offset"/>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="arrow2" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#d79b00;endArrow=block;endFill=1;" edge="1" parent="1" source="mc1-fluentbit" target="nlb-logs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow2-label" value="Loki push&#xa;HTTPS + mTLS" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;fontColor=#d79b00;" vertex="1" connectable="0" parent="arrow2">
+          <mxGeometry x="-0.2" y="2" relative="1" as="geometry">
+            <mxPoint as="offset"/>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Arrows: Management Cluster 2 to Internet -->
+        <mxCell id="arrow3" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#d79b00;endArrow=block;endFill=1;" edge="1" parent="1" source="mc2-otel" target="nlb-metrics">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="arrow4" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#d79b00;endArrow=block;endFill=1;" edge="1" parent="1" source="mc2-fluentbit" target="nlb-logs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Arrows: Internet to Regional Cluster -->
+        <mxCell id="arrow5" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#10739e;endArrow=block;endFill=1;" edge="1" parent="1" source="nlb-metrics" target="thanos-receive">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow5-label" value="routes" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" vertex="1" connectable="0" parent="arrow5">
+          <mxGeometry x="-0.2" y="2" relative="1" as="geometry">
+            <mxPoint as="offset"/>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="arrow6" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#10739e;endArrow=block;endFill=1;" edge="1" parent="1" source="nlb-logs" target="loki-distributor">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow6-label" value="routes" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" vertex="1" connectable="0" parent="arrow6">
+          <mxGeometry x="-0.2" y="2" relative="1" as="geometry">
+            <mxPoint as="offset"/>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Arrows: Ingestion to Storage -->
+        <mxCell id="arrow7" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#0e8088;endArrow=block;endFill=1;dashed=1;" edge="1" parent="1" source="thanos-receive" target="s3-metrics">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow7-label" value="upload blocks&#xa;(Pod Identity)" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" vertex="1" connectable="0" parent="arrow7">
+          <mxGeometry x="-0.2" y="2" relative="1" as="geometry">
+            <mxPoint as="offset"/>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="arrow8" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#0e8088;endArrow=block;endFill=1;dashed=1;" edge="1" parent="1" source="loki-distributor" target="s3-logs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow8-label" value="flush chunks&#xa;(Pod Identity)" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" vertex="1" connectable="0" parent="arrow8">
+          <mxGeometry x="-0.2" y="2" relative="1" as="geometry">
+            <mxPoint as="offset"/>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Arrows: Query paths -->
+        <mxCell id="arrow9" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=1;strokeColor=#10739e;endArrow=block;endFill=1;" edge="1" parent="1" source="thanos-query" target="thanos-receive">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="arrow10" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=1;strokeColor=#10739e;endArrow=block;endFill=1;" edge="1" parent="1" source="thanos-query" target="thanos-store">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="arrow11" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=1;strokeColor=#0e8088;endArrow=block;endFill=1;dashed=1;" edge="1" parent="1" source="thanos-store" target="s3-metrics">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow11-label" value="read" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=9;" vertex="1" connectable="0" parent="arrow11">
+          <mxGeometry x="-0.2" y="2" relative="1" as="geometry">
+            <mxPoint as="offset"/>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Cache connections -->
+        <mxCell id="arrow12" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=1;strokeColor=#56517e;endArrow=block;endFill=1;dashed=1;" edge="1" parent="1" source="thanos-query" target="elasticache">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow12-label" value="cache" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=9;" vertex="1" connectable="0" parent="arrow12">
+          <mxGeometry x="-0.2" y="2" relative="1" as="geometry">
+            <mxPoint as="offset"/>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="arrow13" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=1;strokeColor=#56517e;endArrow=block;endFill=1;dashed=1;" edge="1" parent="1" source="loki-query-frontend" target="elasticache">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Grafana connections -->
+        <mxCell id="arrow14" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#b46504;endArrow=block;endFill=1;" edge="1" parent="1" source="grafana" target="thanos-query">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow14-label" value="datasource" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" vertex="1" connectable="0" parent="arrow14">
+          <mxGeometry x="-0.2" y="2" relative="1" as="geometry">
+            <mxPoint as="offset"/>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="arrow15" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#b46504;endArrow=block;endFill=1;" edge="1" parent="1" source="grafana" target="loki-query-frontend">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow15-label" value="datasource" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;" vertex="1" connectable="0" parent="arrow15">
+          <mxGeometry x="-0.2" y="2" relative="1" as="geometry">
+            <mxPoint as="offset"/>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Internal MC1 arrows -->
+        <mxCell id="arrow16" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=1;strokeColor=#9673a6;endArrow=block;endFill=1;" edge="1" parent="1" source="mc1-prometheus" target="mc1-otel">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow16-label" value="scrape" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=9;" vertex="1" connectable="0" parent="arrow16">
+          <mxGeometry x="-0.2" y="2" relative="1" as="geometry">
+            <mxPoint as="offset"/>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend-container" value="Legend" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;fontSize=12;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="80" y="600" width="320" height="120" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="legend1" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#d79b00;endArrow=block;endFill=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="100" y="640" as="sourcePoint"/>
+            <mxPoint x="160" y="640" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="legend1-label" value="mTLS authenticated traffic" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="170" y="630" width="180" height="20" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="legend2" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#0e8088;endArrow=block;endFill=1;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="100" y="670" as="sourcePoint"/>
+            <mxPoint x="160" y="670" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="legend2-label" value="S3 storage (Pod Identity)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="170" y="660" width="180" height="20" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="legend3" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=1;strokeColor=#10739e;endArrow=block;endFill=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="100" y="700" as="sourcePoint"/>
+            <mxPoint x="160" y="700" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="legend3-label" value="Internal query/data flow" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="170" y="690" width="180" height="20" as="geometry"/>
+        </mxCell>
+
+        <!-- Data Workflow Design Steps -->
+        <mxCell id="workflow-container" value="Data Workflow Steps" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff4e6;strokeColor=#d6b656;verticalAlign=top;fontSize=14;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="80" y="760" width="1420" height="400" as="geometry"/>
+        </mxCell>
+
+        <!-- Metrics Workflow -->
+        <mxCell id="metrics-workflow-title" value="Metrics Data Flow" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="100" y="780" width="200" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step1-metrics" value="Step 1&#xa;Pod Metrics&#xa;Exposed" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="100" y="820" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step2-metrics" value="Step 2&#xa;Prometheus&#xa;Scrapes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="220" y="820" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step3-metrics" value="Step 3&#xa;OTEL Collector&#xa;Federates" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="340" y="820" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step4-metrics" value="Step 4&#xa;Remote Write&#xa;(mTLS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcc99;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="460" y="820" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step5-metrics" value="Step 5&#xa;Thanos Receive&#xa;Buffers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" vertex="1" parent="1">
+          <mxGeometry x="580" y="820" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step6-metrics" value="Step 6&#xa;Upload to S3&#xa;(Pod Identity)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b0e3e6;strokeColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="700" y="820" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step7-metrics" value="Step 7&#xa;Compactor&#xa;Downsamples" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" vertex="1" parent="1">
+          <mxGeometry x="820" y="820" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step8-metrics" value="Step 8&#xa;Thanos Query&#xa;Unified View" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" vertex="1" parent="1">
+          <mxGeometry x="940" y="820" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step9-metrics" value="Step 9&#xa;Grafana&#xa;Visualizes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fad7ac;strokeColor=#b46504;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="820" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- Metrics workflow arrows -->
+        <mxCell id="metrics-arrow1" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#666666;endArrow=block;endFill=1;" edge="1" parent="1" source="step1-metrics" target="step2-metrics">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="metrics-arrow2" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#666666;endArrow=block;endFill=1;" edge="1" parent="1" source="step2-metrics" target="step3-metrics">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="metrics-arrow3" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#666666;endArrow=block;endFill=1;" edge="1" parent="1" source="step3-metrics" target="step4-metrics">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="metrics-arrow4" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#666666;endArrow=block;endFill=1;" edge="1" parent="1" source="step4-metrics" target="step5-metrics">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="metrics-arrow5" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#666666;endArrow=block;endFill=1;" edge="1" parent="1" source="step5-metrics" target="step6-metrics">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="metrics-arrow6" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#666666;endArrow=block;endFill=1;" edge="1" parent="1" source="step6-metrics" target="step7-metrics">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="metrics-arrow7" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#666666;endArrow=block;endFill=1;" edge="1" parent="1" source="step7-metrics" target="step8-metrics">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="metrics-arrow8" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#666666;endArrow=block;endFill=1;" edge="1" parent="1" source="step8-metrics" target="step9-metrics">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Logs Workflow -->
+        <mxCell id="logs-workflow-title" value="Logs Data Flow" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="100" y="920" width="200" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step1-logs" value="Step 1&#xa;Container&#xa;Logs Written" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="100" y="960" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step2-logs" value="Step 2&#xa;Fluent Bit&#xa;Tails Logs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="220" y="960" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step3-logs" value="Step 3&#xa;Enrich&#xa;Metadata" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="340" y="960" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step4-logs" value="Step 4&#xa;Loki Push&#xa;(mTLS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcc99;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="460" y="960" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step5-logs" value="Step 5&#xa;Loki Distributor&#xa;Receives" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" vertex="1" parent="1">
+          <mxGeometry x="580" y="960" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step6-logs" value="Step 6&#xa;Ingester&#xa;Batches" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" vertex="1" parent="1">
+          <mxGeometry x="700" y="960" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step7-logs" value="Step 7&#xa;Flush to S3&#xa;(Pod Identity)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b0e3e6;strokeColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="820" y="960" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step8-logs" value="Step 8&#xa;Querier Reads&#xa;Hot + Cold" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" vertex="1" parent="1">
+          <mxGeometry x="940" y="960" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step9-logs" value="Step 9&#xa;Grafana&#xa;Displays" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fad7ac;strokeColor=#b46504;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="960" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- Logs workflow arrows -->
+        <mxCell id="logs-arrow1" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#666666;endArrow=block;endFill=1;" edge="1" parent="1" source="step1-logs" target="step2-logs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="logs-arrow2" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#666666;endArrow=block;endFill=1;" edge="1" parent="1" source="step2-logs" target="step3-logs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="logs-arrow3" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#666666;endArrow=block;endFill=1;" edge="1" parent="1" source="step3-logs" target="step4-logs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="logs-arrow4" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#666666;endArrow=block;endFill=1;" edge="1" parent="1" source="step4-logs" target="step5-logs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="logs-arrow5" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#666666;endArrow=block;endFill=1;" edge="1" parent="1" source="step5-logs" target="step6-logs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="logs-arrow6" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#666666;endArrow=block;endFill=1;" edge="1" parent="1" source="step6-logs" target="step7-logs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="logs-arrow7" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#666666;endArrow=block;endFill=1;" edge="1" parent="1" source="step7-logs" target="step8-logs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="logs-arrow8" value="" style="edgeStyle=none;curved=0;html=1;strokeWidth=2;strokeColor=#666666;endArrow=block;endFill=1;" edge="1" parent="1" source="step8-logs" target="step9-logs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Key Design Decisions Panel -->
+        <mxCell id="design-decisions" value="Key Design Decisions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;fontSize=12;fontStyle=1;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="800" width="280" height="240" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="decision1" value="✓ mTLS Authentication&#xa;  No API keys needed" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="830" width="260" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="decision2" value="✓ Pod Identity for S3&#xa;  No static credentials" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="865" width="260" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="decision3" value="✓ Public NLB Endpoints&#xa;  Internet-facing with TLS" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="900" width="260" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="decision4" value="✓ S3 Object Storage&#xa;  Cost-effective long-term" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="935" width="260" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="decision5" value="✓ ElastiCache Caching&#xa;  Query performance boost" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="970" width="260" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="decision6" value="✓ GitOps Deployment&#xa;  ArgoCD managed config" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="1005" width="260" height="30" as="geometry"/>
+        </mxCell>
+
+        <!-- Timing/SLA Information -->
+        <mxCell id="timing-title" value="Data Latency &amp; Retention" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="100" y="1060" width="200" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="latency-metrics" value="Metrics Path:&#xa;• Scrape: 30s intervals&#xa;• Federation: ~60s delay&#xa;• Remote Write: <5s&#xa;• S3 Upload: ~2h buffer&#xa;• Query: Sub-second" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1f5fe;strokeColor=#01579b;align=left;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="100" y="1090" width="180" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="latency-logs" value="Logs Path:&#xa;• Tail: Real-time&#xa;• Push: <10s batches&#xa;• Ingestion: <30s&#xa;• S3 Flush: ~1h buffer&#xa;• Query: Sub-second" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;align=left;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="300" y="1090" width="180" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="retention-info" value="Retention Policy:&#xa;• Raw metrics: 30 days&#xa;• 5m downsampled: 90d&#xa;• 1h downsampled: 1 year&#xa;• Logs: 90 days&#xa;• Configurable per env" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#4a148c;align=left;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="500" y="1090" width="180" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="scaling-info" value="Scaling Considerations:&#xa;• OTEL: 2 replicas/cluster&#xa;• Fluent Bit: DaemonSet&#xa;• Thanos Receive: 3 replicas&#xa;• Loki: 3 distributors&#xa;• Auto-scaling ready" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#1b5e20;align=left;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="700" y="1090" width="180" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="security-info" value="Security Layers:&#xa;• mTLS client auth&#xa;• cert-manager rotation&#xa;• Pod Identity (no keys)&#xa;• Private S3 access&#xa;• VPC security groups" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;align=left;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="900" y="1090" width="180" height="60" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
