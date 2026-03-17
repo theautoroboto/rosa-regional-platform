@@ -279,9 +279,10 @@ while true; do
     fi
 
     # Query with log stream pattern matching the task ID
+    # Log stream format: ecs/bootstrap/<task-id> (per awslogs-stream-prefix in task definition)
     LOG_EVENTS=$(aws logs filter-log-events \
         --log-group-name "$LOG_GROUP" \
-        --log-stream-name-prefix "bootstrap/$TASK_ID" \
+        --log-stream-name-prefix "ecs/bootstrap/$TASK_ID" \
         --start-time "$LOG_START_TIME" \
         --output json 2>&1)
 
@@ -316,10 +317,10 @@ while true; do
         # Fetch ALL logs for this task (from task start time)
         FINAL_LOG_START=$((TASK_START_TIME * 1000))
 
-        echo "Querying all logs for task (stream: bootstrap/$TASK_ID)..."
+        echo "Querying all logs for task (stream: ecs/bootstrap/$TASK_ID)..."
         FINAL_LOGS=$(aws logs filter-log-events \
             --log-group-name "$LOG_GROUP" \
-            --log-stream-name-prefix "bootstrap/$TASK_ID" \
+            --log-stream-name-prefix "ecs/bootstrap/$TASK_ID" \
             --start-time "$FINAL_LOG_START" \
             --output json 2>&1)
 
@@ -332,7 +333,7 @@ while true; do
                 echo "Checking if log stream exists..."
                 aws logs describe-log-streams \
                     --log-group-name "$LOG_GROUP" \
-                    --log-stream-name-prefix "bootstrap/$TASK_ID" \
+                    --log-stream-name-prefix "ecs/bootstrap/$TASK_ID" \
                     --max-items 5 || true
             fi
         else
