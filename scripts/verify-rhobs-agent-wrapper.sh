@@ -66,6 +66,10 @@ echo ""
 VERIFICATION_CMD=$(cat <<'VERIFY_EOF'
 set -euo pipefail
 
+# Disable output buffering for immediate CloudWatch log visibility
+exec 2>&1  # Redirect stderr to stdout
+export PYTHONUNBUFFERED=1
+
 echo "=========================================="
 echo "RHOBS Agent Verification"
 echo "=========================================="
@@ -85,23 +89,30 @@ fi
 echo "✓ observability namespace exists"
 
 # Check OTEL Collector
-echo "Checking for OTEL Collector pods..."
+echo "Checking for OTEL Collector pods..." >&2  # Force immediate output
 set +e  # Don't exit on error for diagnostics
+
+echo "DEBUG: About to run kubectl command" >&2
 OTEL_OUTPUT=$(timeout 30 kubectl get pods -n observability -l app.kubernetes.io/component=otel-collector --no-headers 2>&1)
 KUBECTL_EXIT=$?
+echo "DEBUG: kubectl exited with code: $KUBECTL_EXIT" >&2
 set -e
 
 if [ $KUBECTL_EXIT -eq 124 ]; then
-    echo "✗ ERROR: kubectl command timed out after 30 seconds"
-    echo "   This may indicate cluster API connectivity issues"
+    echo "✗ ERROR: kubectl command timed out after 30 seconds" >&2
+    echo "   This may indicate cluster API connectivity issues" >&2
+    sleep 1  # Allow logs to flush
     exit 1
 elif [ $KUBECTL_EXIT -ne 0 ]; then
-    echo "✗ ERROR: kubectl command failed with exit code $KUBECTL_EXIT"
-    echo "   Output: $OTEL_OUTPUT"
+    echo "✗ ERROR: kubectl command failed with exit code $KUBECTL_EXIT" >&2
+    echo "   Output: $OTEL_OUTPUT" >&2
+    sleep 1  # Allow logs to flush
     exit 1
 fi
 
+echo "DEBUG: Parsing kubectl output" >&2
 OTEL_PODS=$(echo "$OTEL_OUTPUT" | grep Running | wc -l)
+echo "DEBUG: Found $OTEL_PODS running OTEL pods" >&2
 
 if [ "$OTEL_PODS" -gt 0 ]; then
     echo "✓ OTEL Collector running ($OTEL_PODS pods)"
@@ -272,7 +283,7 @@ RUN_TASK_OUTPUT=$(aws ecs run-task \
   --overrides "{
     \"containerOverrides\": [{
       \"name\": \"bootstrap\",
-      \"command\": [\"aws s3 cp s3://${STATE_BUCKET}/${SCRIPT_KEY} /tmp/verify.sh && chmod +x /tmp/verify.sh && /tmp/verify.sh\"],
+      \"command\": [\"set -x; aws s3 cp s3://${STATE_BUCKET}/${SCRIPT_KEY} /tmp/verify.sh && chmod +x /tmp/verify.sh && /tmp/verify.sh 2>&1; EXIT_CODE=\\\$?; sleep 2; exit \\\$EXIT_CODE\"],
       \"environment\": [
         {\"name\": \"CLUSTER_NAME\", \"value\": \"$CLUSTER_NAME\"},
         {\"name\": \"AWS_REGION\", \"value\": \"$AWS_REGION\"}

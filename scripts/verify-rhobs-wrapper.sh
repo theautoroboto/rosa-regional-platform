@@ -66,6 +66,10 @@ echo ""
 VERIFICATION_CMD=$(cat <<'VERIFY_EOF'
 set -euo pipefail
 
+# Disable output buffering for immediate CloudWatch log visibility
+exec 2>&1  # Redirect stderr to stdout
+export PYTHONUNBUFFERED=1
+
 echo "=========================================="
 echo "RHOBS Verification"
 echo "=========================================="
@@ -294,7 +298,7 @@ RUN_TASK_OUTPUT=$(aws ecs run-task \
   --overrides "{
     \"containerOverrides\": [{
       \"name\": \"bootstrap\",
-      \"command\": [\"aws s3 cp s3://${STATE_BUCKET}/${SCRIPT_KEY} /tmp/verify.sh && chmod +x /tmp/verify.sh && /tmp/verify.sh\"],
+      \"command\": [\"set -x; aws s3 cp s3://${STATE_BUCKET}/${SCRIPT_KEY} /tmp/verify.sh && chmod +x /tmp/verify.sh && /tmp/verify.sh 2>&1; EXIT_CODE=\\\$?; sleep 2; exit \\\$EXIT_CODE\"],
       \"environment\": [
         {\"name\": \"CLUSTER_NAME\", \"value\": \"$CLUSTER_NAME\"},
         {\"name\": \"AWS_REGION\", \"value\": \"$AWS_REGION\"}
