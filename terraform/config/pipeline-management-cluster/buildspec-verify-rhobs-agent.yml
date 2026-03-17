@@ -9,6 +9,7 @@ phases:
       - |
         chmod +x \
           ./scripts/buildspec/verify-rhobs-agent.sh \
+          ./scripts/verify-rhobs-agent-wrapper.sh \
           ./scripts/pipeline-common/init-terraform-backend.sh
 
   build:

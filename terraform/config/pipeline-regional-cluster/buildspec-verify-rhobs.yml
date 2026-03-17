@@ -6,7 +6,11 @@ env:
 phases:
   install:
     commands:
-      - chmod +x ./scripts/buildspec/verify-rhobs.sh ./scripts/pipeline-common/init-terraform-backend.sh
+      - |
+        chmod +x \
+          ./scripts/buildspec/verify-rhobs.sh \
+          ./scripts/verify-rhobs-wrapper.sh \
+          ./scripts/pipeline-common/init-terraform-backend.sh
 
   build:
     on-failure: ABORT

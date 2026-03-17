@@ -42,17 +42,24 @@ graph LR
 
 ### How It Works
 
-The verification script:
+Since EKS clusters are **fully private** with no public API endpoints, verification runs as **ECS Fargate tasks** inside the VPC (same pattern as ArgoCD bootstrap):
 
-1. Queries Thanos API for `up` metrics with `cluster_id` label
-2. Queries Loki API for logs with `cluster` label
-3. Retries for up to 5 minutes (metrics/logs may take time to flow)
-4. Exits with status code 1 if no data found
+1. CodeBuild triggers the verification buildspec
+2. The buildspec reads Terraform outputs (ECS cluster ARN, task definition, etc.)
+3. Launches an ECS Fargate task in the private subnets with VPC access to EKS
+4. Inside the ECS task:
+   - Configures kubectl to access the private EKS API
+   - Queries Thanos API for `up` metrics with `cluster_id` label
+   - Queries Loki API for logs with `cluster` label
+   - Retries for up to 5 minutes (metrics/logs may take time to flow)
+5. CodeBuild monitors the ECS task logs and exit code
+6. Exits with status code 1 if no data found
 
 ### Files
 
 - **Buildspec**: [terraform/config/pipeline-regional-cluster/buildspec-verify-rhobs.yml](../terraform/config/pipeline-regional-cluster/buildspec-verify-rhobs.yml)
-- **Script**: [scripts/buildspec/verify-rhobs.sh](../scripts/buildspec/verify-rhobs.sh)
+- **Pipeline Script**: [scripts/buildspec/verify-rhobs.sh](../scripts/buildspec/verify-rhobs.sh) - Sets up environment and calls wrapper
+- **ECS Wrapper**: [scripts/verify-rhobs-wrapper.sh](../scripts/verify-rhobs-wrapper.sh) - Launches ECS Fargate task with verification logic
 
 ### Adding to CodePipeline
 
