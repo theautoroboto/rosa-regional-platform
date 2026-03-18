@@ -172,9 +172,16 @@ if contains_element "$TARGET_ENVIRONMENT" "${MONITORED_ENVS[@]}"; then
             --region "$REGION" 2>/dev/null || echo "")
 
         if [[ -z "$SLACK_WEBHOOK_URL_RESOLVED" ]]; then
-            echo "⚠️  Warning: Failed to resolve SSM parameter: $SSM_PARAM_NAME"
-            echo "   Slack notifications will be disabled for this environment."
-            SLACK_WEBHOOK_URL=""
+            # For monitored environments, fail fast if SSM parameter cannot be resolved
+            echo "❌ Error: Failed to resolve SSM parameter: $SSM_PARAM_NAME"
+            echo "   Environment '$TARGET_ENVIRONMENT' requires Slack notifications."
+            echo "   Please ensure the SSM parameter exists and contains a valid webhook URL."
+            echo ""
+            echo "   To create the parameter, run:"
+            echo "   aws ssm put-parameter --name '$SSM_PARAM_NAME' \\"
+            echo "     --value 'https://hooks.slack.com/services/...' \\"
+            echo "     --type SecureString --region $REGION"
+            exit 1
         else
             SLACK_WEBHOOK_URL="$SLACK_WEBHOOK_URL_RESOLVED"
         fi
@@ -194,9 +201,9 @@ echo "  GitHub Branch:      $GITHUB_BRANCH"
 echo "  Target Environment: $TARGET_ENVIRONMENT"
 echo "  Name Prefix:        ${NAME_PREFIX:-<none>}"
 if [[ -n "$SLACK_WEBHOOK_URL" ]]; then
-    echo "  Slack Webhook:      ${SLACK_WEBHOOK_URL:0:40}... (enabled)"
+    echo "  Slack Webhook:      enabled"
 else
-    echo "  Slack Webhook:      <disabled>"
+    echo "  Slack Webhook:      disabled"
 fi
 echo ""
 echo "✅ Proceeding with bootstrap..."
@@ -311,8 +318,7 @@ name_prefix       = "${NAME_PREFIX}"
 slack_webhook_url = "${SLACK_WEBHOOK_URL}"
 EOF
 
-echo "Terraform configuration created:"
-cat terraform.tfvars
+echo "Terraform configuration created (terraform.tfvars)"
 echo ""
 
 # Run terraform plan

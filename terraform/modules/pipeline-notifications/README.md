@@ -22,11 +22,11 @@ module "pipeline_notifications" {
 
 ## Inputs
 
-| Name                | Description                           | Type   | Required |
-| ------------------- | ------------------------------------- | ------ | -------- |
-| `slack_webhook_url` | Slack webhook URL for notifications   | string | Yes      |
-| `name_prefix`       | Prefix for resource names             | string | No       |
-| `region`            | AWS Region                            | string | Yes      |
+| Name                | Description                         | Type   | Required |
+| ------------------- | ----------------------------------- | ------ | -------- |
+| `slack_webhook_url` | Slack webhook URL for notifications | string | Yes      |
+| `name_prefix`       | Prefix for resource names           | string | No       |
+| `region`            | AWS Region                          | string | Yes      |
 
 ## Slack Webhook Setup
 

@@ -151,11 +151,11 @@ resource "aws_iam_role_policy" "slack_notifier_logs" {
 resource "aws_lambda_function" "slack_notifier" {
   filename         = data.archive_file.slack_notifier.output_path
   function_name    = "${local.resource_prefix}pipeline-failure-notifier"
-  role            = aws_iam_role.slack_notifier.arn
-  handler         = "lambda_function.lambda_handler"
+  role             = aws_iam_role.slack_notifier.arn
+  handler          = "lambda_function.lambda_handler"
   source_code_hash = data.archive_file.slack_notifier.output_base64sha256
-  runtime         = "python3.12"
-  timeout         = 30
+  runtime          = "python3.12"
+  timeout          = 30
 
   environment {
     variables = {
