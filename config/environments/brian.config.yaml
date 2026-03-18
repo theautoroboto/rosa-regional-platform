@@ -3,6 +3,6 @@ region_deployments:
     account_id: {}
     terraform_vars:
       enable_bastion: true
-      # delete: true
+      delete: true
     management_clusters:
       mc01: {}
