@@ -671,3 +671,14 @@ resource "aws_codepipeline" "regional_pipeline" {
     }
   }
 }
+
+# Pipeline Failure Notifications
+# Only enable for specific environments (staging, production, integration)
+module "pipeline_notifications" {
+  source = "../../modules/pipeline-notifications"
+  count  = contains(["stage", "staging", "production", "integration"], var.environment) ? 1 : 0
+
+  slack_webhook_url = var.slack_webhook_url
+  name_prefix       = var.name_prefix
+  region            = var.region
+}

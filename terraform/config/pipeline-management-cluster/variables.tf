@@ -63,3 +63,14 @@ variable "codebuild_image" {
   type        = string
   description = "ECR image URI for CodeBuild projects (platform image with pre-installed tools)"
 }
+
+# =============================================================================
+# Notifications Configuration
+# =============================================================================
+
+variable "slack_webhook_url" {
+  type        = string
+  description = "Slack webhook URL for pipeline failure notifications (only required for staging, production, integration environments)"
+  sensitive   = true
+  default     = ""
+}

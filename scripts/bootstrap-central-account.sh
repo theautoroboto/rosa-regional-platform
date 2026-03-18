@@ -40,6 +40,8 @@ ENVIRONMENT VARIABLES:
     GITHUB_REPOSITORY   GitHub repository in owner/name format (e.g., 'openshift-online/rosa-regional-platform')
     GITHUB_BRANCH       Git branch to track (default: main)
     TARGET_ENVIRONMENT  Environment to monitor (default: staging)
+    SLACK_WEBHOOK_URL   Slack webhook URL or SSM parameter path (optional, only for stage/staging/production/integration/ci)
+                        If not set, defaults to ssm:///rosa-regional/slack/webhook-url for monitored environments
     AWS_PROFILE         AWS CLI profile to use
 
 EXAMPLES:
@@ -129,12 +131,46 @@ GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-openshift-online/rosa-regional-platform}
 GITHUB_BRANCH="${GITHUB_BRANCH:-main}"
 TARGET_ENVIRONMENT="${TARGET_ENVIRONMENT:-staging}"
 NAME_PREFIX="${NAME_PREFIX:-}"
+SLACK_WEBHOOK_URL="${SLACK_WEBHOOK_URL:-}"
 
 # Validate repository format (must be owner/name)
 if [[ ! "$GITHUB_REPOSITORY" =~ ^[^/]+/[^/]+$ ]]; then
     echo "❌ Error: GITHUB_REPOSITORY must be in 'owner/name' format"
     echo "   Example: openshift-online/rosa-regional-platform"
     exit 1
+fi
+
+# Resolve SSM parameters for monitored environments
+MONITORED_ENVS=("stage" "staging" "production" "integration" "ci")
+if [[ " ${MONITORED_ENVS[@]} " =~ " ${TARGET_ENVIRONMENT} " ]]; then
+    # This environment requires Slack notifications
+    # If SLACK_WEBHOOK_URL is empty, try default SSM parameter path
+    if [[ -z "$SLACK_WEBHOOK_URL" ]]; then
+        SLACK_WEBHOOK_URL="ssm:///rosa-regional/slack/webhook-url"
+    fi
+
+    if [[ "$SLACK_WEBHOOK_URL" == ssm://* ]]; then
+        SSM_PARAM_NAME="${SLACK_WEBHOOK_URL#ssm://}"
+        echo "Resolving Slack webhook URL from SSM: $SSM_PARAM_NAME"
+        SLACK_WEBHOOK_URL_RESOLVED=$(aws ssm get-parameter \
+            --name "$SSM_PARAM_NAME" \
+            --with-decryption \
+            --query 'Parameter.Value' \
+            --output text \
+            --region "$REGION" 2>/dev/null || echo "")
+
+        if [[ -z "$SLACK_WEBHOOK_URL_RESOLVED" ]]; then
+            echo "⚠️  Warning: Failed to resolve SSM parameter: $SSM_PARAM_NAME"
+            echo "   Slack notifications will be disabled for this environment."
+            SLACK_WEBHOOK_URL=""
+        else
+            SLACK_WEBHOOK_URL="$SLACK_WEBHOOK_URL_RESOLVED"
+        fi
+    fi
+else
+    # Non-monitored environment - notifications not required
+    echo "ℹ️  Environment '${TARGET_ENVIRONMENT}' does not require Slack notifications (skipping)"
+    SLACK_WEBHOOK_URL=""
 fi
 
 echo ""
@@ -145,6 +181,11 @@ echo "  GitHub Repo:        $GITHUB_REPOSITORY"
 echo "  GitHub Branch:      $GITHUB_BRANCH"
 echo "  Target Environment: $TARGET_ENVIRONMENT"
 echo "  Name Prefix:        ${NAME_PREFIX:-<none>}"
+if [[ -n "$SLACK_WEBHOOK_URL" ]]; then
+    echo "  Slack Webhook:      ${SLACK_WEBHOOK_URL:0:40}... (enabled)"
+else
+    echo "  Slack Webhook:      <disabled>"
+fi
 echo ""
 echo "✅ Proceeding with bootstrap..."
 
@@ -255,6 +296,7 @@ github_branch     = "${GITHUB_BRANCH}"
 region            = "${REGION}"
 environment       = "${TARGET_ENVIRONMENT}"
 name_prefix       = "${NAME_PREFIX}"
+slack_webhook_url = "${SLACK_WEBHOOK_URL}"
 EOF
 
 echo "Terraform configuration created:"

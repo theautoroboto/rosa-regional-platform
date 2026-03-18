@@ -69,3 +69,14 @@ variable "environment_hosted_zone_id" {
   description = "Route53 hosted zone ID for the environment domain in the central account. Used by the regional pipeline for NS delegation."
   default     = ""
 }
+
+# =============================================================================
+# Notifications Configuration
+# =============================================================================
+
+variable "slack_webhook_url" {
+  type        = string
+  description = "Slack webhook URL for pipeline failure notifications (only required for staging, production, integration environments)"
+  sensitive   = true
+  default     = ""
+}
