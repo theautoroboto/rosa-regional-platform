@@ -17,6 +17,11 @@ data "archive_file" "slack_notifier" {
       import urllib3
       import os
       import boto3
+      import logging
+
+      # Configure logging
+      logger = logging.getLogger()
+      logger.setLevel(logging.INFO)
 
       # Configure HTTP with timeout and retries
       http = urllib3.PoolManager(
@@ -37,92 +42,89 @@ data "archive_file" "slack_notifier" {
               )
               return response['Parameter']['Value']
           except Exception as e:
-              print(f"ERROR: Failed to retrieve SSM parameter {param_name}: {str(e)}")
+              logger.error(f"get_webhook_url: Failed to retrieve SSM parameter '{param_name}': {str(e)}", exc_info=True)
               raise
 
       def lambda_handler(event, context):
+          # Extract pipeline details early for logging context
+          detail = event.get('detail', {})
+          pipeline_name = detail.get('pipeline', 'Unknown')
+          execution_id = detail.get('execution-id', 'Unknown')
+          state = detail.get('state', 'Unknown')
+          region = event.get('region', 'Unknown')
+          account = event.get('account', 'Unknown')
+          time = event.get('time', 'Unknown')
+
+          logger.info(f"lambda_handler: Processing pipeline failure notification for pipeline='{pipeline_name}', execution_id='{execution_id}', state='{state}'")
+
           try:
               # Retrieve webhook URL from SSM Parameter Store
               webhook_url = get_webhook_url()
           except Exception as e:
-              return {
-                  'statusCode': 500,
-                  'body': json.dumps({
-                      'error': 'Failed to retrieve Slack webhook URL from SSM',
-                      'details': str(e)
-                  })
-              }
+              logger.error(f"lambda_handler: Failed to retrieve webhook URL for pipeline='{pipeline_name}', execution_id='{execution_id}'", exc_info=True)
+              raise
+
+          # Build console URL for the failed pipeline
+          console_url = f"https://console.aws.amazon.com/codesuite/codepipeline/pipelines/{pipeline_name}/view?region={region}"
+
+          # Build Slack message with rich formatting
+          slack_message = {
+              "text": f":x: Pipeline Failure: {pipeline_name}",
+              "blocks": [
+                  {
+                      "type": "header",
+                      "text": {
+                          "type": "plain_text",
+                          "text": f":x: Pipeline Failed: {pipeline_name}"
+                      }
+                  },
+                  {
+                      "type": "section",
+                      "fields": [
+                          {
+                              "type": "mrkdwn",
+                              "text": f"*Pipeline:*\n{pipeline_name}"
+                          },
+                          {
+                              "type": "mrkdwn",
+                              "text": f"*State:*\n{state}"
+                          },
+                          {
+                              "type": "mrkdwn",
+                              "text": f"*Execution ID:*\n{execution_id}"
+                          },
+                          {
+                              "type": "mrkdwn",
+                              "text": f"*Region:*\n{region}"
+                          },
+                          {
+                              "type": "mrkdwn",
+                              "text": f"*Account:*\n{account}"
+                          },
+                          {
+                              "type": "mrkdwn",
+                              "text": f"*Time:*\n{time}"
+                          }
+                      ]
+                  },
+                  {
+                      "type": "actions",
+                      "elements": [
+                          {
+                              "type": "button",
+                              "text": {
+                                  "type": "plain_text",
+                                  "text": "View Pipeline in AWS Console"
+                              },
+                              "url": console_url,
+                              "style": "danger"
+                          }
+                      ]
+                  }
+              ]
+          }
 
           try:
-              # Extract pipeline failure details from EventBridge event
-              detail = event.get('detail', {})
-              pipeline_name = detail.get('pipeline', 'Unknown')
-              execution_id = detail.get('execution-id', 'Unknown')
-              state = detail.get('state', 'Unknown')
-              region = event.get('region', 'Unknown')
-              account = event.get('account', 'Unknown')
-              time = event.get('time', 'Unknown')
-
-              # Build console URL for the failed pipeline
-              console_url = f"https://console.aws.amazon.com/codesuite/codepipeline/pipelines/{pipeline_name}/view?region={region}"
-
-              # Build Slack message with rich formatting
-              slack_message = {
-                  "text": f":x: Pipeline Failure: {pipeline_name}",
-                  "blocks": [
-                      {
-                          "type": "header",
-                          "text": {
-                              "type": "plain_text",
-                              "text": f":x: Pipeline Failed: {pipeline_name}"
-                          }
-                      },
-                      {
-                          "type": "section",
-                          "fields": [
-                              {
-                                  "type": "mrkdwn",
-                                  "text": f"*Pipeline:*\n{pipeline_name}"
-                              },
-                              {
-                                  "type": "mrkdwn",
-                                  "text": f"*State:*\n{state}"
-                              },
-                              {
-                                  "type": "mrkdwn",
-                                  "text": f"*Execution ID:*\n{execution_id}"
-                              },
-                              {
-                                  "type": "mrkdwn",
-                                  "text": f"*Region:*\n{region}"
-                              },
-                              {
-                                  "type": "mrkdwn",
-                                  "text": f"*Account:*\n{account}"
-                              },
-                              {
-                                  "type": "mrkdwn",
-                                  "text": f"*Time:*\n{time}"
-                              }
-                          ]
-                      },
-                      {
-                          "type": "actions",
-                          "elements": [
-                              {
-                                  "type": "button",
-                                  "text": {
-                                      "type": "plain_text",
-                                      "text": "View Pipeline in AWS Console"
-                                  },
-                                  "url": console_url,
-                                  "style": "danger"
-                              }
-                          ]
-                      }
-                  ]
-              }
-
               # Send to Slack with timeout and error handling
               encoded_data = json.dumps(slack_message).encode('utf-8')
               response = http.request(
@@ -134,6 +136,7 @@ data "archive_file" "slack_notifier" {
 
               # Check if response is successful (2xx)
               if 200 <= response.status < 300:
+                  logger.info(f"lambda_handler: Successfully sent notification to Slack for pipeline='{pipeline_name}', execution_id='{execution_id}', slack_status={response.status}")
                   return {
                       'statusCode': 200,
                       'body': json.dumps({
@@ -143,52 +146,20 @@ data "archive_file" "slack_notifier" {
                       })
                   }
               else:
-                  # Non-2xx response from Slack
-                  error_msg = f"Slack webhook returned non-2xx status: {response.status}"
-                  print(f"ERROR: {error_msg}")
-                  print(f"Response body: {response.data.decode('utf-8', errors='replace')}")
-                  return {
-                      'statusCode': 500,
-                      'body': json.dumps({
-                          'error': error_msg,
-                          'slack_status': response.status,
-                          'pipeline': pipeline_name
-                      })
-                  }
+                  # Non-2xx response from Slack - log and raise to trigger retry
+                  response_body = response.data.decode('utf-8', errors='replace')
+                  logger.error(f"lambda_handler: Slack webhook returned non-2xx status for pipeline='{pipeline_name}', execution_id='{execution_id}', slack_status={response.status}, response_body='{response_body}'")
+                  raise Exception(f"Slack webhook returned status {response.status}: {response_body}")
 
           except urllib3.exceptions.TimeoutError as e:
-              error_msg = f"Timeout sending notification to Slack: {str(e)}"
-              print(f"ERROR: {error_msg}")
-              return {
-                  'statusCode': 504,
-                  'body': json.dumps({
-                      'error': 'Gateway timeout - Slack webhook unreachable',
-                      'details': str(e),
-                      'pipeline': pipeline_name if 'pipeline_name' in locals() else 'Unknown'
-                  })
-              }
+              logger.error(f"lambda_handler: Timeout sending notification to Slack for pipeline='{pipeline_name}', execution_id='{execution_id}'", exc_info=True)
+              raise
           except urllib3.exceptions.HTTPError as e:
-              error_msg = f"HTTP error sending notification to Slack: {str(e)}"
-              print(f"ERROR: {error_msg}")
-              return {
-                  'statusCode': 502,
-                  'body': json.dumps({
-                      'error': 'Bad gateway - HTTP error calling Slack webhook',
-                      'details': str(e),
-                      'pipeline': pipeline_name if 'pipeline_name' in locals() else 'Unknown'
-                  })
-              }
+              logger.error(f"lambda_handler: HTTP error sending notification to Slack for pipeline='{pipeline_name}', execution_id='{execution_id}'", exc_info=True)
+              raise
           except Exception as e:
-              error_msg = f"Unexpected error sending notification to Slack: {str(e)}"
-              print(f"ERROR: {error_msg}")
-              return {
-                  'statusCode': 500,
-                  'body': json.dumps({
-                      'error': 'Internal error processing notification',
-                      'details': str(e),
-                      'pipeline': pipeline_name if 'pipeline_name' in locals() else 'Unknown'
-                  })
-              }
+              logger.error(f"lambda_handler: Unexpected error sending notification for pipeline='{pipeline_name}', execution_id='{execution_id}'", exc_info=True)
+              raise
     EOF
     filename = "lambda_function.py"
   }
