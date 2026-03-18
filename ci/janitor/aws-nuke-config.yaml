@@ -16,6 +16,10 @@ bypass-alias-check-accounts:
   - "791666871613"
   - "855246887846"
   - "599476212575"
+  - "662212752128"
+  - "811685182089"
+  - "696000197236"
+  - "720644165472"
 
 presets:
   globals:
@@ -175,6 +179,34 @@ accounts:
 
   # e2e-dev-management-cluster-0
   "855246887846":
+    presets:
+      - globals
+      - resource-explorer
+    filters: *e2e-preserve-filters
+
+  # CI Control
+  "662212752128":
+    presets:
+      - globals
+      - resource-explorer
+    filters: *e2e-preserve-filters
+
+  # CI Mgmt 0
+  "811685182089":
+    presets:
+      - globals
+      - resource-explorer
+    filters: *e2e-preserve-filters
+
+  # CI Mgmt 1
+  "696000197236":
+    presets:
+      - globals
+      - resource-explorer
+    filters: *e2e-preserve-filters
+
+  # CI RC
+  "720644165472":
     presets:
       - globals
       - resource-explorer
