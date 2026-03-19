@@ -19,9 +19,9 @@ CI is managed through the [OpenShift CI](https://docs.ci.openshift.org/) system 
 
 The CI image is built from [ci/Containerfile](ci/Containerfile) and includes all required tools (Terraform, Helm, AWS CLI, Python/uv, etc.).
 
-## Pre-merge / Ephemeral Environment
+## Ephemeral Environment
 
-The [ci/pre-merge.py](ci/pre-merge.py) script manages ephemeral environments for CI testing. It supports two modes — provision and teardown — designed to run as separate CI steps with tests in between.
+The [ci/ephemeral-provider/main.py](ci/ephemeral-provider/main.py) script manages ephemeral environments for CI testing. It supports three modes — provision, teardown (`--teardown`), and resync (`--resync`) — designed to run as separate CI steps with tests in between.
 
 1. Creates a CI-owned git branch from the source repo/branch
 2. Bootstraps the pipeline-provisioner pointing at the CI branch
@@ -34,17 +34,16 @@ The [ci/pre-merge.py](ci/pre-merge.py) script manages ephemeral environments for
 
 ### Running locally
 
+The recommended way to run ephemeral environments locally is via Make targets. These handle container builds, Vault credential fetching, and state tracking automatically. Credentials are fetched from Vault via OIDC and passed as environment variables to the container — they never touch disk.
+
 ```bash
-# Requires uv (https://docs.astral.sh/uv/)
-
-# Provision
-BUILD_ID=abc123 ./ci/pre-merge.py --repo owner/repo --branch my-feature --creds-dir /path/to/credentials
-
-# Run tests (separate step, same BUILD_ID)
-
-# Teardown
-BUILD_ID=abc123 ./ci/pre-merge.py --teardown --repo owner/repo --branch my-feature --creds-dir /path/to/credentials
+make ephemeral-provision   # Interactive remote/branch picker, provisions environment
+make ephemeral-teardown    # Interactive picker or BUILD_ID=<id>, tears down environment
+make ephemeral-resync      # Interactive picker or BUILD_ID=<id>, rebases CI branch onto latest source
+make ephemeral-list        # List tracked environments with state
 ```
+
+Prerequisites: `fzf`, `vault`, `git`, `python3`, `uv`, and `podman` or `docker`.
 
 ### Triggering the E2E Job Manually
 
@@ -89,20 +88,6 @@ When a Prow job is running (e.g. `on-demand-e2e`), you can watch its logs in rea
 3. Click the namespace link to open the OpenShift console for the CI cluster where the job pods are running. From there you can inspect pod logs, events, and resources in real time.
 
 > **Note:** Access to the namespace is restricted to the person who triggered the job (i.e. the PR author for pre-submit jobs). There is no configuration option to grant access to additional users.
-
-## Download CodeBuild Logs
-
-`ci/download-codebuild-logs.py` downloads CloudWatch logs for all CodeBuild projects matching a CI prefix. It fetches every log stream (build run) per project and names files with timestamps (e.g. `ci-202982-regional-apply.20260306-075604.log`) for chronological ordering. ANSI color codes are stripped from the output.
-
-```bash
-# Download all logs for a CI run (requires uv)
-./ci/download-codebuild-logs.py ci-202982
-
-# Specify a region (default: us-east-1)
-./ci/download-codebuild-logs.py ci-202982 --region eu-west-1
-```
-
-Logs are saved to `codebuild-logs-<ci-prefix>/`. The same download logic is used by `ephemerallib` to collect logs into Prow artifacts (with additional secret redaction).
 
 ## CI Credentials
 
