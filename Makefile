@@ -36,7 +36,7 @@ help:
 	@echo "  ephemeral-teardown                    - Tear down an ephemeral environment"
 	@echo "  ephemeral-resync                      - Resync an ephemeral environment's CI branch"
 	@echo "  ephemeral-list                        - List ephemeral environments"
-	@echo "  ephemeral-shell                       - Interactive shell with regional creds"
+	@echo "  ephemeral-shell                       - Interactive shell for Platform API access"
 	@echo "  ephemeral-e2e                         - Run e2e tests against an ephemeral env"
 	@echo ""
 	@echo "  help                                  - Show this help message"
