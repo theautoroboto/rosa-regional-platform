@@ -80,7 +80,7 @@ output "thanos_s3_config" {
   description = "S3 configuration object for Thanos"
   value = {
     bucket = aws_s3_bucket.rhobs_metrics.id
-    region = data.aws_region.current.name
+    region = data.aws_region.current.id
   }
 }
 
@@ -88,7 +88,7 @@ output "loki_s3_config" {
   description = "S3 configuration object for Loki"
   value = {
     bucket = aws_s3_bucket.rhobs_logs.id
-    region = data.aws_region.current.name
+    region = data.aws_region.current.id
   }
 }
 

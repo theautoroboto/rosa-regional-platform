@@ -7,6 +7,7 @@
   "account_id": "910485845704",
   "region": "us-east-2",
   "alias": "mc01",
+  "environment_domain": "",
   "enable_bastion": true,
   "sector": "cdoan-central",
   "management_id": "mc01",

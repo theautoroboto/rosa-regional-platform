@@ -10,6 +10,7 @@ terraform_vars:
   account_id: "{{ account_id }}"
   region: "{{ aws_region }}"
   alias: "regional-{{ aws_region }}"
+  environment_domain: "{{ environment_config.domain }}"
 values:
   management-cluster:
     hypershift:

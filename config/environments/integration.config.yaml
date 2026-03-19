@@ -3,6 +3,7 @@ environment:
 
 terraform_vars:
   enable_bastion: true
+  environment_domain: "{{ environment_config.domain }}"
 
 region_deployments:
   us-east-1:

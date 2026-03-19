@@ -8,12 +8,13 @@
 
 Successfully implemented Thanos Receive with public mTLS-secured API Gateway for metric/log ingestion. The infrastructure foundation is **100% complete** with all Terraform modules, Helm charts, and GitOps integration in place. Ready for deployment and validation.
 
-**Progress:** 8/15 tasks complete (53%)
+**Progress:** 9/15 tasks complete (60%)
 **Phase 1 (Infrastructure):** ✅ 100% Complete
 **Phase 2 (Applications):** ✅ 100% Complete
 **Phase 3 (Certificates):** ⏳ Pending
 **Phase 4 (Validation):** ⏳ Pending
 **Phase 5 (Documentation):** ⏳ Pending
+**Phase 6 (Rendering):** ✅ 100% Complete
 
 ---
 
@@ -164,11 +165,23 @@ rhobs:
 
 **Auto-discovery:** RHOBS Helm chart automatically discovered in `argocd/config/regional-cluster/rhobs/` by the matrix generator
 
+### 9. ApplicationSet Manifest Rendering
+**Path:** `deploy/*/*/argocd/regional-cluster-manifests/applicationset.yaml`
+
+**Updated:**
+- ✅ Ran `scripts/render.py` to regenerate all ApplicationSet manifests
+- ✅ Verified RHOBS values injected in generated manifests:
+  - `rhobs.s3.metrics_bucket`, `rhobs.s3.logs_bucket`
+  - `rhobs.memcached.address`, `rhobs.memcached.port`
+  - `rhobs.thanos.serviceAccount.roleArn`, `rhobs.thanos.receive.targetGroupBinding.targetGroupARN`
+  - `rhobs.loki.serviceAccount.roleArn`, `rhobs.loki.distributor.targetGroupBinding.targetGroupARN`
+- ✅ All 5 region deployments rendered successfully
+
 ---
 
-## ⏳ Pending Work (7 Tasks)
+## ⏳ Pending Work (6 Tasks)
 
-### 9. RHOBS Agent Helm Chart (Management Cluster)
+### 10. RHOBS Agent Helm Chart (Management Cluster)
 **Status:** Not Started
 **Estimated Effort:** 2-4 hours
 
@@ -181,7 +194,7 @@ rhobs:
 - Update OTEL Collector to mount certificates: `/etc/otel/certs/{tls.crt,tls.key,ca.crt}`
 - Configure Fluent Bit with mTLS for log forwarding
 
-### 10. Lambda Certificate Issuer
+### 11. Lambda Certificate Issuer
 **Status:** Not Started
 **Estimated Effort:** 3-5 hours
 
@@ -195,7 +208,7 @@ rhobs:
 - IAM permissions: `acm-pca:IssueCertificate`, `secretsmanager:PutSecretValue`
 - Package Python dependencies (cryptography, boto3)
 
-### 11. Management Cluster Cert Issuer Integration
+### 12. Management Cluster Cert Issuer Integration
 **Status:** Not Started
 **Estimated Effort:** 1-2 hours
 
@@ -206,7 +219,7 @@ rhobs:
 - Add output: `rhobs_client_cert_secret` (Secrets Manager ARN)
 - Wire to RHOBS agent ApplicationSet values
 
-### 12. Pipeline Validation Buildspec
+### 13. Pipeline Validation Buildspec
 **Status:** Not Started
 **Estimated Effort:** 3-4 hours
 
@@ -221,7 +234,7 @@ rhobs:
   - Verify S3 TSDB blocks
   - Output validation result JSON
 
-### 13. Pipeline Validation Stage Integration
+### 14. Pipeline Validation Stage Integration
 **Status:** Not Started
 **Estimated Effort:** 1-2 hours
 
@@ -231,7 +244,7 @@ rhobs:
   - Add pipeline stage: "Validate" after "Bootstrap-ArgoCD"
   - Configure as non-blocking (on-failure: CONTINUE)
 
-### 14. Architecture Decision Record
+### 15. Architecture Decision Record
 **Status:** Not Started
 **Estimated Effort:** 2-3 hours
 
@@ -245,7 +258,7 @@ rhobs:
   - Alternatives considered: AWS IAM, VPC peering, separate API Gateways
   - Consequences: Cost (~$750-950/month per region), operational overhead
 
-### 15. Module Documentation
+### 16. Module Documentation
 **Status:** Not Started
 **Estimated Effort:** 3-4 hours
 
@@ -375,21 +388,19 @@ graph TD
 
 ## Known Issues & Limitations
 
-1. **ApplicationSet Render:** Need to run `scripts/render.py` to regenerate manifests after RHOBS additions
-2. **Client Cert Distribution:** Lambda issuer not yet implemented - manual cert issuance required for testing
-3. **Validation:** Pipeline validation stage not integrated - manual validation required
-4. **Documentation:** ADR and module READMEs not yet written
+1. **Client Cert Distribution:** Lambda issuer not yet implemented - manual cert issuance required for testing
+2. **Validation:** Pipeline validation stage not integrated - manual validation required
+3. **Documentation:** ADR and module READMEs not yet written
 
 ---
 
 ## Next Steps (Priority Order)
 
-1. **Run `scripts/render.py`** to regenerate ApplicationSet manifests with RHOBS values
-2. **Deploy to integration environment** to validate infrastructure
-3. **Implement Lambda cert issuer** for automated client certificate issuance
-4. **Add pipeline validation stage** for automated testing
-5. **Write ADR-006** documenting the mTLS decision
-6. **Create module documentation** with usage examples
+1. **Deploy to integration environment** to validate infrastructure
+2. **Implement Lambda cert issuer** for automated client certificate issuance
+3. **Add pipeline validation stage** for automated testing
+4. **Write ADR-006** documenting the mTLS decision
+5. **Create module documentation** with usage examples
 
 ---
 
@@ -449,7 +460,7 @@ graph TD
 
 The RHOBS infrastructure is **production-ready** for deployment with complete Terraform modules, Helm charts, and GitOps integration. The architecture follows FedRAMP security requirements with mTLS authentication, encryption at rest and in transit, and comprehensive audit logging.
 
-**Total Implementation Time:** ~8 hours
-**Completion:** 53% (8/15 tasks)
+**Total Implementation Time:** ~9 hours
+**Completion:** 60% (9/15 tasks)
 **Infrastructure Readiness:** 100%
 **Next Critical Path:** Certificate issuance automation → Pipeline validation → Documentation
