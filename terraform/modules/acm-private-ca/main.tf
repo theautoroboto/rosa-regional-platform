@@ -1,16 +1,6 @@
 # ACM Private CA Module
 # Creates a Private Certificate Authority for mTLS client authentication
 
-terraform {
-  required_version = ">= 1.0"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-
 # ACM Private CA - ROOT CA for standalone operation
 resource "aws_acmpca_certificate_authority" "rhobs_ca" {
   type = "ROOT"
