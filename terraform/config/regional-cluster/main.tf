@@ -105,7 +105,9 @@ module "api_gateway" {
 # =============================================================================
 
 # ACM Private CA for mTLS client certificate authentication
+# Only created when environment_domain is set (required for RHOBS API Gateway)
 module "rhobs_ca" {
+  count  = var.environment_domain != null ? 1 : 0
   source = "../../modules/acm-private-ca"
 
   regional_id = var.regional_id
@@ -136,7 +138,9 @@ module "rhobs_infrastructure" {
 }
 
 # RHOBS API Gateway with mTLS authentication for metric/log ingestion
+# Only created when environment_domain is set (requires custom domain for mTLS)
 module "rhobs_api_gateway" {
+  count  = var.environment_domain != null ? 1 : 0
   source = "../../modules/rhobs-api-gateway"
 
   vpc_id                 = module.regional_cluster.vpc_id
@@ -146,12 +150,12 @@ module "rhobs_api_gateway" {
   cluster_name           = module.regional_cluster.cluster_name
 
   # mTLS configuration from ACM Private CA
-  truststore_uri     = module.rhobs_ca.truststore_s3_uri
-  truststore_version = module.rhobs_ca.truststore_version
+  truststore_uri     = module.rhobs_ca[0].truststore_s3_uri
+  truststore_version = module.rhobs_ca[0].truststore_version
 
   # Custom domain (e.g. rhobs.us-east-1.int0.rosa.devshift.net)
-  api_domain_name         = var.environment_domain != null ? "rhobs.${var.region}.${var.environment_domain}" : null
-  regional_hosted_zone_id = var.environment_domain != null ? aws_route53_zone.regional[0].zone_id : null
+  api_domain_name         = "rhobs.${var.region}.${var.environment_domain}"
+  regional_hosted_zone_id = aws_route53_zone.regional[0].zone_id
 }
 
 # =============================================================================

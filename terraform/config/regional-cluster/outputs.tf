@@ -364,28 +364,28 @@ output "hyperfleet_configuration_summary" {
 # API Gateway Endpoints
 output "rhobs_api_endpoint" {
   description = "RHOBS API Gateway domain name (e.g. rhobs.us-east-1.int0.rosa.devshift.net)"
-  value       = module.rhobs_api_gateway.api_domain_name
+  value       = try(module.rhobs_api_gateway[0].api_domain_name, null)
 }
 
 output "rhobs_metrics_endpoint" {
   description = "Thanos Receive metrics ingestion endpoint URL"
-  value       = module.rhobs_api_gateway.api_endpoint_metrics
+  value       = try(module.rhobs_api_gateway[0].api_endpoint_metrics, null)
 }
 
 output "rhobs_logs_endpoint" {
   description = "Loki Distributor logs ingestion endpoint URL"
-  value       = module.rhobs_api_gateway.api_endpoint_logs
+  value       = try(module.rhobs_api_gateway[0].api_endpoint_logs, null)
 }
 
 # ACM Private CA
 output "rhobs_ca_arn" {
   description = "ARN of the ACM Private Certificate Authority for RHOBS mTLS"
-  value       = module.rhobs_ca.ca_arn
+  value       = try(module.rhobs_ca[0].ca_arn, null)
 }
 
 output "rhobs_truststore_s3_uri" {
   description = "S3 URI of the mTLS truststore"
-  value       = module.rhobs_ca.truststore_s3_uri
+  value       = try(module.rhobs_ca[0].truststore_s3_uri, null)
 }
 
 # S3 Buckets
@@ -413,12 +413,12 @@ output "rhobs_memcached_port" {
 # Target Groups for TargetGroupBinding
 output "rhobs_thanos_target_group_arn" {
   description = "Thanos Receive target group ARN for TargetGroupBinding"
-  value       = module.rhobs_api_gateway.thanos_target_group_arn
+  value       = try(module.rhobs_api_gateway[0].thanos_target_group_arn, null)
 }
 
 output "rhobs_loki_target_group_arn" {
   description = "Loki Distributor target group ARN for TargetGroupBinding"
-  value       = module.rhobs_api_gateway.loki_target_group_arn
+  value       = try(module.rhobs_api_gateway[0].loki_target_group_arn, null)
 }
 
 # IAM Roles
@@ -447,17 +447,17 @@ output "rhobs_configuration_summary" {
     }
     thanos = {
       role_arn           = module.rhobs_infrastructure.thanos_role_arn
-      target_group_arn   = module.rhobs_api_gateway.thanos_target_group_arn
-      ingestion_endpoint = module.rhobs_api_gateway.api_endpoint_metrics
+      target_group_arn   = try(module.rhobs_api_gateway[0].thanos_target_group_arn, null)
+      ingestion_endpoint = try(module.rhobs_api_gateway[0].api_endpoint_metrics, null)
     }
     loki = {
       role_arn           = module.rhobs_infrastructure.loki_role_arn
-      target_group_arn   = module.rhobs_api_gateway.loki_target_group_arn
-      ingestion_endpoint = module.rhobs_api_gateway.api_endpoint_logs
+      target_group_arn   = try(module.rhobs_api_gateway[0].loki_target_group_arn, null)
+      ingestion_endpoint = try(module.rhobs_api_gateway[0].api_endpoint_logs, null)
     }
     mtls = {
-      ca_arn         = module.rhobs_ca.ca_arn
-      truststore_uri = module.rhobs_ca.truststore_s3_uri
+      ca_arn         = try(module.rhobs_ca[0].ca_arn, null)
+      truststore_uri = try(module.rhobs_ca[0].truststore_s3_uri, null)
     }
   }
   sensitive = false
