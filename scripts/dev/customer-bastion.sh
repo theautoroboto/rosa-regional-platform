@@ -183,15 +183,22 @@ if aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGI
   echo "==> Stack exists, updating..."
 
   # Update stack
+  set +e
   UPDATE_OUTPUT=$(aws cloudformation update-stack \
     --stack-name "$STACK_NAME" \
     --template-body "file://$CFN_TEMPLATE" \
     --parameters $CFN_PARAMS \
     --capabilities CAPABILITY_NAMED_IAM \
-    --region "$REGION" 2>&1 || true)
+    --region "$REGION" 2>&1)
+  UPDATE_RC=$?
+  set -e
 
   if echo "$UPDATE_OUTPUT" | grep -q "No updates are to be performed"; then
     echo "==> No updates needed for stack"
+  elif [ $UPDATE_RC -ne 0 ]; then
+    echo "Error: Failed to update stack"
+    echo "$UPDATE_OUTPUT"
+    exit 1
   else
     echo "==> Waiting for stack update to complete..."
     aws cloudformation wait stack-update-complete \
