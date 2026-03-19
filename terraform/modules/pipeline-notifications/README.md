@@ -46,4 +46,3 @@ aws ssm put-parameter \
 2. Create or use existing app → Enable "Incoming Webhooks"
 3. Add webhook to workspace and select channel
 4. Copy webhook URL to use in SSM parameter above
-
