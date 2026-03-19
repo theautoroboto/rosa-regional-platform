@@ -8,15 +8,6 @@
 #     ├─ /metrics* → Thanos Receive target group (port 19291)
 #     └─ /logs*    → Loki Distributor target group (port 3100)
 
-terraform {
-  required_version = ">= 1.0"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
 
 # =============================================================================
 # Base API Gateway with mTLS Enabled
