@@ -6,20 +6,25 @@
 set -euo pipefail
 
 CREDS_DIR="${CREDS_DIR:-/var/run/rosa-credentials}"
-if [[ -r "${CREDS_DIR}/api_url" ]]; then
-  echo "Using API URL from ${CREDS_DIR}/api_url (pre-existing environment)"
-  BASE_URL="$(cat "${CREDS_DIR}/api_url")"
+
+if [[ -n "${BASE_URL:-}" ]]; then
+  echo "Using BASE_URL from environment: ${BASE_URL}"
 else
-  echo "No ${CREDS_DIR}/api_url found, falling back to terraform outputs (ephemeral environment)"
-  TF_OUTPUTS="${SHARED_DIR}/regional-terraform-outputs.json"
-  if [[ ! -r "${TF_OUTPUTS}" ]]; then
-    echo "ERROR: ${TF_OUTPUTS} does not exist or is not readable" >&2
-    exit 1
-  fi
-  BASE_URL="$(jq -r '.api_gateway_invoke_url.value // empty' "${TF_OUTPUTS}")"
-  if [[ -z "${BASE_URL}" ]]; then
-    echo "ERROR: api_gateway_invoke_url.value not found in ${TF_OUTPUTS}" >&2
-    exit 1
+  if [[ -r "${CREDS_DIR}/api_url" ]]; then
+    echo "Using API URL from ${CREDS_DIR}/api_url (pre-existing environment)"
+    BASE_URL="$(cat "${CREDS_DIR}/api_url")"
+  else
+    echo "No ${CREDS_DIR}/api_url found, falling back to terraform outputs (ephemeral environment)"
+    TF_OUTPUTS="${SHARED_DIR}/regional-terraform-outputs.json"
+    if [[ ! -r "${TF_OUTPUTS}" ]]; then
+      echo "ERROR: ${TF_OUTPUTS} does not exist or is not readable" >&2
+      exit 1
+    fi
+    BASE_URL="$(jq -r '.api_gateway_invoke_url.value // empty' "${TF_OUTPUTS}")"
+    if [[ -z "${BASE_URL}" ]]; then
+      echo "ERROR: api_gateway_invoke_url.value not found in ${TF_OUTPUTS}" >&2
+      exit 1
+    fi
   fi
 fi
 export BASE_URL

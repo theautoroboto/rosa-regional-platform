@@ -1,4 +1,4 @@
-.PHONY: help terraform-fmt terraform-init terraform-validate terraform-upgrade terraform-output-management terraform-output-regional provision-management provision-regional apply-infra-management apply-infra-regional provision-maestro-agent-iot-regional cleanup-maestro-agent-iot destroy-management destroy-regional build-platform-image test-e2e helm-lint check-rendered-files ephemeral-preflight ephemeral-provision ephemeral-teardown ephemeral-resync ephemeral-list
+.PHONY: help terraform-fmt terraform-init terraform-validate terraform-upgrade terraform-output-management terraform-output-regional provision-management provision-regional apply-infra-management apply-infra-regional provision-maestro-agent-iot-regional cleanup-maestro-agent-iot destroy-management destroy-regional build-platform-image test-e2e helm-lint check-rendered-files ephemeral-preflight ephemeral-provision ephemeral-teardown ephemeral-resync ephemeral-list ephemeral-shell ephemeral-e2e
 
 # Default target
 help:
@@ -36,6 +36,8 @@ help:
 	@echo "  ephemeral-teardown                    - Tear down an ephemeral environment"
 	@echo "  ephemeral-resync                      - Resync an ephemeral environment's CI branch"
 	@echo "  ephemeral-list                        - List ephemeral environments"
+	@echo "  ephemeral-shell                       - Interactive shell with regional creds"
+	@echo "  ephemeral-e2e                         - Run e2e tests against an ephemeral env"
 	@echo ""
 	@echo "  help                                  - Show this help message"
 
@@ -414,7 +416,7 @@ VAULT_CRED_KEYS := central_access_key central_secret_key central_assume_role_arn
 
 REPO ?= openshift-online/rosa-regional-platform
 BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
-REGION ?= us-east-1
+REGION = us-east-1
 
 # Helper: update STATE for a BUILD_ID in .ephemeral-envs (portable, no sed -i)
 # Usage: $(call update-state,BUILD_ID,NEW_STATE)
@@ -457,13 +459,13 @@ ephemeral-image: ephemeral-preflight
 # Credentials never touch disk — they live only in shell process memory.
 # Usage: $(fetch-creds) at the start of a recipe; use $$_CRED_FLAGS in container run.
 define fetch-creds
-echo "Fetching credentials from Vault (OIDC login)..."; _VAULT_TOKEN=$$(VAULT_ADDR=$(VAULT_ADDR) vault login -method=oidc -token-only 2>/dev/null) || { echo "Error: Vault OIDC login failed."; exit 1; }; _CRED_FLAGS=""; for _key in $(VAULT_CRED_KEYS); do _val=$$(VAULT_ADDR=$(VAULT_ADDR) VAULT_TOKEN=$$_VAULT_TOKEN vault kv get -mount=$(VAULT_KV_MOUNT) -field=$$_key $(VAULT_SECRET_PATH) 2>/dev/null) || { echo "Error: Failed to fetch credential '$$_key' from Vault."; exit 1; }; _ukey=$$(echo "$$_key" | tr 'a-z' 'A-Z'); _CRED_FLAGS="$$_CRED_FLAGS -e $$_ukey=$$_val"; done; echo "Credentials loaded (in-memory only)."
+echo "Fetching credentials from Vault (OIDC login)..."; _VAULT_TOKEN=$$(VAULT_ADDR=$(VAULT_ADDR) vault login -method=oidc -token-only 2>/dev/null) || { echo "Error: Vault OIDC login failed."; exit 1; }; _CRED_FLAGS=""; for _key in $(VAULT_CRED_KEYS); do _val=$$(VAULT_ADDR=$(VAULT_ADDR) VAULT_TOKEN=$$_VAULT_TOKEN vault kv get -mount=$(VAULT_KV_MOUNT) -field=$$_key $(VAULT_SECRET_PATH) 2>/dev/null) || { echo "Error: Failed to fetch credential '$$_key' from Vault."; exit 1; }; _ukey=$$(echo "$$_key" | tr 'a-z' 'A-Z'); _CRED_FLAGS="$$_CRED_FLAGS -e $$_ukey=$$_val"; case $$_key in regional_access_key) _REGIONAL_AK=$$_val;; regional_secret_key) _REGIONAL_SK=$$_val;; esac; done; echo "Credentials loaded (in-memory only)."
 endef
 
 # Provision an ephemeral environment
-# Usage: make ephemeral-provision [REPO=owner/repo] [BRANCH=branch] [REGION=region] [BUILD_ID=id]
+# Usage: make ephemeral-provision [REPO=owner/repo] [BRANCH=branch] [REGION=region] [ID=id]
 ephemeral-provision: ephemeral-image
-	$(eval BUILD_ID ?= $(shell python3 -c "import uuid; print(uuid.uuid4().hex[:8])"))
+	$(eval ID ?= $(shell python3 -c "import uuid; print(uuid.uuid4().hex[:8])"))
 	@# FZF remote + branch picker when BRANCH is not explicitly passed
 	@_BRANCH="$(BRANCH)"; \
 	_REPO="$(REPO)"; \
@@ -482,41 +484,63 @@ ephemeral-provision: ephemeral-image
 	fi; \
 	$(fetch-creds); \
 	echo "Provisioning ephemeral environment..."; \
-	echo "  BUILD_ID:          $(BUILD_ID)"; \
+	echo "  ID:                $(ID)"; \
 	echo "  REPO:              $$_REPO"; \
 	echo "  BRANCH:            $$_BRANCH"; \
 	echo "  REGION:            $(REGION)"; \
 	echo "  CONTAINER_ENGINE:  $(CONTAINER_ENGINE)"; \
 	echo "  IMAGE:             $(EPHEMERAL_CI_IMAGE)"; \
-	echo "$(BUILD_ID) REPO=$$_REPO BRANCH=$$_BRANCH REGION=$(REGION) STATE=provisioning CREATED=$$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $(EPHEMERAL_ENVS_FILE); \
+	echo "$(ID) REPO=$$_REPO BRANCH=$$_BRANCH REGION=$(REGION) STATE=provisioning CREATED=$$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $(EPHEMERAL_ENVS_FILE); \
+	_tmpdir=$$(mktemp -d); \
+	trap 'rm -rf "$$_tmpdir"' EXIT; \
 	$(CONTAINER_ENGINE) run --rm \
 		$$_CRED_FLAGS \
 		-v $(PWD):/workspace:ro \
+		-v $$_tmpdir:/output \
 		-w /workspace \
-		-e BUILD_ID=$(BUILD_ID) \
+		-e BUILD_ID=$(ID) \
 		-e AWS_REGION=$(REGION) \
 		$(EPHEMERAL_CI_IMAGE) \
-		uv run --no-cache ci/ephemeral-provider/main.py --repo $$_REPO --branch $$_BRANCH --region $(REGION); \
+		uv run --no-cache ci/ephemeral-provider/main.py --repo $$_REPO --branch $$_BRANCH --region $(REGION) --save-regional-state /output/tf-outputs.json; \
 	rc=$$?; \
 	if [ $$rc -eq 0 ]; then \
-		$(call update-state,$(BUILD_ID),ready); \
+		_API_URL=""; \
+		if [ -f "$$_tmpdir/tf-outputs.json" ] && command -v jq >/dev/null 2>&1; then \
+			_API_URL=$$(jq -r '.api_gateway_invoke_url.value // empty' "$$_tmpdir/tf-outputs.json" 2>/dev/null || true); \
+		fi; \
+		$(call update-state,$(ID),ready); \
+		if [ -n "$$_API_URL" ]; then \
+			sed "s|^$(ID) .*|& API_URL=$$_API_URL|" $(EPHEMERAL_ENVS_FILE) > $(EPHEMERAL_ENVS_FILE).tmp && mv $(EPHEMERAL_ENVS_FILE).tmp $(EPHEMERAL_ENVS_FILE); \
+		fi; \
 		echo ""; \
-		echo "Environment recorded in $(EPHEMERAL_ENVS_FILE). To tear down:"; \
-		echo "  make ephemeral-teardown BUILD_ID=$(BUILD_ID)"; \
+		echo "Environment recorded in $(EPHEMERAL_ENVS_FILE)."; \
+		if [ -n "$$_API_URL" ]; then \
+			echo ""; \
+			echo "  API Gateway:  $$_API_URL"; \
+		fi; \
+		echo ""; \
+		echo "  To interact with the API:"; \
+		echo "    make ephemeral-shell ID=$(ID)"; \
+		echo ""; \
+		echo "  To run e2e tests:"; \
+		echo "    make ephemeral-e2e ID=$(ID)"; \
+		echo ""; \
+		echo "  To tear down:"; \
+		echo "    make ephemeral-teardown ID=$(ID)"; \
 	else \
-		$(call update-state,$(BUILD_ID),provisioning-failed); \
+		$(call update-state,$(ID),provisioning-failed); \
 		echo "Provisioning failed. State updated to provisioning-failed."; \
 		exit $$rc; \
 	fi
 
 # Tear down an ephemeral environment
-# Usage: make ephemeral-teardown [BUILD_ID=<id>]
+# Usage: make ephemeral-teardown [ID=<id>]
 ephemeral-teardown: ephemeral-image
-	@if [ "$(origin BUILD_ID)" = "command line" ]; then \
-		_BUILD_ID="$(BUILD_ID)"; \
+	@if [ "$(origin ID)" = "command line" ]; then \
+		_BUILD_ID="$(ID)"; \
 	else \
 		if ! command -v fzf >/dev/null 2>&1; then \
-			echo "Error: fzf is required for interactive selection. Install fzf or pass BUILD_ID=<id> directly."; exit 1; \
+			echo "Error: fzf is required for interactive selection. Install fzf or pass ID=<id> directly."; exit 1; \
 		fi; \
 		if [ ! -f $(EPHEMERAL_ENVS_FILE) ] || [ ! -s $(EPHEMERAL_ENVS_FILE) ]; then \
 			echo "No environments found in $(EPHEMERAL_ENVS_FILE)."; exit 1; \
@@ -530,13 +554,13 @@ ephemeral-teardown: ephemeral-image
 		_BUILD_ID=$$(echo "$$_line" | awk '{print $$1}'); \
 	fi; \
 	_line=$$(grep "^$$_BUILD_ID " $(EPHEMERAL_ENVS_FILE) 2>/dev/null) || \
-		{ echo "BUILD_ID $$_BUILD_ID not found in $(EPHEMERAL_ENVS_FILE)."; exit 1; }; \
+		{ echo "ID $$_BUILD_ID not found in $(EPHEMERAL_ENVS_FILE)."; exit 1; }; \
 	_REPO=$$(echo "$$_line" | sed -n 's/.*REPO=\([^ ]*\).*/\1/p'); \
 	_BRANCH=$$(echo "$$_line" | sed -n 's/.*BRANCH=\([^ ]*\).*/\1/p'); \
 	_REGION=$$(echo "$$_line" | sed -n 's/.*REGION=\([^ ]*\).*/\1/p'); \
 	$(fetch-creds); \
 	echo "Tearing down ephemeral environment..."; \
-	echo "  BUILD_ID:          $$_BUILD_ID"; \
+	echo "  ID:                $$_BUILD_ID"; \
 	echo "  REPO:              $$_REPO"; \
 	echo "  BRANCH:            $$_BRANCH"; \
 	echo "  REGION:            $$_REGION"; \
@@ -562,13 +586,13 @@ ephemeral-teardown: ephemeral-image
 	fi
 
 # Resync an ephemeral environment's CI branch onto latest source branch
-# Usage: make ephemeral-resync [BUILD_ID=<id>]
+# Usage: make ephemeral-resync [ID=<id>]
 ephemeral-resync: ephemeral-image
-	@if [ "$(origin BUILD_ID)" = "command line" ]; then \
-		_BUILD_ID="$(BUILD_ID)"; \
+	@if [ "$(origin ID)" = "command line" ]; then \
+		_BUILD_ID="$(ID)"; \
 	else \
 		if ! command -v fzf >/dev/null 2>&1; then \
-			echo "Error: fzf is required for interactive selection. Install fzf or pass BUILD_ID=<id> directly."; exit 1; \
+			echo "Error: fzf is required for interactive selection. Install fzf or pass ID=<id> directly."; exit 1; \
 		fi; \
 		if [ ! -f $(EPHEMERAL_ENVS_FILE) ] || [ ! -s $(EPHEMERAL_ENVS_FILE) ]; then \
 			echo "No environments found in $(EPHEMERAL_ENVS_FILE)."; exit 1; \
@@ -582,13 +606,13 @@ ephemeral-resync: ephemeral-image
 		_BUILD_ID=$$(echo "$$_line" | awk '{print $$1}'); \
 	fi; \
 	_line=$$(grep "^$$_BUILD_ID " $(EPHEMERAL_ENVS_FILE) 2>/dev/null) || \
-		{ echo "BUILD_ID $$_BUILD_ID not found in $(EPHEMERAL_ENVS_FILE)."; exit 1; }; \
+		{ echo "ID $$_BUILD_ID not found in $(EPHEMERAL_ENVS_FILE)."; exit 1; }; \
 	_REPO=$$(echo "$$_line" | sed -n 's/.*REPO=\([^ ]*\).*/\1/p'); \
 	_BRANCH=$$(echo "$$_line" | sed -n 's/.*BRANCH=\([^ ]*\).*/\1/p'); \
 	_REGION=$$(echo "$$_line" | sed -n 's/.*REGION=\([^ ]*\).*/\1/p'); \
 	$(fetch-creds); \
 	echo "Resyncing ephemeral environment CI branch..."; \
-	echo "  BUILD_ID:          $$_BUILD_ID"; \
+	echo "  ID:                $$_BUILD_ID"; \
 	echo "  REPO:              $$_REPO"; \
 	echo "  BRANCH:            $$_BRANCH"; \
 	echo "  CONTAINER_ENGINE:  $(CONTAINER_ENGINE)"; \
@@ -611,8 +635,8 @@ ephemeral-list:
 	@if [ -f $(EPHEMERAL_ENVS_FILE) ] && [ -s $(EPHEMERAL_ENVS_FILE) ]; then \
 		echo "Ephemeral environments:"; \
 		echo ""; \
-		printf "%-12s %-45s %-25s %-12s %-22s %s\n" "BUILD_ID" "REPO" "BRANCH" "REGION" "STATE" "CREATED"; \
-		echo "------------ --------------------------------------------- ------------------------- ------------ ---------------------- --------------------"; \
+		printf "%-12s %-45s %-25s %-12s %-22s %-20s %s\n" "ID" "REPO" "BRANCH" "REGION" "STATE" "CREATED" "API_URL"; \
+		echo "------------ --------------------------------------------- ------------------------- ------------ ---------------------- -------------------- -------"; \
 		while IFS= read -r line; do \
 			build_id=$$(echo "$$line" | awk '{print $$1}'); \
 			repo=$$(echo "$$line" | sed -n 's/.*REPO=\([^ ]*\).*/\1/p'); \
@@ -620,11 +644,92 @@ ephemeral-list:
 			region=$$(echo "$$line" | sed -n 's/.*REGION=\([^ ]*\).*/\1/p'); \
 			state=$$(echo "$$line" | sed -n 's/.*STATE=\([^ ]*\).*/\1/p'); \
 			created=$$(echo "$$line" | sed -n 's/.*CREATED=\([^ ]*\).*/\1/p'); \
-			printf "%-12s %-45s %-25s %-12s %-22s %s\n" "$$build_id" "$$repo" "$$branch" "$$region" "$$state" "$$created"; \
+			api_url=$$(echo "$$line" | sed -n 's/.*API_URL=\([^ ]*\).*/\1/p'); \
+			printf "%-12s %-45s %-25s %-12s %-22s %-20s %s\n" "$$build_id" "$$repo" "$$branch" "$$region" "$$state" "$$created" "$$api_url"; \
 		done < $(EPHEMERAL_ENVS_FILE); \
 		echo ""; \
 		echo "To clear list: rm $(EPHEMERAL_ENVS_FILE)"; \
 	else \
 		echo "No ephemeral environments."; \
 	fi
+
+# Interactive shell with regional AWS creds and API_URL pre-configured
+# Usage: make ephemeral-shell [ID=<id>]
+ephemeral-shell: ephemeral-image
+	@if [ "$(origin ID)" = "command line" ]; then \
+		_BUILD_ID="$(ID)"; \
+	else \
+		if ! command -v fzf >/dev/null 2>&1; then \
+			echo "Error: fzf is required for interactive selection. Install fzf or pass ID=<id> directly."; exit 1; \
+		fi; \
+		if [ ! -f $(EPHEMERAL_ENVS_FILE) ] || [ ! -s $(EPHEMERAL_ENVS_FILE) ]; then \
+			echo "No environments found in $(EPHEMERAL_ENVS_FILE)."; exit 1; \
+		fi; \
+		candidates=$$(grep 'STATE=ready ' $(EPHEMERAL_ENVS_FILE) || true); \
+		if [ -z "$$candidates" ]; then \
+			echo "No ready environments found."; exit 1; \
+		fi; \
+		_line=$$(echo "$$candidates" | fzf --height=20 --header="Select environment:") || \
+			{ echo "Aborted."; exit 1; }; \
+		_BUILD_ID=$$(echo "$$_line" | awk '{print $$1}'); \
+	fi; \
+	_line=$$(grep "^$$_BUILD_ID " $(EPHEMERAL_ENVS_FILE) 2>/dev/null) || \
+		{ echo "ID $$_BUILD_ID not found in $(EPHEMERAL_ENVS_FILE)."; exit 1; }; \
+	_API_URL=$$(echo "$$_line" | sed -n 's/.*API_URL=\([^ ]*\).*/\1/p'); \
+	_REGION=$$(echo "$$_line" | sed -n 's/.*REGION=\([^ ]*\).*/\1/p'); \
+	$(fetch-creds); \
+	$(CONTAINER_ENGINE) run --rm -it \
+		-e AWS_ACCESS_KEY_ID=$$_REGIONAL_AK \
+		-e AWS_SECRET_ACCESS_KEY=$$_REGIONAL_SK \
+		-e AWS_DEFAULT_REGION=$$_REGION \
+		-e AWS_REGION=$$_REGION \
+		-e API_URL=$$_API_URL \
+		$(EPHEMERAL_CI_IMAGE) \
+		bash -c 'echo ""; echo "ROSA Regional Platform shell"; echo ""; echo "API Gateway: $$API_URL"; echo "Region:      $$AWS_DEFAULT_REGION"; echo ""; echo "Example commands:"; echo "  awscurl --service execute-api $$API_URL/v0/live"; exec bash'
+
+# Run e2e tests against an ephemeral environment
+# Usage: make ephemeral-e2e [ID=<id>] [API_REF=<branch>]
+API_REF ?= main
+ephemeral-e2e: ephemeral-image
+	@if [ "$(origin ID)" = "command line" ]; then \
+		_BUILD_ID="$(ID)"; \
+	else \
+		if ! command -v fzf >/dev/null 2>&1; then \
+			echo "Error: fzf is required for interactive selection. Install fzf or pass ID=<id> directly."; exit 1; \
+		fi; \
+		if [ ! -f $(EPHEMERAL_ENVS_FILE) ] || [ ! -s $(EPHEMERAL_ENVS_FILE) ]; then \
+			echo "No environments found in $(EPHEMERAL_ENVS_FILE)."; exit 1; \
+		fi; \
+		candidates=$$(grep 'STATE=ready ' $(EPHEMERAL_ENVS_FILE) || true); \
+		if [ -z "$$candidates" ]; then \
+			echo "No ready environments found."; exit 1; \
+		fi; \
+		_line=$$(echo "$$candidates" | fzf --height=20 --header="Select environment for e2e tests:") || \
+			{ echo "Aborted."; exit 1; }; \
+		_BUILD_ID=$$(echo "$$_line" | awk '{print $$1}'); \
+	fi; \
+	_line=$$(grep "^$$_BUILD_ID " $(EPHEMERAL_ENVS_FILE) 2>/dev/null) || \
+		{ echo "ID $$_BUILD_ID not found in $(EPHEMERAL_ENVS_FILE)."; exit 1; }; \
+	_API_URL=$$(echo "$$_line" | sed -n 's/.*API_URL=\([^ ]*\).*/\1/p'); \
+	_REGION=$$(echo "$$_line" | sed -n 's/.*REGION=\([^ ]*\).*/\1/p'); \
+	if [ -z "$$_API_URL" ]; then \
+		echo "Error: No API_URL found for ID $$_BUILD_ID. Was it captured during provision?"; exit 1; \
+	fi; \
+	$(fetch-creds); \
+	echo "Running e2e tests..."; \
+	echo "  ID:         $$_BUILD_ID"; \
+	echo "  API_URL:    $$_API_URL"; \
+	echo "  REGION:     $$_REGION"; \
+	echo "  API_REF:    $(API_REF)"; \
+	$(CONTAINER_ENGINE) run --rm \
+		-v $(PWD):/workspace:ro \
+		-w /workspace \
+		-e BASE_URL=$$_API_URL \
+		-e AWS_ACCESS_KEY_ID=$$_REGIONAL_AK \
+		-e AWS_SECRET_ACCESS_KEY=$$_REGIONAL_SK \
+		-e AWS_DEFAULT_REGION=$$_REGION \
+		-e AWS_REGION=$$_REGION \
+		-e API_REF=$(API_REF) \
+		$(EPHEMERAL_CI_IMAGE) \
+		bash ci/e2e-tests.sh
 
