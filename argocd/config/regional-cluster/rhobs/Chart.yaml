@@ -1,0 +1,19 @@
+apiVersion: v2
+name: rhobs
+description: Red Hat Observability Service (RHOBS) for EKS - Metrics and Logs Platform
+type: application
+version: 0.1.0
+appVersion: "1.0"
+home: https://github.com/openshift-online/rosa-regional-platform
+keywords:
+  - observability
+  - metrics
+  - logs
+  - thanos
+  - loki
+  - grafana
+  - prometheus
+  - rosa
+  - eks
+maintainers:
+  - name: ROSA Regional Platform Team

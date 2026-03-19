@@ -55,6 +55,10 @@ resource "aws_acm_certificate_validation" "api" {
 
 # -----------------------------------------------------------------------------
 # API Gateway Custom Domain Name
+#
+# When mTLS is enabled, configures mutual TLS authentication using a truststore
+# in S3. Only clients with certificates signed by a CA in the truststore can
+# connect.
 # -----------------------------------------------------------------------------
 
 resource "aws_api_gateway_domain_name" "api" {
@@ -65,6 +69,15 @@ resource "aws_api_gateway_domain_name" "api" {
 
   endpoint_configuration {
     types = ["REGIONAL"]
+  }
+
+  # Mutual TLS configuration
+  dynamic "mutual_tls_authentication" {
+    for_each = var.enable_mtls ? [1] : []
+    content {
+      truststore_uri     = var.truststore_uri
+      truststore_version = var.truststore_version
+    }
   }
 
   tags = {

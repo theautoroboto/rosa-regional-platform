@@ -23,6 +23,10 @@ resource "aws_api_gateway_rest_api" "main" {
     types = ["REGIONAL"]
   }
 
+  # When mTLS is enabled, disable the execute-api endpoint to force use of custom domain
+  # This ensures all traffic goes through mTLS validation
+  disable_execute_api_endpoint = var.enable_mtls
+
   tags = {
     Name = "${var.regional_id}-api"
   }
@@ -44,15 +48,15 @@ resource "aws_api_gateway_resource" "proxy" {
 # -----------------------------------------------------------------------------
 # Method: ANY on {proxy+}
 #
-# Accepts all HTTP methods with AWS_IAM authentication.
-# Requires SigV4 signed requests (use awscurl for testing).
+# When mTLS is disabled: AWS_IAM authentication (requires SigV4 signed requests)
+# When mTLS is enabled: NONE (authentication handled by mutual TLS handshake)
 # -----------------------------------------------------------------------------
 
 resource "aws_api_gateway_method" "proxy" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.proxy.id
   http_method   = "ANY"
-  authorization = "AWS_IAM"
+  authorization = var.enable_mtls ? "NONE" : "AWS_IAM"
 
   request_parameters = {
     "method.request.path.proxy" = true
@@ -63,13 +67,15 @@ resource "aws_api_gateway_method" "proxy" {
 # Root Resource Method: ANY on /
 #
 # Handle requests to the root path (e.g., health checks at /)
+# When mTLS is disabled: AWS_IAM authentication
+# When mTLS is enabled: NONE (authentication handled by mutual TLS handshake)
 # -----------------------------------------------------------------------------
 
 resource "aws_api_gateway_method" "root" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_rest_api.main.root_resource_id
   http_method   = "ANY"
-  authorization = "AWS_IAM"
+  authorization = var.enable_mtls ? "NONE" : "AWS_IAM"
 }
 
 # -----------------------------------------------------------------------------

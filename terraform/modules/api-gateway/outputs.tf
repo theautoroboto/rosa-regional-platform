@@ -59,6 +59,11 @@ output "target_group_arn" {
   value       = aws_lb_target_group.platform.arn
 }
 
+output "alb_listener_arn" {
+  description = "ALB listener ARN for adding path-based routing rules"
+  value       = aws_lb_listener.platform.arn
+}
+
 # -----------------------------------------------------------------------------
 # Security Groups
 # -----------------------------------------------------------------------------

@@ -1,0 +1,17 @@
+{{- if and .Values.rhobs.thanos.enabled .Values.rhobs.thanos.receive.enabled .Values.rhobs.thanos.receive.targetGroupBinding.enabled }}
+---
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: thanos-receive
+  namespace: {{ .Values.rhobs.namespace }}
+  labels:
+    {{- include "rhobs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: thanos-receive
+spec:
+  serviceRef:
+    name: thanos-receive
+    port: {{ .Values.rhobs.thanos.receive.service.port }}
+  targetGroupARN: {{ .Values.rhobs.thanos.receive.targetGroupBinding.targetGroupARN }}
+  targetType: ip
+{{- end }}

@@ -116,3 +116,30 @@ variable "regional_hosted_zone_id" {
   type        = string
   default     = null
 }
+
+# =============================================================================
+# Mutual TLS Configuration (Optional)
+# =============================================================================
+
+variable "enable_mtls" {
+  description = "Enable mutual TLS authentication for the API Gateway. When true, clients must present valid certificates. Requires api_domain_name to be set."
+  type        = bool
+  default     = false
+}
+
+variable "truststore_uri" {
+  description = "S3 URI of the truststore PEM file containing trusted CA certificates (e.g., s3://bucket/truststore.pem). Required when enable_mtls = true."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.truststore_uri == null || can(regex("^s3://[a-z0-9][a-z0-9.-]+[a-z0-9]/.*", var.truststore_uri))
+    error_message = "truststore_uri must be a valid S3 URI (s3://bucket/key)."
+  }
+}
+
+variable "truststore_version" {
+  description = "S3 object version ID of the truststore. When set, API Gateway will use this specific version. Useful for truststore rotation."
+  type        = string
+  default     = null
+}

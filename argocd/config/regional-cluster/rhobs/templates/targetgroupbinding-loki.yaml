@@ -1,0 +1,17 @@
+{{- if and .Values.rhobs.loki.enabled .Values.rhobs.loki.distributor.enabled .Values.rhobs.loki.distributor.targetGroupBinding.enabled }}
+---
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: loki-distributor
+  namespace: {{ .Values.rhobs.namespace }}
+  labels:
+    {{- include "rhobs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: loki-distributor
+spec:
+  serviceRef:
+    name: loki-distributor
+    port: {{ .Values.rhobs.loki.distributor.service.port }}
+  targetGroupARN: {{ .Values.rhobs.loki.distributor.targetGroupBinding.targetGroupARN }}
+  targetType: ip
+{{- end }}

@@ -209,3 +209,42 @@ variable "hyperfleet_mq_deployment_mode" {
     error_message = "Deployment mode must be SINGLE_INSTANCE or CLUSTER_MULTI_AZ"
   }
 }
+
+# =============================================================================
+# RHOBS (Red Hat Observability Service) Configuration Variables
+# =============================================================================
+
+variable "rhobs_metrics_retention_days" {
+  description = "Number of days to retain metrics in S3 before deletion (Thanos backend)"
+  type        = number
+  default     = 90
+}
+
+variable "rhobs_logs_retention_days" {
+  description = "Number of days to retain logs in S3 before deletion (Loki backend)"
+  type        = number
+  default     = 90
+}
+
+variable "rhobs_cache_node_type" {
+  description = "ElastiCache node type for RHOBS Memcached cluster (query caching)"
+  type        = string
+  default     = "cache.r6g.large"
+}
+
+variable "rhobs_cache_num_nodes" {
+  description = "Number of cache nodes in the RHOBS Memcached cluster"
+  type        = number
+  default     = 3
+
+  validation {
+    condition     = var.rhobs_cache_num_nodes >= 1 && var.rhobs_cache_num_nodes <= 20
+    error_message = "Cache node count must be between 1 and 20"
+  }
+}
+
+variable "rhobs_cache_port" {
+  description = "Port for RHOBS Memcached cluster"
+  type        = number
+  default     = 11211
+}

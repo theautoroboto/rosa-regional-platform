@@ -101,6 +101,60 @@ module "api_gateway" {
 }
 
 # =============================================================================
+# RHOBS (Red Hat Observability Service) Infrastructure
+# =============================================================================
+
+# ACM Private CA for mTLS client certificate authentication
+module "rhobs_ca" {
+  source = "../../modules/acm-private-ca"
+
+  regional_id = var.regional_id
+}
+
+# RHOBS infrastructure: S3 buckets, ElastiCache, IAM roles
+module "rhobs_infrastructure" {
+  source = "../../modules/rhobs-infrastructure"
+
+  regional_id                           = var.regional_id
+  vpc_id                                = module.regional_cluster.vpc_id
+  private_subnets                       = module.regional_cluster.private_subnets
+  eks_cluster_name                      = module.regional_cluster.cluster_name
+  eks_cluster_security_group_id         = module.regional_cluster.cluster_security_group_id
+  eks_cluster_primary_security_group_id = module.regional_cluster.node_security_group_id
+
+  # Bastion access for troubleshooting (if enabled)
+  bastion_security_group_id = var.enable_bastion ? module.bastion[0].security_group_id : null
+
+  # S3 retention policies (adjust for production)
+  metrics_retention_days = var.rhobs_metrics_retention_days
+  logs_retention_days    = var.rhobs_logs_retention_days
+
+  # ElastiCache configuration
+  cache_node_type   = var.rhobs_cache_node_type
+  cache_num_nodes   = var.rhobs_cache_num_nodes
+  cache_port        = var.rhobs_cache_port
+}
+
+# RHOBS API Gateway with mTLS authentication for metric/log ingestion
+module "rhobs_api_gateway" {
+  source = "../../modules/rhobs-api-gateway"
+
+  vpc_id                 = module.regional_cluster.vpc_id
+  private_subnet_ids     = module.regional_cluster.private_subnets
+  regional_id            = var.regional_id
+  node_security_group_id = module.regional_cluster.node_security_group_id
+  cluster_name           = module.regional_cluster.cluster_name
+
+  # mTLS configuration from ACM Private CA
+  truststore_uri     = module.rhobs_ca.truststore_s3_uri
+  truststore_version = module.rhobs_ca.truststore_version
+
+  # Custom domain (e.g. rhobs.us-east-1.int0.rosa.devshift.net)
+  api_domain_name         = var.environment_domain != null ? "rhobs.${var.region}.${var.environment_domain}" : null
+  regional_hosted_zone_id = var.environment_domain != null ? aws_route53_zone.regional[0].zone_id : null
+}
+
+# =============================================================================
 # Regional DNS Zone (Optional)
 #
 # When environment_domain is set, creates:

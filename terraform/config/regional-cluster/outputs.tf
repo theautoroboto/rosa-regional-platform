@@ -356,3 +356,109 @@ output "hyperfleet_configuration_summary" {
   value       = module.hyperfleet_infrastructure.configuration_summary
   sensitive   = true
 }
+
+# =============================================================================
+# RHOBS (Red Hat Observability Service) Outputs
+# =============================================================================
+
+# API Gateway Endpoints
+output "rhobs_api_endpoint" {
+  description = "RHOBS API Gateway domain name (e.g. rhobs.us-east-1.int0.rosa.devshift.net)"
+  value       = module.rhobs_api_gateway.api_domain_name
+}
+
+output "rhobs_metrics_endpoint" {
+  description = "Thanos Receive metrics ingestion endpoint URL"
+  value       = module.rhobs_api_gateway.api_endpoint_metrics
+}
+
+output "rhobs_logs_endpoint" {
+  description = "Loki Distributor logs ingestion endpoint URL"
+  value       = module.rhobs_api_gateway.api_endpoint_logs
+}
+
+# ACM Private CA
+output "rhobs_ca_arn" {
+  description = "ARN of the ACM Private Certificate Authority for RHOBS mTLS"
+  value       = module.rhobs_ca.ca_arn
+}
+
+output "rhobs_truststore_s3_uri" {
+  description = "S3 URI of the mTLS truststore"
+  value       = module.rhobs_ca.truststore_s3_uri
+}
+
+# S3 Buckets
+output "rhobs_s3_metrics_bucket" {
+  description = "S3 bucket name for Thanos metrics storage"
+  value       = module.rhobs_infrastructure.metrics_bucket_name
+}
+
+output "rhobs_s3_logs_bucket" {
+  description = "S3 bucket name for Loki logs storage"
+  value       = module.rhobs_infrastructure.logs_bucket_name
+}
+
+# ElastiCache
+output "rhobs_memcached_address" {
+  description = "ElastiCache Memcached configuration endpoint address"
+  value       = module.rhobs_infrastructure.cache_cluster_address
+}
+
+output "rhobs_memcached_port" {
+  description = "ElastiCache Memcached port"
+  value       = module.rhobs_infrastructure.cache_cluster_port
+}
+
+# Target Groups for TargetGroupBinding
+output "rhobs_thanos_target_group_arn" {
+  description = "Thanos Receive target group ARN for TargetGroupBinding"
+  value       = module.rhobs_api_gateway.thanos_target_group_arn
+}
+
+output "rhobs_loki_target_group_arn" {
+  description = "Loki Distributor target group ARN for TargetGroupBinding"
+  value       = module.rhobs_api_gateway.loki_target_group_arn
+}
+
+# IAM Roles
+output "rhobs_thanos_role_arn" {
+  description = "IAM role ARN for Thanos components (Pod Identity)"
+  value       = module.rhobs_infrastructure.thanos_role_arn
+}
+
+output "rhobs_loki_role_arn" {
+  description = "IAM role ARN for Loki components (Pod Identity)"
+  value       = module.rhobs_infrastructure.loki_role_arn
+}
+
+# Configuration Summary for Helm Values
+output "rhobs_configuration_summary" {
+  description = "Complete RHOBS configuration for use in Helm values"
+  value = {
+    s3 = {
+      metrics_bucket = module.rhobs_infrastructure.metrics_bucket_name
+      logs_bucket    = module.rhobs_infrastructure.logs_bucket_name
+      region         = var.region
+    }
+    memcached = {
+      address = module.rhobs_infrastructure.cache_cluster_address
+      port    = module.rhobs_infrastructure.cache_cluster_port
+    }
+    thanos = {
+      role_arn           = module.rhobs_infrastructure.thanos_role_arn
+      target_group_arn   = module.rhobs_api_gateway.thanos_target_group_arn
+      ingestion_endpoint = module.rhobs_api_gateway.api_endpoint_metrics
+    }
+    loki = {
+      role_arn           = module.rhobs_infrastructure.loki_role_arn
+      target_group_arn   = module.rhobs_api_gateway.loki_target_group_arn
+      ingestion_endpoint = module.rhobs_api_gateway.api_endpoint_logs
+    }
+    mtls = {
+      ca_arn         = module.rhobs_ca.ca_arn
+      truststore_uri = module.rhobs_ca.truststore_s3_uri
+    }
+  }
+  sensitive = false
+}
