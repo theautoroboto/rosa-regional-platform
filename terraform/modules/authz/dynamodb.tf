@@ -21,10 +21,7 @@ resource "aws_dynamodb_table" "accounts" {
   billing_mode                = var.billing_mode
   deletion_protection_enabled = var.enable_deletion_protection
 
-  key_schema {
-    attribute_name = "accountId"
-    key_type       = "HASH"
-  }
+  hash_key = "accountId"
 
   attribute {
     name = "accountId"
@@ -55,15 +52,8 @@ resource "aws_dynamodb_table" "admins" {
   billing_mode                = var.billing_mode
   deletion_protection_enabled = var.enable_deletion_protection
 
-  key_schema {
-    attribute_name = "accountId"
-    key_type       = "HASH"
-  }
-
-  key_schema {
-    attribute_name = "principalArn"
-    key_type       = "RANGE"
-  }
+  hash_key  = "accountId"
+  range_key = "principalArn"
 
   attribute {
     name = "accountId"
@@ -99,15 +89,8 @@ resource "aws_dynamodb_table" "groups" {
   billing_mode                = var.billing_mode
   deletion_protection_enabled = var.enable_deletion_protection
 
-  key_schema {
-    attribute_name = "accountId"
-    key_type       = "HASH"
-  }
-
-  key_schema {
-    attribute_name = "groupId"
-    key_type       = "RANGE"
-  }
+  hash_key  = "accountId"
+  range_key = "groupId"
 
   attribute {
     name = "accountId"
@@ -144,15 +127,8 @@ resource "aws_dynamodb_table" "members" {
   billing_mode                = var.billing_mode
   deletion_protection_enabled = var.enable_deletion_protection
 
-  key_schema {
-    attribute_name = "accountId"
-    key_type       = "HASH"
-  }
-
-  key_schema {
-    attribute_name = "groupId#memberArn"
-    key_type       = "RANGE"
-  }
+  hash_key  = "accountId"
+  range_key = "groupId#memberArn"
 
   attribute {
     name = "accountId"
@@ -214,15 +190,8 @@ resource "aws_dynamodb_table" "policies" {
   billing_mode                = var.billing_mode
   deletion_protection_enabled = var.enable_deletion_protection
 
-  key_schema {
-    attribute_name = "accountId"
-    key_type       = "HASH"
-  }
-
-  key_schema {
-    attribute_name = "policyId"
-    key_type       = "RANGE"
-  }
+  hash_key  = "accountId"
+  range_key = "policyId"
 
   attribute {
     name = "accountId"
@@ -260,15 +229,8 @@ resource "aws_dynamodb_table" "attachments" {
   billing_mode                = var.billing_mode
   deletion_protection_enabled = var.enable_deletion_protection
 
-  key_schema {
-    attribute_name = "accountId"
-    key_type       = "HASH"
-  }
-
-  key_schema {
-    attribute_name = "attachmentId"
-    key_type       = "RANGE"
-  }
+  hash_key  = "accountId"
+  range_key = "attachmentId"
 
   attribute {
     name = "accountId"
