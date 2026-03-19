@@ -111,6 +111,14 @@ resource "aws_ecs_task_definition" "bootstrap" {
               api_target_group_arn: "$API_TARGET_GROUP_ARN"
               dynamodb_prefix: "$CLUSTER_NAME"
               dynamodb_region: "$AWS_REGION"
+              rhobs_s3_metrics_bucket: "$RHOBS_S3_METRICS_BUCKET"
+              rhobs_s3_logs_bucket: "$RHOBS_S3_LOGS_BUCKET"
+              rhobs_memcached_address: "$RHOBS_MEMCACHED_ADDRESS"
+              rhobs_memcached_port: "$RHOBS_MEMCACHED_PORT"
+              rhobs_thanos_role_arn: "$RHOBS_THANOS_ROLE_ARN"
+              rhobs_thanos_target_group_arn: "$RHOBS_THANOS_TARGET_GROUP_ARN"
+              rhobs_loki_role_arn: "$RHOBS_LOKI_ROLE_ARN"
+              rhobs_loki_target_group_arn: "$RHOBS_LOKI_TARGET_GROUP_ARN"
           type: Opaque
           stringData:
             name: in-cluster

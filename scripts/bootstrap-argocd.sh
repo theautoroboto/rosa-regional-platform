@@ -100,8 +100,25 @@ APPLICATIONSET_PATH="deploy/$ENVIRONMENT/$REGION_DEPLOYMENT/argocd/${CLUSTER_TYP
 # Extract cluster-type specific outputs
 if [[ "$CLUSTER_TYPE" == "regional-cluster" ]]; then
     API_TARGET_GROUP_ARN=$(echo "$OUTPUTS" | jq -r '.api_target_group_arn.value // ""')
+    # RHOBS outputs
+    RHOBS_S3_METRICS_BUCKET=$(echo "$OUTPUTS" | jq -r '.rhobs_s3_metrics_bucket.value // ""')
+    RHOBS_S3_LOGS_BUCKET=$(echo "$OUTPUTS" | jq -r '.rhobs_s3_logs_bucket.value // ""')
+    RHOBS_MEMCACHED_ADDRESS=$(echo "$OUTPUTS" | jq -r '.rhobs_memcached_address.value // ""')
+    RHOBS_MEMCACHED_PORT=$(echo "$OUTPUTS" | jq -r '.rhobs_memcached_port.value // "11211"')
+    RHOBS_THANOS_ROLE_ARN=$(echo "$OUTPUTS" | jq -r '.rhobs_thanos_role_arn.value // ""')
+    RHOBS_THANOS_TARGET_GROUP_ARN=$(echo "$OUTPUTS" | jq -r '.rhobs_thanos_target_group_arn.value // ""')
+    RHOBS_LOKI_ROLE_ARN=$(echo "$OUTPUTS" | jq -r '.rhobs_loki_role_arn.value // ""')
+    RHOBS_LOKI_TARGET_GROUP_ARN=$(echo "$OUTPUTS" | jq -r '.rhobs_loki_target_group_arn.value // ""')
 else
     API_TARGET_GROUP_ARN=""
+    RHOBS_S3_METRICS_BUCKET=""
+    RHOBS_S3_LOGS_BUCKET=""
+    RHOBS_MEMCACHED_ADDRESS=""
+    RHOBS_MEMCACHED_PORT=""
+    RHOBS_THANOS_ROLE_ARN=""
+    RHOBS_THANOS_TARGET_GROUP_ARN=""
+    RHOBS_LOKI_ROLE_ARN=""
+    RHOBS_LOKI_TARGET_GROUP_ARN=""
 fi
 
 echo "Bootstrapping ArgoCD on cluster: $CLUSTER_NAME"
@@ -128,7 +145,15 @@ RUN_TASK_OUTPUT=$(aws ecs run-task \
         {\"name\": \"AWS_REGION\", \"value\": \"$AWS_REGION\"},
         {\"name\": \"REGION_DEPLOYMENT\", \"value\": \"$REGION_DEPLOYMENT\"},
         {\"name\": \"CLUSTER_TYPE\", \"value\": \"$CLUSTER_TYPE\"},
-        {\"name\": \"API_TARGET_GROUP_ARN\", \"value\": \"$API_TARGET_GROUP_ARN\"}
+        {\"name\": \"API_TARGET_GROUP_ARN\", \"value\": \"$API_TARGET_GROUP_ARN\"},
+        {\"name\": \"RHOBS_S3_METRICS_BUCKET\", \"value\": \"$RHOBS_S3_METRICS_BUCKET\"},
+        {\"name\": \"RHOBS_S3_LOGS_BUCKET\", \"value\": \"$RHOBS_S3_LOGS_BUCKET\"},
+        {\"name\": \"RHOBS_MEMCACHED_ADDRESS\", \"value\": \"$RHOBS_MEMCACHED_ADDRESS\"},
+        {\"name\": \"RHOBS_MEMCACHED_PORT\", \"value\": \"$RHOBS_MEMCACHED_PORT\"},
+        {\"name\": \"RHOBS_THANOS_ROLE_ARN\", \"value\": \"$RHOBS_THANOS_ROLE_ARN\"},
+        {\"name\": \"RHOBS_THANOS_TARGET_GROUP_ARN\", \"value\": \"$RHOBS_THANOS_TARGET_GROUP_ARN\"},
+        {\"name\": \"RHOBS_LOKI_ROLE_ARN\", \"value\": \"$RHOBS_LOKI_ROLE_ARN\"},
+        {\"name\": \"RHOBS_LOKI_TARGET_GROUP_ARN\", \"value\": \"$RHOBS_LOKI_TARGET_GROUP_ARN\"}
       ]
     }]
   }" 2>&1)

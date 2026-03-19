@@ -65,6 +65,26 @@ spec:
               hyperfleetAdapter:
                 aws:
                   region: '{{ .metadata.labels.aws_region }}'
+              rhobs:
+                s3:
+                  metrics_bucket: '{{ .metadata.annotations.rhobs_s3_metrics_bucket }}'
+                  logs_bucket: '{{ .metadata.annotations.rhobs_s3_logs_bucket }}'
+                  region: '{{ .metadata.labels.aws_region }}'
+                memcached:
+                  address: '{{ .metadata.annotations.rhobs_memcached_address }}'
+                  port: '{{ .metadata.annotations.rhobs_memcached_port }}'
+                thanos:
+                  serviceAccount:
+                    roleArn: '{{ .metadata.annotations.rhobs_thanos_role_arn }}'
+                  receive:
+                    targetGroupBinding:
+                      targetGroupARN: '{{ .metadata.annotations.rhobs_thanos_target_group_arn }}'
+                loki:
+                  serviceAccount:
+                    roleArn: '{{ .metadata.annotations.rhobs_loki_role_arn }}'
+                  distributor:
+                    targetGroupBinding:
+                      targetGroupARN: '{{ .metadata.annotations.rhobs_loki_target_group_arn }}'
           path: '{{ .path.path }}'
           repoURL: '{{ .metadata.annotations.git_repo }}'
           targetRevision: '{{ .metadata.annotations.git_revision }}'
