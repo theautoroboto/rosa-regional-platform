@@ -99,3 +99,37 @@ variable "maestro_agent_config_file" {
   description = "Path to JSON file containing Maestro agent MQTT configuration (from IoT Mint outputs)"
   type        = string
 }
+
+# =============================================================================
+# Thanos Gateway Configuration Variables
+# =============================================================================
+
+variable "enable_thanos_gateway" {
+  description = "Enable Thanos Observability Gateway with SigV4 authentication"
+  type        = bool
+  default     = false
+}
+
+variable "thanos_allowed_account_ids" {
+  description = "List of AWS account IDs allowed to write metrics via cross-account role assumption"
+  type        = list(string)
+  default     = []
+}
+
+variable "thanos_external_id" {
+  description = "External ID required for cross-account role assumption (additional security)"
+  type        = string
+  default     = "thanos-metrics-writer"
+}
+
+variable "thanos_api_domain_name" {
+  description = "Custom domain name for the Thanos API (e.g., metrics.us-east-1.example.com)"
+  type        = string
+  default     = null
+}
+
+variable "thanos_hosted_zone_id" {
+  description = "Route53 hosted zone ID for the Thanos API custom domain"
+  type        = string
+  default     = null
+}

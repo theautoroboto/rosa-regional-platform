@@ -145,3 +145,47 @@ output "oidc_cloudfront_domain" {
   description = "CloudFront domain for OIDC issuer URL (prefix with https://)"
   value       = module.hypershift_oidc.cloudfront_domain_name
 }
+
+# =============================================================================
+# Thanos Gateway Outputs (only available when enable_thanos_gateway = true)
+# =============================================================================
+
+output "thanos_api_gateway_invoke_url" {
+  description = "API Gateway invoke URL for Thanos Receive"
+  value       = var.enable_thanos_gateway ? module.thanos_gateway[0].invoke_url : null
+}
+
+output "thanos_remote_write_url" {
+  description = "Full URL for Prometheus remote_write configuration"
+  value       = var.enable_thanos_gateway ? module.thanos_gateway[0].remote_write_url : null
+}
+
+output "thanos_target_group_arn" {
+  description = "Target group ARN for Helm TargetGroupBinding"
+  value       = var.enable_thanos_gateway ? module.thanos_gateway[0].target_group_arn : null
+}
+
+output "thanos_alb_security_group_id" {
+  description = "ALB security group ID for Helm TargetGroupBinding"
+  value       = var.enable_thanos_gateway ? module.thanos_gateway[0].alb_security_group_id : null
+}
+
+output "thanos_metrics_writer_policy_arn" {
+  description = "IAM policy ARN to attach to metrics writers"
+  value       = var.enable_thanos_gateway ? module.thanos_gateway[0].metrics_writer_policy_arn : null
+}
+
+output "thanos_cross_account_role_arn" {
+  description = "Cross-account IAM role ARN for external metrics writers"
+  value       = var.enable_thanos_gateway ? module.thanos_gateway[0].cross_account_role_arn : null
+}
+
+output "thanos_test_command" {
+  description = "awscurl command to test the Thanos API"
+  value       = var.enable_thanos_gateway ? module.thanos_gateway[0].test_command : null
+}
+
+output "thanos_prometheus_config" {
+  description = "Example Prometheus remote_write configuration"
+  value       = var.enable_thanos_gateway ? module.thanos_gateway[0].prometheus_remote_write_config : null
+}

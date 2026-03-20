@@ -7,6 +7,30 @@ global:
   aws_region: ""
   cluster_name: ""
 
+# =============================================================================
+# API Gateway / SigV4 Authentication
+# =============================================================================
+# When enabled, creates a TargetGroupBinding to register Thanos Receive pods
+# with an AWS ALB target group. The ALB is fronted by API Gateway with
+# AWS_IAM (SigV4) authentication.
+#
+# Required: Deploy the thanos-gateway Terraform module first to create
+# the API Gateway, ALB, and target group.
+# =============================================================================
+
+targetGroupBinding:
+  # Enable TargetGroupBinding for API Gateway integration
+  enabled: false
+
+  # Target Group ARN from Terraform: module.thanos_gateway.target_group_arn
+  arn: ""
+
+  # ALB Security Group ID from Terraform: module.thanos_gateway.alb_security_group_id
+  albSecurityGroupId: ""
+
+  # Service port (Thanos Receive remote-write port)
+  servicePort: 19291
+
 # Thanos subchart configuration
 thanos:
   enabled: true
@@ -27,7 +51,20 @@ thanos:
   minio:
     enabled: false
 
-  # Empty objstore config - using local storage only for testing
+  # S3 Object Storage Configuration
+  # Uses IRSA (IAM Roles for Service Accounts) for authentication - no credentials needed
+  # The service account annotation is set via existingObjstoreSecret or inline config
+  #
+  # To enable S3 storage, set objstoreConfig with your bucket details:
+  # objstoreConfig: |
+  #   type: S3
+  #   config:
+  #     bucket: <bucket-name>
+  #     endpoint: s3.<region>.amazonaws.com
+  #     region: <region>
+  #     # IRSA handles authentication - no access_key/secret_key needed
+  #
+  # For testing without S3, leave empty (uses local storage only)
   objstoreConfig: ""
 
   # Thanos Receive - metrics ingestion endpoint
@@ -72,10 +109,15 @@ thanos:
     # Pod anti-affinity
     podAntiAffinityPreset: soft
 
-    # Service account
+    # Service account with IRSA support
+    # Set the annotation with your IAM role ARN to enable S3 access via IRSA:
+    #   eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/<role-name>
     serviceAccount:
       create: true
       annotations: {}
+      # Example for IRSA:
+      # annotations:
+      #   eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/thanos-receive-s3-role"
 
   # Thanos Query - for verifying ingested metrics
   query:

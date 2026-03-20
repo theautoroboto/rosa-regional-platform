@@ -92,3 +92,29 @@ module "hypershift_oidc" {
   cluster_id       = var.management_id
   eks_cluster_name = module.management_cluster.cluster_name
 }
+
+# =============================================================================
+# Thanos Observability Gateway (Optional)
+#
+# Creates API Gateway with SigV4 authentication for secure metrics ingestion.
+# Clients use AWS IAM credentials to authenticate instead of mTLS.
+# =============================================================================
+
+module "thanos_gateway" {
+  count  = var.enable_thanos_gateway ? 1 : 0
+  source = "../../modules/thanos-gateway"
+
+  vpc_id                 = module.management_cluster.vpc_id
+  private_subnet_ids     = module.management_cluster.private_subnets
+  regional_id            = var.management_id
+  node_security_group_id = module.management_cluster.node_security_group_id
+  cluster_name           = module.management_cluster.cluster_name
+
+  # Cross-account access for metrics writers (optional)
+  allowed_account_ids = var.thanos_allowed_account_ids
+  external_id         = var.thanos_external_id
+
+  # Custom domain (optional)
+  api_domain_name         = var.thanos_api_domain_name
+  regional_hosted_zone_id = var.thanos_hosted_zone_id
+}

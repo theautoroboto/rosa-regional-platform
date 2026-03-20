@@ -1,0 +1,33 @@
+{{- if .Values.targetGroupBinding.enabled }}
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: thanos-receive
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: thanos-receive
+    app.kubernetes.io/component: receive
+    app.kubernetes.io/part-of: rhobs
+spec:
+  # Target group ARN from Terraform thanos-gateway module
+  targetGroupARN: {{ required "targetGroupBinding.arn is required when targetGroupBinding.enabled=true" .Values.targetGroupBinding.arn }}
+
+  # Target type must match the target group (IP for pod networking)
+  targetType: ip
+
+  # Service reference - routes to Thanos Receive remote-write port
+  serviceRef:
+    name: {{ .Release.Name }}-thanos-receive
+    port: {{ .Values.targetGroupBinding.servicePort | default 19291 }}
+
+  # Networking configuration
+  networking:
+    ingress:
+      - from:
+          # Allow traffic from the ALB security group
+          - securityGroup:
+              groupID: {{ required "targetGroupBinding.albSecurityGroupId is required" .Values.targetGroupBinding.albSecurityGroupId }}
+        ports:
+          - port: {{ .Values.targetGroupBinding.servicePort | default 19291 }}
+            protocol: TCP
+{{- end }}
