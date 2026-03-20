@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: thanos-receive
+  labels:
+    app.kubernetes.io/name: thanos-receive
+    app.kubernetes.io/part-of: rhobs
+    environment: {{ .Values.global.environment | default "unknown" }}
+    aws_region: {{ .Values.global.aws_region | default "unknown" }}

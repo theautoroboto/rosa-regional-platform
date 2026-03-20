@@ -1,0 +1,82 @@
+{{- if and .Values.monitoring.enabled .Values.monitoring.prometheusRules.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "rhobs-cell.fullname" . }}-rules
+  namespace: {{ include "rhobs-cell.namespace" . }}
+  labels:
+    {{- include "rhobs-cell.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.prometheusRules.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    {{- range .Values.monitoring.prometheusRules.rules }}
+    - name: {{ .name }}
+      rules:
+        {{- range .rules }}
+        - alert: {{ .alert }}
+          expr: {{ .expr }}
+          for: {{ .for }}
+          labels:
+            {{- toYaml .labels | nindent 12 }}
+          annotations:
+            {{- toYaml .annotations | nindent 12 }}
+        {{- end }}
+    {{- end }}
+
+    # Built-in rules for RHOBS cell health
+    - name: rhobs-cell-builtin
+      rules:
+        # Gateway availability
+        - alert: RHOBSGatewayErrorRate
+          expr: |
+            sum(rate(http_requests_total{job="{{ .Values.gateway.name }}", code=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total{job="{{ .Values.gateway.name }}"}[5m])) > 0.05
+          for: 10m
+          labels:
+            severity: warning
+            component: gateway
+          annotations:
+            summary: "RHOBS Gateway high error rate"
+            description: "Gateway error rate is above 5% for the last 10 minutes"
+
+        # Thanos Receive availability
+        - alert: ThanosReceiveHighReplicationFailures
+          expr: |
+            sum(rate(thanos_receive_replications_total{result="error"}[5m]))
+            /
+            sum(rate(thanos_receive_replications_total[5m])) > 0.1
+          for: 10m
+          labels:
+            severity: warning
+            component: thanos-receive
+          annotations:
+            summary: "High Thanos Receive replication failures"
+            description: "Thanos Receive replication failure rate is above 10%"
+
+        # Loki ingestion
+        - alert: LokiIngesterHighFlushLatency
+          expr: |
+            histogram_quantile(0.99, sum(rate(loki_ingester_chunk_encode_time_seconds_bucket[5m])) by (le)) > 30
+          for: 10m
+          labels:
+            severity: warning
+            component: loki
+          annotations:
+            summary: "High Loki ingester flush latency"
+            description: "Loki ingester 99th percentile flush latency is above 30 seconds"
+
+        # Storage health
+        - alert: RHOBSStorageOperationErrors
+          expr: |
+            sum(rate(thanos_objstore_bucket_operation_failures_total[5m])) > 0
+          for: 10m
+          labels:
+            severity: warning
+            component: storage
+          annotations:
+            summary: "RHOBS storage operation errors"
+            description: "Storage operations are failing, check S3 connectivity"
+{{- end }}

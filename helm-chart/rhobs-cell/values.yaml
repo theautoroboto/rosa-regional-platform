@@ -1,0 +1,654 @@
+# RHOBS Cell - Default Values
+# Regional observability stack for EKS
+
+global:
+  # Region configuration
+  region: us-east-1
+  environment: production
+  clusterName: rhobs-us-east-1
+
+  # Public domain for the cell
+  domain: us-east-1.rhobs.example.com
+
+  # AWS configuration
+  aws:
+    accountId: ""  # Required: AWS account ID for IRSA
+
+  # Storage class
+  storageClass: gp3
+
+  # Image pull secrets (if using private registry)
+  imagePullSecrets: []
+
+# Namespace configuration
+namespace:
+  create: true
+  name: rhobs
+  labels:
+    app.kubernetes.io/part-of: rhobs
+
+# =============================================================================
+# Gateway (Observatorium API equivalent)
+# =============================================================================
+gateway:
+  enabled: true
+  name: rhobs-gateway
+
+  replicaCount: 2
+
+  image:
+    repository: quay.io/observatorium/api
+    tag: "main-2024-01-15-v0.1.2-324-g6a7f7c7"
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 8080
+    grpcPort: 8090
+
+  # Ingress configuration
+  ingress:
+    enabled: true
+    className: alb
+    annotations:
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/healthcheck-path: /ready
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+      alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+    hosts:
+      - host: ""  # Will use global.domain
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: gateway-tls
+        hosts:
+          - ""  # Will use global.domain
+
+  # Authentication configuration
+  auth:
+    # Type: oidc, mtls, or both
+    type: mtls
+
+    # OIDC configuration (for human readers)
+    oidc:
+      enabled: false
+      issuerUrl: ""
+      clientId: ""
+      clientSecretRef:
+        name: gateway-oidc-secret
+        key: client-secret
+      usernameClaim: email
+      groupsClaim: groups
+
+    # mTLS configuration (for cluster writers)
+    mtls:
+      enabled: true
+      caSecretRef:
+        name: rhobs-ca
+        key: ca.crt
+
+  # Tenant RBAC configuration
+  rbac:
+    # Tenants and their permissions
+    tenants:
+      - id: eks
+        name: EKS Fleet
+        oidc:
+          clientId: ""
+          issuerUrl: ""
+        rateLimits:
+          requestsPerSecond: 1000
+          burstSize: 2000
+
+    # Role bindings for service accounts
+    roleBindings: []
+    # - name: cluster-writer-us-east-1
+    #   roles:
+    #     - metrics-write
+    #     - logs-write
+    #   subjects:
+    #     - kind: serviceaccount
+    #       name: fleet-cluster-001
+
+  # Upstream endpoints
+  endpoints:
+    metrics:
+      read: http://thanos-query-frontend:9090
+      write: http://thanos-receive:19291
+    logs:
+      read: http://loki-gateway:80
+      write: http://loki-gateway:80
+
+  # Pod configuration
+  podAnnotations: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    fsGroup: 65534
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: rhobs-gateway
+            topologyKey: kubernetes.io/hostname
+
+  nodeSelector: {}
+  tolerations: []
+
+# =============================================================================
+# Thanos - Metrics Backend
+# =============================================================================
+thanos:
+  enabled: true
+
+  # Object storage configuration
+  objstoreConfig: |
+    type: s3
+    config:
+      bucket: rhobs-metrics-{{ .Values.global.region }}
+      endpoint: s3.{{ .Values.global.region }}.amazonaws.com
+      region: {{ .Values.global.region }}
+
+  # Thanos Receive - ingestion
+  receive:
+    enabled: true
+    mode: dual-mode
+    replicaCount: 3
+    replicationFactor: 2
+
+    persistence:
+      enabled: true
+      size: 100Gi
+      storageClass: gp3
+
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 4Gi
+      limits:
+        cpu: 4000m
+        memory: 16Gi
+
+    extraFlags:
+      - --tsdb.retention=6h
+      - --tsdb.wal-compression
+      - --receive.hashrings-algorithm=ketama
+
+  # Thanos Query - read path
+  query:
+    enabled: true
+    replicaCount: 2
+    dnsDiscovery:
+      enabled: true
+      sidecarsService: ""
+      sidecarsNamespace: ""
+
+    stores:
+      - dnssrv+_grpc._tcp.thanos-storegateway-headless
+      - dnssrv+_grpc._tcp.thanos-receive-headless
+
+    extraFlags:
+      - --query.auto-downsampling
+      - --query.partial-response
+
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+
+  # Thanos Query Frontend - caching
+  queryFrontend:
+    enabled: true
+    replicaCount: 2
+
+    extraFlags:
+      - |
+        --query-range.response-cache-config=
+        type: memcached
+        config:
+          addresses:
+            - rhobs-cache:11211
+          timeout: 500ms
+          max_idle_connections: 100
+
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+
+  # Thanos Store Gateway - historical data
+  storegateway:
+    enabled: true
+    replicaCount: 2
+
+    persistence:
+      enabled: true
+      size: 50Gi
+      storageClass: gp3
+
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: 2000m
+        memory: 8Gi
+
+  # Thanos Compactor - downsampling
+  compactor:
+    enabled: true
+
+    retentionResolutionRaw: 15d
+    retentionResolution5m: 30d
+    retentionResolution1h: 90d
+
+    persistence:
+      enabled: true
+      size: 100Gi
+      storageClass: gp3
+
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: 2000m
+        memory: 8Gi
+
+  # Thanos Ruler - alerting rules
+  ruler:
+    enabled: true
+    replicaCount: 2
+
+    alertmanagers:
+      - http://alertmanager:9093
+
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClass: gp3
+
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+
+  # Service account for IRSA
+  serviceAccount:
+    create: true
+    annotations: {}
+    # eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/rhobs-thanos
+
+  # Metrics
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+# =============================================================================
+# Loki - Logs Backend
+# =============================================================================
+loki:
+  enabled: true
+
+  # Loki configuration
+  loki:
+    auth_enabled: true
+
+    schemaConfig:
+      configs:
+        - from: "2024-01-01"
+          store: tsdb
+          object_store: s3
+          schema: v13
+          index:
+            prefix: loki_index_
+            period: 24h
+
+    storage:
+      type: s3
+      bucketNames:
+        chunks: rhobs-logs-us-east-1
+        ruler: rhobs-logs-us-east-1
+      s3:
+        region: us-east-1
+        endpoint: s3.us-east-1.amazonaws.com
+
+    limits_config:
+      retention_period: 2160h  # 90 days
+      ingestion_rate_mb: 50
+      ingestion_burst_size_mb: 100
+      max_query_parallelism: 32
+
+  # Distributor
+  distributor:
+    replicas: 3
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+
+  # Ingester
+  ingester:
+    replicas: 3
+    persistence:
+      enabled: true
+      size: 50Gi
+      storageClass: gp3
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 4Gi
+      limits:
+        cpu: 4000m
+        memory: 16Gi
+
+  # Querier
+  querier:
+    replicas: 3
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: 2000m
+        memory: 8Gi
+
+  # Query Frontend
+  queryFrontend:
+    replicas: 2
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+
+  # Compactor
+  compactor:
+    enabled: true
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: 2000m
+        memory: 8Gi
+
+  # Gateway
+  gateway:
+    enabled: true
+    replicas: 2
+
+  # Service account for IRSA
+  serviceAccount:
+    create: true
+    annotations: {}
+    # eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/rhobs-loki
+
+# =============================================================================
+# Alertmanager
+# =============================================================================
+alertmanager:
+  enabled: true
+
+  replicaCount: 3
+
+  config:
+    global:
+      resolve_timeout: 5m
+
+    route:
+      receiver: 'null'
+      group_by: ['alertname', 'cluster', 'region', 'namespace']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        - match:
+            severity: critical
+          receiver: pagerduty-critical
+          continue: true
+        - match:
+            severity: warning
+          receiver: slack-warning
+
+    receivers:
+      - name: 'null'
+      - name: pagerduty-critical
+        pagerduty_configs:
+          - routing_key_file: /etc/alertmanager/secrets/pagerduty-routing-key
+            severity: critical
+      - name: slack-warning
+        slack_configs:
+          - channel: '#alerts-warning'
+            api_url_file: /etc/alertmanager/secrets/slack-webhook-url
+
+    inhibit_rules:
+      - source_matchers:
+          - severity = critical
+        target_matchers:
+          - severity =~ warning|info
+        equal: ['alertname', 'cluster', 'namespace']
+
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: gp3
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+# =============================================================================
+# Synthetics - Probes and Uptime Monitoring
+# =============================================================================
+synthetics:
+  enabled: true
+
+  api:
+    enabled: true
+    replicaCount: 2
+    image:
+      repository: quay.io/rhobs/synthetics-api
+      tag: latest
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  agent:
+    enabled: true
+    replicaCount: 2
+    image:
+      repository: quay.io/rhobs/synthetics-agent
+      tag: latest
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  blackbox:
+    enabled: true
+    replicaCount: 2
+    image:
+      repository: quay.io/prometheus/blackbox-exporter
+      tag: v0.24.0
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+  # Prometheus for scraping synthetic probes
+  prometheus:
+    enabled: true
+    # Requires Prometheus Operator / kube-prometheus-stack
+
+# =============================================================================
+# Grafana (optional local dashboards)
+# =============================================================================
+grafana:
+  enabled: false
+
+  replicas: 2
+
+  adminUser: admin
+  adminPassword: ""  # Use secret
+
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Thanos
+          type: prometheus
+          url: http://thanos-query-frontend:9090
+          isDefault: true
+        - name: Loki
+          type: loki
+          url: http://loki-gateway:80
+
+# =============================================================================
+# Monitoring - ServiceMonitors and PrometheusRules
+# =============================================================================
+monitoring:
+  enabled: true
+
+  serviceMonitors:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack
+
+  prometheusRules:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack
+
+    # RHOBS cell health rules
+    rules:
+      - name: rhobs-cell-health
+        rules:
+          - alert: RHOBSGatewayDown
+            expr: up{job="rhobs-gateway"} == 0
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "RHOBS Gateway is down"
+              description: "RHOBS Gateway {{ $labels.instance }} has been down for more than 5 minutes"
+
+          - alert: RHOBSThanosReceiveDown
+            expr: up{job="thanos-receive"} == 0
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Thanos Receive is down"
+              description: "Thanos Receive {{ $labels.instance }} has been down for more than 5 minutes"
+
+          - alert: RHOBSHighIngestionLatency
+            expr: histogram_quantile(0.99, sum(rate(thanos_receive_forward_request_duration_seconds_bucket[5m])) by (le)) > 1
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High ingestion latency on Thanos Receive"
+              description: "99th percentile ingestion latency is above 1 second"
+
+# =============================================================================
+# External Secrets (AWS Secrets Manager integration)
+# =============================================================================
+externalSecrets:
+  enabled: true
+  refreshInterval: 1h
+
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: ClusterSecretStore
+
+  secrets:
+    - name: alertmanager-secrets
+      data:
+        - secretKey: pagerduty-routing-key
+          remoteRef:
+            key: rhobs/alertmanager/pagerduty
+            property: routing-key
+        - secretKey: slack-webhook-url
+          remoteRef:
+            key: rhobs/alertmanager/slack
+            property: webhook-url
+
+    - name: gateway-oidc-secret
+      data:
+        - secretKey: client-secret
+          remoteRef:
+            key: rhobs/gateway/oidc
+            property: client-secret
+
+# =============================================================================
+# RBAC
+# =============================================================================
+rbac:
+  create: true
+
+  # Additional cluster roles
+  clusterRoles: []
+
+  # Additional role bindings
+  roleBindings: []
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  create: true
+  name: rhobs-cell
+  annotations: {}
+  # eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/rhobs-cell

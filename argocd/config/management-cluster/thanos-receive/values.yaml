@@ -1,0 +1,114 @@
+# Thanos Receive - Default Values
+# These are overridden by environment-specific values in deploy/{env}/{region}/argocd/
+
+global:
+  cluster_type: management-cluster
+  environment: ""
+  aws_region: ""
+  cluster_name: ""
+
+# Thanos subchart configuration
+thanos:
+  enabled: true
+
+  # Disable components we don't need for basic receive test
+  queryFrontend:
+    enabled: false
+
+  storegateway:
+    enabled: false
+
+  compactor:
+    enabled: false
+
+  ruler:
+    enabled: false
+
+  minio:
+    enabled: false
+
+  # Empty objstore config - using local storage only for testing
+  objstoreConfig: ""
+
+  # Thanos Receive - metrics ingestion endpoint
+  receive:
+    enabled: true
+    replicaCount: 1
+
+    # Log level
+    logLevel: info
+
+    # TSDB retention (local, before shipping to S3)
+    tsdbRetention: 2h
+
+    # Persistence
+    persistence:
+      enabled: true
+      size: 50Gi
+      storageClass: gp3
+
+    # Resources
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+
+    # Service configuration
+    service:
+      type: ClusterIP
+      ports:
+        http: 10902
+        grpc: 10901
+        remote-write: 19291
+
+    # Extra flags
+    extraFlags:
+      - --tsdb.wal-compression
+      - --receive.local-endpoint=127.0.0.1:10901
+
+    # Pod anti-affinity
+    podAntiAffinityPreset: soft
+
+    # Service account
+    serviceAccount:
+      create: true
+      annotations: {}
+
+  # Thanos Query - for verifying ingested metrics
+  query:
+    enabled: true
+    replicaCount: 1
+
+    # Discover receive as a store
+    stores: []
+    # Will be auto-discovered via DNS
+
+    dnsDiscovery:
+      enabled: true
+      sidecarsService: ""
+      sidecarsNamespace: ""
+
+    # Resources
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+
+    # Service
+    service:
+      type: ClusterIP
+      ports:
+        http: 9090
+        grpc: 10901
+
+  # Enable metrics for monitoring
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false  # Enable if Prometheus Operator is installed

@@ -1,0 +1,23 @@
+{{- if and .Values.gateway.enabled .Values.monitoring.enabled .Values.monitoring.serviceMonitors.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Values.gateway.name }}
+  namespace: {{ include "rhobs-cell.namespace" . }}
+  labels:
+    {{- include "rhobs-cell.gateway.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.serviceMonitors.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "rhobs-cell.gateway.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: internal
+      interval: 30s
+      path: /metrics
+  namespaceSelector:
+    matchNames:
+      - {{ include "rhobs-cell.namespace" . }}
+{{- end }}

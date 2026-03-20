@@ -1,0 +1,103 @@
+{{- if .Values.gateway.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.gateway.name }}
+  namespace: {{ include "rhobs-cell.namespace" . }}
+  labels:
+    {{- include "rhobs-cell.gateway.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.gateway.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "rhobs-cell.gateway.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/gateway/configmap.yaml") . | sha256sum }}
+        {{- with .Values.gateway.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "rhobs-cell.gateway.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "rhobs-cell.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.gateway.podSecurityContext | nindent 8 }}
+      containers:
+        - name: gateway
+          securityContext:
+            {{- toYaml .Values.gateway.securityContext | nindent 12 }}
+          image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag }}"
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          args:
+            - --web.listen=0.0.0.0:{{ .Values.gateway.service.port }}
+            - --web.internal.listen=0.0.0.0:8081
+            - --web.healthchecks.url=http://localhost:{{ .Values.gateway.service.port }}
+            - --log.level=info
+            - --logs.read.endpoint={{ include "rhobs-cell.loki.readEndpoint" . }}
+            - --logs.write.endpoint={{ include "rhobs-cell.loki.writeEndpoint" . }}
+            - --metrics.read.endpoint={{ include "rhobs-cell.thanos.queryEndpoint" . }}
+            - --metrics.write.endpoint={{ include "rhobs-cell.thanos.receiveEndpoint" . }}
+            - --rbac.config=/etc/observatorium/rbac.yaml
+            - --tenants.config=/etc/observatorium/tenants.yaml
+            {{- if .Values.gateway.auth.mtls.enabled }}
+            - --tls.client-auth-type=RequireAndVerifyClientCert
+            - --tls.client-ca-file=/etc/tls/ca/ca.crt
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.gateway.service.port }}
+              protocol: TCP
+            - name: internal
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: internal
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: internal
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/observatorium
+              readOnly: true
+            {{- if .Values.gateway.auth.mtls.enabled }}
+            - name: mtls-ca
+              mountPath: /etc/tls/ca
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Values.gateway.name }}-config
+        {{- if .Values.gateway.auth.mtls.enabled }}
+        - name: mtls-ca
+          secret:
+            secretName: {{ .Values.gateway.auth.mtls.caSecretRef.name }}
+        {{- end }}
+      {{- with .Values.gateway.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.gateway.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.gateway.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

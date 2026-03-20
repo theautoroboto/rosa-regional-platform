@@ -1,0 +1,47 @@
+apiVersion: v2
+name: rhobs-cell
+description: Regional Observability Cell - Thanos, Loki, Gateway, Alertmanager, Synthetics
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+
+maintainers:
+  - name: SRE Platform
+    email: sre-platform@example.com
+
+keywords:
+  - observability
+  - metrics
+  - logs
+  - thanos
+  - loki
+  - monitoring
+
+dependencies:
+  # Thanos - Metrics storage and query
+  - name: thanos
+    version: "14.0.2"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: thanos.enabled
+    alias: thanos
+
+  # Loki - Logs storage and query
+  - name: loki-distributed
+    version: "0.79.0"
+    repository: "https://grafana.github.io/helm-charts"
+    condition: loki.enabled
+    alias: loki
+
+  # Alertmanager
+  - name: alertmanager
+    version: "1.10.0"
+    repository: "https://prometheus-community.github.io/helm-charts"
+    condition: alertmanager.enabled
+    alias: alertmanager
+
+  # Grafana (optional - for local dashboards)
+  - name: grafana
+    version: "7.3.7"
+    repository: "https://grafana.github.io/helm-charts"
+    condition: grafana.enabled
+    alias: grafana

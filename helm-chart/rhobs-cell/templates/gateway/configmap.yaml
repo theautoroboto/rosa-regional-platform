@@ -1,0 +1,81 @@
+{{- if .Values.gateway.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.gateway.name }}-config
+  namespace: {{ include "rhobs-cell.namespace" . }}
+  labels:
+    {{- include "rhobs-cell.gateway.labels" . | nindent 4 }}
+data:
+  rbac.yaml: |
+    # RBAC configuration for RHOBS Gateway
+    # Maps roles to permissions
+    roles:
+      - name: metrics-read
+        resources:
+          - metrics
+        permissions:
+          - read
+      - name: metrics-write
+        resources:
+          - metrics
+        permissions:
+          - write
+      - name: logs-read
+        resources:
+          - logs
+        permissions:
+          - read
+      - name: logs-write
+        resources:
+          - logs
+        permissions:
+          - write
+      - name: probes-read
+        resources:
+          - probes
+        permissions:
+          - read
+      - name: probes-write
+        resources:
+          - probes
+        permissions:
+          - write
+
+    # Role bindings for service accounts / users
+    roleBindings:
+      {{- range .Values.gateway.rbac.roleBindings }}
+      - name: {{ .name }}
+        roles:
+          {{- range .roles }}
+          - {{ . }}
+          {{- end }}
+        subjects:
+          {{- range .subjects }}
+          - kind: {{ .kind }}
+            name: {{ .name }}
+          {{- end }}
+      {{- end }}
+
+  tenants.yaml: |
+    # Tenant configuration
+    tenants:
+      {{- range .Values.gateway.rbac.tenants }}
+      - id: {{ .id }}
+        name: {{ .name }}
+        {{- if .oidc }}
+        oidc:
+          clientID: {{ .oidc.clientId | quote }}
+          issuerURL: {{ .oidc.issuerUrl | quote }}
+        {{- end }}
+        {{- if .rateLimits }}
+        rateLimits:
+          - endpoint: /api/v1/receive
+            limit: {{ .rateLimits.requestsPerSecond }}
+            window: 1s
+          - endpoint: /api/v1/query
+            limit: {{ .rateLimits.requestsPerSecond }}
+            window: 1s
+        {{- end }}
+      {{- end }}
+{{- end }}

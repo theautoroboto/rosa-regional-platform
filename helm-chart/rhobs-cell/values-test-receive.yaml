@@ -1,0 +1,109 @@
+# Minimal values for testing Thanos Receive only
+# Usage: helm install thanos-test . -f values-test-receive.yaml -n thanos-test --create-namespace
+
+global:
+  region: us-east-1
+  environment: test
+  clusterName: thanos-test
+  domain: ""
+  aws:
+    accountId: ""
+  storageClass: gp3
+
+# Disable everything except Thanos
+namespace:
+  create: true
+  name: thanos-test
+
+gateway:
+  enabled: false
+
+loki:
+  enabled: false
+
+alertmanager:
+  enabled: false
+
+synthetics:
+  enabled: false
+
+grafana:
+  enabled: false
+
+monitoring:
+  enabled: false
+
+externalSecrets:
+  enabled: false
+
+rbac:
+  create: false
+
+serviceAccount:
+  create: true
+  name: thanos-test
+
+# Minimal Thanos - just Receive
+thanos:
+  enabled: true
+
+  # Disable S3 for testing - use local storage only
+  objstoreConfig: ""
+
+  receive:
+    enabled: true
+    mode: standalone  # No routing, single instance
+    replicaCount: 1
+    replicationFactor: 1
+
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClass: gp3
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+    # Expose remote-write endpoint
+    service:
+      type: ClusterIP
+      ports:
+        http: 10902
+        grpc: 10901
+        remote-write: 19291
+
+    extraFlags:
+      - --tsdb.retention=2h
+      - --receive.local-endpoint=127.0.0.1:10901
+      - --label=receive_replica="0"
+
+  # Disable other components
+  query:
+    enabled: true  # Need this to verify data
+    replicaCount: 1
+    stores:
+      - dnssrv+_grpc._tcp.thanos-receive-headless
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+
+  queryFrontend:
+    enabled: false
+
+  storegateway:
+    enabled: false
+
+  compactor:
+    enabled: false
+
+  ruler:
+    enabled: false
+
+  metrics:
+    enabled: false

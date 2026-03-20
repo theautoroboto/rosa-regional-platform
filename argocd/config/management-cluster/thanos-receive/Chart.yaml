@@ -1,0 +1,18 @@
+apiVersion: v2
+name: thanos-receive
+description: Thanos Receive for metrics ingestion on Management Cluster
+type: application
+version: 0.1.0
+appVersion: "0.34.1"
+
+keywords:
+  - thanos
+  - metrics
+  - observability
+  - receive
+
+dependencies:
+  - name: thanos
+    version: "14.0.2"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: thanos.enabled
