@@ -69,6 +69,14 @@ else
     ENABLE_BASTION="false"
 fi
 
+# Normalize enable_thanos_gateway to "true"/"false"
+_RAW_THANOS=$(jq -r '.enable_thanos_gateway // false' "$DEPLOY_CONFIG_FILE")
+if [ "$_RAW_THANOS" == "true" ] || [ "$_RAW_THANOS" == "1" ]; then
+    ENABLE_THANOS_GATEWAY="true"
+else
+    ENABLE_THANOS_GATEWAY="false"
+fi
+
 # Read environment domain from environment.json
 _ENV_JSON="deploy/${ENVIRONMENT}/environment.json"
 if [ -f "$_ENV_JSON" ]; then
@@ -110,10 +118,11 @@ export SERVICE_PHASE
 export COST_CENTER
 export SECTOR
 export ENABLE_BASTION
+export ENABLE_THANOS_GATEWAY
 export ENVIRONMENT_DOMAIN
 
 echo "  APP_CODE=$APP_CODE SERVICE_PHASE=$SERVICE_PHASE COST_CENTER=$COST_CENTER"
-echo "  SECTOR=$SECTOR ENABLE_BASTION=$ENABLE_BASTION"
+echo "  SECTOR=$SECTOR ENABLE_BASTION=$ENABLE_BASTION ENABLE_THANOS_GATEWAY=$ENABLE_THANOS_GATEWAY"
 [ -n "${ENVIRONMENT_DOMAIN:-}" ] && echo "  ENVIRONMENT_DOMAIN=$ENVIRONMENT_DOMAIN"
 [[ "$_DEPLOY_MODE" == "management" ]] && echo "  CLUSTER_ID=$CLUSTER_ID REGIONAL_AWS_ACCOUNT_ID=$REGIONAL_AWS_ACCOUNT_ID"
 echo ""

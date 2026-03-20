@@ -2,6 +2,7 @@ region_deployments:
   us-east-1:
     terraform_vars:
       enable_bastion: true
+      enable_thanos_gateway: true
       # delete: true
     management_clusters:
       mc01: {}

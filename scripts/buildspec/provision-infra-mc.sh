@@ -90,6 +90,7 @@ fi
 export TF_VAR_container_image="${PLATFORM_IMAGE}"
 
 export TF_VAR_enable_bastion="${ENABLE_BASTION}"
+export TF_VAR_enable_thanos_gateway="${ENABLE_THANOS_GATEWAY}"
 
 echo "Terraform variables:"
 echo "  Region: $TF_VAR_region"
@@ -97,6 +98,7 @@ echo "  Target Account: $TARGET_ACCOUNT_ID"
 echo "  Management ID: $TF_VAR_management_id"
 echo "  Regional AWS Account: $TF_VAR_regional_aws_account_id"
 echo "  Enable Bastion: $TF_VAR_enable_bastion"
+echo "  Enable Thanos Gateway: $TF_VAR_enable_thanos_gateway"
 echo "  App Code: $TF_VAR_app_code"
 echo "  Service Phase: $TF_VAR_service_phase"
 echo "  Cost Center: $TF_VAR_cost_center"
