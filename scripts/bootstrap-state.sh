@@ -16,6 +16,13 @@ REGION=${1:-$(aws configure get region 2>/dev/null)}
 REGION=${REGION:-us-east-1}
 BUCKET_NAME="terraform-state-${ACCOUNT_ID}"
 
+# Determine ARN partition based on region (GovCloud vs Commercial)
+if [[ "$REGION" == us-gov-* ]]; then
+    ARN_PARTITION="aws-us-gov"
+else
+    ARN_PARTITION="aws"
+fi
+
 echo "Bootstrapping Terraform State in $REGION..."
 echo "Bucket: $BUCKET_NAME"
 echo ""
@@ -61,8 +68,8 @@ apply_bucket_security() {
         "s3:ListBucket"
       ],
       "Resource": [
-        "arn:aws:s3:::${BUCKET_NAME}",
-        "arn:aws:s3:::${BUCKET_NAME}/*"
+        "arn:${ARN_PARTITION}:s3:::${BUCKET_NAME}",
+        "arn:${ARN_PARTITION}:s3:::${BUCKET_NAME}/*"
       ],
       "Condition": {
         "StringEquals": {
@@ -86,8 +93,8 @@ EOF
       "Principal": "*",
       "Action": "s3:*",
       "Resource": [
-        "arn:aws:s3:::${BUCKET_NAME}",
-        "arn:aws:s3:::${BUCKET_NAME}/*"
+        "arn:${ARN_PARTITION}:s3:::${BUCKET_NAME}",
+        "arn:${ARN_PARTITION}:s3:::${BUCKET_NAME}/*"
       ],
       "Condition": {
         "StringNotEquals": {
