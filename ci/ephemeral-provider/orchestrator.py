@@ -143,7 +143,11 @@ class EphemeralEnvOrchestrator:
         self.aws.setup_central_account()
 
     def _inject_ephemeral_config(self, git: GitManager):
-        """Inject the ephemeral environment by writing a config/environments/<env>.config.yaml file."""
+        """Inject the ephemeral environment by writing a config/<env>/<region>.yaml file.
+
+        Writes the region YAML in the format render.py expects so that account IDs
+        are baked directly into the rendered output (no SSM resolution needed).
+        """
         regional_account_id = self.aws.get_target_account_id("regional")
         management_account_id = self.aws.get_target_account_id("management")
 
@@ -154,23 +158,27 @@ class EphemeralEnvOrchestrator:
             management_account_id,
         )
 
-        env_config = {
-            "region_deployments": {
-                self.region: {
-                    "account_id": regional_account_id,
-                    "management_clusters": {
-                        "mc01": {
-                            "account_id": management_account_id,
-                        },
-                    },
-                },
+        region_config = {
+            "aws": {
+                "account_id": regional_account_id,
+                "management_cluster_account_id": management_account_id,
+            },
+            "management_clusters": {
+                "mc01": {},
             },
         }
 
-        env_file = git.work_dir / "config" / "environments" / f"{TARGET_ENVIRONMENT}.config.yaml"
-        env_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(env_file, "w") as f:
-            yaml.dump(env_config, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        env_config_dir = git.work_dir / "config" / TARGET_ENVIRONMENT
+        env_config_dir.mkdir(parents=True, exist_ok=True)
+
+        # Remove region files that don't match the target region
+        for existing in env_config_dir.glob("*.yaml"):
+            if existing.name != "defaults.yaml" and existing.stem != self.region:
+                existing.unlink()
+
+        region_file = env_config_dir / f"{self.region}.yaml"
+        with open(region_file, "w") as f:
+            yaml.dump(region_config, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
     def _bootstrap_pipeline_provisioner(self, git: GitManager):
         """Bootstrap the pipeline-provisioner pointing at the CI branch."""
@@ -339,17 +347,14 @@ class EphemeralEnvOrchestrator:
         # Snapshot known executions before pushing delete flags
         pipeline_known = self.monitor.snapshot_pipeline_executions(self.pipeline_prefix)
 
-        def set_delete_flag(env_config):
-            for rd_name, rd_config in env_config.get("region_deployments", {}).items():
-                if rd_config is None:
-                    env_config["region_deployments"][rd_name] = rd_config = {}
-                rd_config["delete"] = True
-                for mc_name, mc_config in rd_config.get("management_clusters", {}).items():
-                    if mc_config is None:
-                        rd_config["management_clusters"][mc_name] = mc_config = {}
-                    mc_config["delete"] = True
+        def set_delete_flag(region_config):
+            region_config["delete"] = True
+            for mc_name, mc_config in region_config.get("management_clusters", {}).items():
+                if mc_config is None:
+                    region_config["management_clusters"][mc_name] = mc_config = {}
+                mc_config["delete"] = True
 
-        git.modify_config(TARGET_ENVIRONMENT, set_delete_flag)
+        git.modify_config(TARGET_ENVIRONMENT, self.region, set_delete_flag)
 
         if fire_and_forget:
             log.info(
@@ -391,17 +396,14 @@ class EphemeralEnvOrchestrator:
         # Snapshot again before pushing delete_pipeline flags
         provisioner_known = self.monitor.get_execution_ids(self.provisioner_name)
 
-        def set_delete_pipeline_flag(env_config):
-            for rd_name, rd_config in env_config.get("region_deployments", {}).items():
-                if rd_config is None:
-                    env_config["region_deployments"][rd_name] = rd_config = {}
-                rd_config["delete_pipeline"] = True
-                for mc_name, mc_config in rd_config.get("management_clusters", {}).items():
-                    if mc_config is None:
-                        rd_config["management_clusters"][mc_name] = mc_config = {}
-                    mc_config["delete_pipeline"] = True
+        def set_delete_pipeline_flag(region_config):
+            region_config["delete_pipeline"] = True
+            for mc_name, mc_config in region_config.get("management_clusters", {}).items():
+                if mc_config is None:
+                    region_config["management_clusters"][mc_name] = mc_config = {}
+                mc_config["delete_pipeline"] = True
 
-        git.modify_config(TARGET_ENVIRONMENT, set_delete_pipeline_flag)
+        git.modify_config(TARGET_ENVIRONMENT, self.region, set_delete_pipeline_flag)
 
         # Wait for pipeline-provisioner to destroy the pipelines
         provisioner_exec_id = self.monitor.wait_for_new_execution(
