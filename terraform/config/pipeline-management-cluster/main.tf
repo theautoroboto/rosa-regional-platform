@@ -18,6 +18,7 @@ locals {
   bootstrap_project_name = "${local.name_prefix}-bootstrap"
   iot_mint_project_name  = "${local.name_prefix}-iot-mint"
   register_project_name  = "${local.name_prefix}-register"
+  test_thanos_project_name = "${local.name_prefix}-test-thanos"
   pipeline_name          = "${local.name_prefix}-pipe"
 
   # Repository URL constructed from github_repository variable
@@ -68,7 +69,9 @@ resource "aws_iam_role_policy" "codebuild_policy" {
           "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.iot_mint.name}",
           "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.iot_mint.name}:*",
           "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.register.name}",
-          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.register.name}:*"
+          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${aws_codebuild_project.register.name}:*",
+          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${local.test_thanos_project_name}",
+          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${local.test_thanos_project_name}:*"
         ]
       },
       {
@@ -193,7 +196,9 @@ resource "aws_iam_role_policy" "codebuild_policy" {
           "logs:UntagResource",
           "logs:PutRetentionPolicy",
           "logs:TagLogGroup",
-          "logs:UntagLogGroup"
+          "logs:UntagLogGroup",
+          # API Gateway - For Thanos SigV4 testing
+          "execute-api:Invoke"
         ]
         Resource = "*"
       }
@@ -256,7 +261,8 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
           aws_codebuild_project.management_apply.arn,
           aws_codebuild_project.management_bootstrap.arn,
           aws_codebuild_project.iot_mint.arn,
-          aws_codebuild_project.register.arn
+          aws_codebuild_project.register.arn,
+          aws_codebuild_project.test_thanos.arn
         ]
       },
       {
@@ -268,7 +274,8 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
           "arn:aws:codebuild:*:*:project/${aws_codebuild_project.management_apply.name}",
           "arn:aws:codebuild:*:*:project/${aws_codebuild_project.management_bootstrap.name}",
           "arn:aws:codebuild:*:*:project/${aws_codebuild_project.iot_mint.name}",
-          "arn:aws:codebuild:*:*:project/${aws_codebuild_project.register.name}"
+          "arn:aws:codebuild:*:*:project/${aws_codebuild_project.register.name}",
+          "arn:aws:codebuild:*:*:project/${aws_codebuild_project.test_thanos.name}"
         ]
       }
     ]
@@ -520,6 +527,50 @@ resource "aws_codebuild_project" "register" {
   }
 }
 
+# CodeBuild Project - Test Thanos Receive
+resource "aws_codebuild_project" "test_thanos" {
+  name          = local.test_thanos_project_name
+  service_role  = aws_iam_role.codebuild_role.arn
+  build_timeout = 15
+
+  artifacts {
+    type = "CODEPIPELINE"
+  }
+
+  environment {
+    compute_type                = "BUILD_GENERAL1_SMALL"
+    image                       = var.codebuild_image
+    type                        = "LINUX_CONTAINER"
+    image_pull_credentials_type = "CODEBUILD"
+
+    # AWS account where Management Cluster is deployed
+    environment_variable {
+      name  = "TARGET_ACCOUNT_ID"
+      value = var.target_account_id
+    }
+    # AWS region for the deployment
+    environment_variable {
+      name  = "TARGET_REGION"
+      value = var.target_region
+    }
+    # Unique identifier for this management cluster
+    environment_variable {
+      name  = "MANAGEMENT_ID"
+      value = var.management_id
+    }
+    # Environment name (staging/production)
+    environment_variable {
+      name  = "ENVIRONMENT"
+      value = var.target_environment
+    }
+  }
+
+  source {
+    type      = "CODEPIPELINE"
+    buildspec = "terraform/config/pipeline-management-cluster/buildspec-test-thanos.yml"
+  }
+}
+
 # Allow time for IAM policy propagation before creating the pipeline.
 # Pipelines auto-trigger on creation; without this delay the Source action
 # can fail with "Access Denied" on the CodeStar connection.
@@ -670,6 +721,30 @@ resource "aws_codepipeline" "regional_pipeline" {
 
       configuration = {
         ProjectName = aws_codebuild_project.register.name
+        EnvironmentVariables = jsonencode([
+          {
+            name  = "IS_DESTROY"
+            value = "#{variables.IS_DESTROY}"
+            type  = "PLAINTEXT"
+          }
+        ])
+      }
+    }
+  }
+
+  stage {
+    name = "Test"
+
+    action {
+      name            = "TestThanosReceive"
+      category        = "Build"
+      owner           = "AWS"
+      provider        = "CodeBuild"
+      input_artifacts = ["source_output"]
+      version         = "1"
+
+      configuration = {
+        ProjectName = aws_codebuild_project.test_thanos.name
         EnvironmentVariables = jsonencode([
           {
             name  = "IS_DESTROY"
