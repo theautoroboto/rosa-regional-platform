@@ -1,4 +1,4 @@
-.PHONY: help terraform-fmt terraform-init terraform-validate terraform-upgrade terraform-output-management terraform-output-regional test-e2e helm-lint check-rendered-files ephemeral-preflight ephemeral-provision ephemeral-teardown ephemeral-resync ephemeral-list ephemeral-shell ephemeral-e2e check-docs pre-push
+.PHONY: help terraform-fmt terraform-init terraform-validate terraform-upgrade terraform-output-management terraform-output-regional helm-lint check-rendered-files ephemeral-preflight ephemeral-provision ephemeral-teardown ephemeral-resync ephemeral-list ephemeral-shell ephemeral-e2e check-docs pre-push
 
 # Default target
 help:
@@ -14,7 +14,6 @@ help:
 	@echo "  helm-lint                             - Lint all Helm charts"
 	@echo "  check-rendered-files                  - Verify deploy/ is up to date with config.yaml"
 	@echo "  check-docs                            - Check documentation formatting"
-	@echo "  test-e2e                              - Run end-to-end tests"
 	@echo ""
 	@echo "🔄 Ephemeral Developer Environments (shared dev accounts):"
 	@echo "  ephemeral-provision                   - Provision an ephemeral environment"
@@ -36,10 +35,10 @@ TERRAFORM_ROOT_DIRS := $(shell find ./terraform/config -name "*.tf" -type f -not
 # Format all Terraform files
 terraform-fmt:
 	@echo "🔧 Formatting Terraform files..."
-	@echo "$(TERRAFORM_DIRS)" | tr ' ' '\n' | xargs -P 8 -I {} sh -c ' \
-		echo "   Formatting {}"; \
-		terraform -chdir={} fmt -recursive \
-	'
+	@echo "$(TERRAFORM_DIRS)" | tr ' ' '\n' | xargs -P 8 -I{} sh -c ' \
+		echo "   Formatting $$1"; \
+		terraform -chdir=$$1 fmt -recursive \
+	' _ {}
 	@echo "✅ Terraform formatting complete"
 
 # Upgrade provider versions in all Terraform configurations
@@ -65,13 +64,13 @@ terraform-output-regional:
 # Initialize root Terraform configurations (no backend)
 terraform-init:
 	@echo "🔧 Initializing Terraform configurations..."
-	@echo "$(TERRAFORM_ROOT_DIRS)" | tr ' ' '\n' | xargs -P 1 -I {} sh -c ' \
-		echo "   Initializing {}"; \
-		if ! terraform -chdir={} init -backend=false; then \
-			echo "   ❌ Init failed in {}"; \
+	@echo "$(TERRAFORM_ROOT_DIRS)" | tr ' ' '\n' | xargs -P 1 -I{} sh -c ' \
+		echo "   Initializing $$1"; \
+		if ! terraform -chdir=$$1 init -backend=false; then \
+			echo "   ❌ Init failed in $$1"; \
 			exit 1; \
 		fi \
-	' || exit 1
+	' _ {} || exit 1
 	@echo "✅ Terraform initialization complete"
 
 # Check formatting and validate all Terraform configurations
@@ -80,23 +79,23 @@ terraform-init:
 # cannot be validated in isolation.
 terraform-validate: terraform-init
 	@echo "🔍 Checking Terraform formatting..."
-	@echo "$(TERRAFORM_DIRS)" | tr ' ' '\n' | xargs -P 8 -I {} sh -c ' \
-		echo "   Checking formatting in {}"; \
-		if ! terraform -chdir={} fmt -check -recursive; then \
-			echo "   ❌ Formatting check failed in {}"; \
+	@echo "$(TERRAFORM_DIRS)" | tr ' ' '\n' | xargs -P 8 -I{} sh -c ' \
+		echo "   Checking formatting in $$1"; \
+		if ! terraform -chdir=$$1 fmt -check -recursive; then \
+			echo "   ❌ Formatting check failed in $$1"; \
 			exit 1; \
 		fi \
-	' || { echo "❌ Terraform formatting check failed for one or more directories"; \
+	' _ {} || { echo "❌ Terraform formatting check failed for one or more directories"; \
 		echo "   Run '\''make terraform-fmt'\'' to fix formatting."; \
 		exit 1; }
 	@echo "🔍 Validating Terraform configurations..."
-	@echo "$(TERRAFORM_ROOT_DIRS)" | tr ' ' '\n' | xargs -P 2 -I {} sh -c ' \
-		echo "   Validating {}"; \
-		if ! terraform -chdir={} validate; then \
-			echo "   ❌ Validation failed in {}"; \
+	@echo "$(TERRAFORM_ROOT_DIRS)" | tr ' ' '\n' | xargs -P 2 -I{} sh -c ' \
+		echo "   Validating $$1"; \
+		if ! terraform -chdir=$$1 validate; then \
+			echo "   ❌ Validation failed in $$1"; \
 			exit 1; \
 		fi \
-	' || { echo "❌ Terraform validation failed for one or more directories"; \
+	' _ {} || { echo "❌ Terraform validation failed for one or more directories"; \
 		exit 1; }
 	@echo "✅ Terraform validation complete"
 
