@@ -26,7 +26,6 @@ phases:
           echo "SKIP_THANOS_TEST=true" >> $CODEBUILD_SRC_DIR/env.sh
           exit 0
         fi
-
       - echo "Configuring AWS credentials for target account..."
       - |
         if [ -n "$TARGET_ACCOUNT_ID" ] && [ "$TARGET_ACCOUNT_ID" != "$(aws sts get-caller-identity --query Account --output text)" ]; then
@@ -41,7 +40,6 @@ phases:
           export AWS_SESSION_TOKEN=$(echo $CREDS | jq -r '.SessionToken')
         fi
       - aws sts get-caller-identity
-
       - echo "Retrieving Thanos API Gateway URL from Terraform outputs..."
       - |
         cd terraform/config/management-cluster
@@ -71,7 +69,6 @@ phases:
           echo "Thanos Gateway not enabled - skipping tests"
           exit 0
         fi
-
       - echo "=== Test 1: Thanos Receive Health Check ==="
       - |
         HEALTHY=false
@@ -97,7 +94,6 @@ phases:
           echo "ERROR: Thanos Receive did not become healthy after $MAX_RETRIES attempts"
           exit 1
         fi
-
       - echo "=== Test 2: Send Test Metric ==="
       - |
         # Generate a unique test metric name with timestamp
@@ -127,7 +123,6 @@ phases:
         else
           echo "Response: $RESPONSE"
         fi
-
       - echo "=== Test 3: Query Thanos (via Query component) ==="
       - |
         # Test the query endpoint if available
