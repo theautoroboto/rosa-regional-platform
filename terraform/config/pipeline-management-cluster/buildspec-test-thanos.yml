@@ -21,21 +21,23 @@ phases:
       - aws sts get-caller-identity
       - echo "Retrieving Thanos API Gateway URL..."
       - cd terraform/config/management-cluster
-      - terraform init -backend-config="bucket=terraform-state-$(aws sts get-caller-identity --query Account --output text)" -backend-config="key=${MANAGEMENT_ID}/terraform.tfstate" -backend-config="region=${TARGET_REGION}" -backend-config="use_lockfile=true" -reconfigure
+      - terraform init -backend-config="bucket=terraform-state-$(aws sts get-caller-identity --query Account --output text)" -backend-config="key=management-cluster/${MANAGEMENT_ID}.tfstate" -backend-config="region=${TARGET_REGION}" -backend-config="use_lockfile=true" -reconfigure
       - THANOS_API_URL=$(terraform output -raw thanos_api_gateway_invoke_url 2>/dev/null || echo "")
-      - if [ -z "$THANOS_API_URL" ]; then echo "Thanos Gateway not enabled - skipping" && echo "SKIP_THANOS_TEST=true" >> $CODEBUILD_SRC_DIR/env.sh; else echo "THANOS_API_URL=${THANOS_API_URL}" >> $CODEBUILD_SRC_DIR/env.sh; fi
+      - echo "Thanos API URL from Terraform - [$THANOS_API_URL]"
+      - if [ -z "$THANOS_API_URL" ] || [ "$THANOS_API_URL" = "null" ]; then echo "Thanos Gateway not enabled - skipping tests" && echo "SKIP_THANOS_TEST=true" >> $CODEBUILD_SRC_DIR/env.sh; else echo "THANOS_API_URL=${THANOS_API_URL}" >> $CODEBUILD_SRC_DIR/env.sh; fi
       - cd $CODEBUILD_SRC_DIR
 
   build:
     commands:
       - source $CODEBUILD_SRC_DIR/env.sh 2>/dev/null || true
       - if [ "$SKIP_THANOS_TEST" = "true" ]; then echo "Skipping Thanos tests" && exit 0; fi
+      - if [ -z "$THANOS_API_URL" ]; then echo "ERROR - THANOS_API_URL is empty" && exit 1; fi
       - echo "=== Test 1 - Health Check ==="
       - echo "Thanos API URL - $THANOS_API_URL"
       - for i in 1 2 3; do echo "Attempt $i of 3"; RESPONSE=$(awscurl --service execute-api --region $TARGET_REGION "${THANOS_API_URL}/-/ready" 2>&1) || true; echo "Response - $RESPONSE"; if echo "$RESPONSE" | grep -q ready; then echo "Healthy" && break; fi; sleep 5; done
       - echo "Note - Thanos health check is informational only during initial deployment"
       - echo "=== Test 2 - SigV4 Auth Check ==="
-      - RESPONSE=$(awscurl --service execute-api --region $TARGET_REGION -X POST -H "Content-Type:application/x-protobuf" "${THANOS_API_URL}/api/v1/receive" -d "" 2>&1) || true
+      - RESPONSE=$(awscurl --service execute-api --region $TARGET_REGION -X POST -H "Content-Type: application/x-protobuf" "${THANOS_API_URL}/api/v1/receive" -d "" 2>&1) || true
       - echo "Response - $RESPONSE"
       - if echo "$RESPONSE" | grep -qE "(403|401|Forbidden|Unauthorized)"; then echo "ERROR SigV4 auth failed" && exit 1; fi
       - echo "SigV4 authentication successful"
