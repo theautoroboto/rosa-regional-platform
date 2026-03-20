@@ -1,0 +1,2 @@
+terraform_common:
+  enable_bastion: true

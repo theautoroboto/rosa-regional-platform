@@ -10,29 +10,134 @@
 """Unit tests for render.py"""
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
 import yaml
 
 from render import (
+    build_context,
+    build_mc_list,
+    check_docs,
     cleanup_stale_files,
-    create_applicationset_template,
+    collect_leaf_paths,
+    create_applicationset_content,
     deep_merge,
-    get_cluster_types,
-    load_config,
+    discover_environments,
+    discover_regions,
     load_yaml,
-    render_environment_config,
-    resolve_config_path,
-    render_region_deployment_applicationsets,
-    render_region_deployment_terraform,
-    render_region_deployment_values,
-    resolve_region_deployments,
+    main,
     resolve_templates,
-    save_yaml,
-    validate_config_revisions,
-    validate_region_deployment_uniqueness,
+    scan_annotations,
+    scan_template_variables,
+    update_docs,
+    write_output,
 )
+
+# Path to real templates and argocd config for integration-style tests
+PROJECT_ROOT = Path(__file__).parent.parent
+REAL_TEMPLATES_DIR = PROJECT_ROOT / "config" / "templates"
+REAL_ARGOCD_CONFIG_DIR = PROJECT_ROOT / "argocd" / "config"
+
+
+def _create_config_structure(
+    tmp_path,
+    global_defaults=None,
+    environments=None,
+):
+    """Helper to create the new config directory structure.
+
+    environments is a dict like:
+        {
+            "staging": {
+                "defaults": { ... },      # config/<env>/defaults.yaml content
+                "regions": {
+                    "us-east-1": { ... },  # config/<env>/us-east-1.yaml content
+                }
+            }
+        }
+    """
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(exist_ok=True)
+
+    # Global defaults (always create, even if empty)
+    (config_dir / "defaults.yaml").write_text(
+        yaml.dump(global_defaults if global_defaults is not None else {})
+    )
+
+    # Copy real templates
+    templates_dest = config_dir / "templates"
+    if REAL_TEMPLATES_DIR.exists():
+        shutil.copytree(REAL_TEMPLATES_DIR, templates_dest, dirs_exist_ok=True)
+
+    # Environment configs
+    if environments:
+        for env_name, env_data in environments.items():
+            env_dir = config_dir / env_name
+            env_dir.mkdir(exist_ok=True)
+
+            env_defaults = env_data.get("defaults", {})
+            (env_dir / "defaults.yaml").write_text(yaml.dump(env_defaults))
+
+            for region_name, region_config in env_data.get("regions", {}).items():
+                (env_dir / f"{region_name}.yaml").write_text(
+                    yaml.dump(region_config)
+                )
+
+    return config_dir
+
+
+def _create_argocd_config(tmp_path, cluster_types=None):
+    """Helper to create argocd/config directory with cluster type dirs."""
+    if cluster_types is None:
+        cluster_types = ["regional-cluster", "management-cluster"]
+
+    argocd_config_dir = tmp_path / "argocd" / "config"
+    argocd_config_dir.mkdir(parents=True, exist_ok=True)
+
+    for ct in cluster_types:
+        (argocd_config_dir / ct).mkdir(exist_ok=True)
+
+    # Copy base applicationset from real project
+    appset_src = REAL_ARGOCD_CONFIG_DIR / "applicationset"
+    appset_dest = argocd_config_dir / "applicationset"
+    if appset_src.exists():
+        shutil.copytree(appset_src, appset_dest, dirs_exist_ok=True)
+    else:
+        # Create a minimal base applicationset
+        appset_dest.mkdir(exist_ok=True)
+        _write_base_applicationset(appset_dest)
+
+    return argocd_config_dir
+
+
+def _write_base_applicationset(appset_dir):
+    """Write a minimal base-applicationset.yaml for testing."""
+    appset = {
+        "spec": {
+            "generators": [
+                {
+                    "matrix": {
+                        "generators": [
+                            {"clusters": {}},
+                            {"git": {"revision": "HEAD"}},
+                        ]
+                    }
+                }
+            ],
+            "template": {
+                "spec": {
+                    "sources": [
+                        {"targetRevision": "HEAD", "path": "chart"},
+                        {"targetRevision": "HEAD", "ref": "values"},
+                    ]
+                }
+            },
+        }
+    }
+    with open(appset_dir / "base-applicationset.yaml", "w") as f:
+        yaml.dump(appset, f)
 
 
 # =============================================================================
@@ -61,196 +166,116 @@ class TestLoadYaml:
 
 
 # =============================================================================
-# load_config
+# discover_environments
 # =============================================================================
 
 
-class TestLoadConfig:
-    def test_file_mode_loads_single_yaml(self, tmp_path):
-        """Passing a file path loads it directly via load_yaml()."""
-        f = tmp_path / "config.yaml"
-        f.write_text("defaults:\n  revision: main\nenvironments:\n  e2e:\n    region_deployments:\n      us-east-1:\n        management_clusters: {}\n")
-        result = load_config(f)
-        assert result["defaults"]["revision"] == "main"
-        assert "e2e" in result["environments"]
-
-    def test_directory_mode_assembles_from_files(self, tmp_path):
-        """Passing a directory loads defaults.config.yaml + environments/*.config.yaml."""
-        (tmp_path / "defaults.config.yaml").write_text("revision: main\n")
-        env_dir = tmp_path / "environments"
-        env_dir.mkdir()
-        (env_dir / "staging.config.yaml").write_text("region_deployments:\n  us-east-1:\n    management_clusters: {}\n")
-
-        result = load_config(tmp_path)
-        assert result["defaults"]["revision"] == "main"
-        assert "staging" in result["environments"]
-
-    def test_env_name_derived_from_filename(self, tmp_path):
-        """Environment name is the filename stem (e.g. brian.config.yaml -> 'brian')."""
-        (tmp_path / "defaults.config.yaml").write_text("revision: main\n")
-        env_dir = tmp_path / "environments"
-        env_dir.mkdir()
-        (env_dir / "brian.config.yaml").write_text("region_deployments:\n  us-east-1:\n    management_clusters: {}\n")
-        (env_dir / "cdoan-central.config.yaml").write_text("region_deployments:\n  us-east-2:\n    management_clusters: {}\n")
-
-        result = load_config(tmp_path)
-        assert "brian" in result["environments"]
-        assert "cdoan-central" in result["environments"]
-
-    def test_missing_defaults_raises(self, tmp_path):
-        """Raises FileNotFoundError if defaults.config.yaml is missing in directory mode."""
-        env_dir = tmp_path / "environments"
-        env_dir.mkdir()
-        (env_dir / "staging.config.yaml").write_text("region_deployments: {}\n")
-
-        with pytest.raises(FileNotFoundError, match="defaults.config.yaml"):
-            load_config(tmp_path)
-
-    def test_no_environments_raises(self, tmp_path):
-        """Raises ValueError if no environment files are found in directory mode."""
-        (tmp_path / "defaults.config.yaml").write_text("revision: main\n")
-        (tmp_path / "environments").mkdir()
-
-        with pytest.raises(ValueError, match="No environment"):
-            load_config(tmp_path)
-
-    def test_sorted_order(self, tmp_path):
-        """Environments are assembled in sorted filename order."""
-        (tmp_path / "defaults.config.yaml").write_text("{}\n")
-        env_dir = tmp_path / "environments"
-        env_dir.mkdir()
-        (env_dir / "zebra.config.yaml").write_text("{}\n")
-        (env_dir / "alpha.config.yaml").write_text("{}\n")
-        (env_dir / "middle.config.yaml").write_text("{}\n")
-
-        result = load_config(tmp_path)
-        env_names = list(result["environments"].keys())
-        assert env_names == ["alpha", "middle", "zebra"]
-
-    def test_empty_env_file(self, tmp_path):
-        """An environment file with empty/null content works correctly."""
-        (tmp_path / "defaults.config.yaml").write_text("revision: main\n")
-        env_dir = tmp_path / "environments"
-        env_dir.mkdir()
-        (env_dir / "empty-env.config.yaml").write_text("")
-
-        result = load_config(tmp_path)
-        assert "empty-env" in result["environments"]
-        assert result["environments"]["empty-env"] == {}
-
-    def test_equivalence_with_single_file(self, tmp_path):
-        """Directory mode produces the same dict as a single-file config."""
-        # Create single-file config
-        single_file = tmp_path / "single.yaml"
-        single_file.write_text(
-            "defaults:\n"
-            "  revision: main\n"
-            "  terraform_vars:\n"
-            "    app_code: infra\n"
-            "environments:\n"
-            "  staging:\n"
-            "    region_deployments:\n"
-            "      us-east-1:\n"
-            "        account_id: '111'\n"
-            "        management_clusters:\n"
-            "          mc01: {}\n"
-        )
-
-        # Create equivalent directory structure
-        config_dir = tmp_path / "config_dir"
+class TestDiscoverEnvironments:
+    def test_finds_environments_with_defaults_yaml(self, tmp_path):
+        config_dir = tmp_path / "config"
         config_dir.mkdir()
-        (config_dir / "defaults.config.yaml").write_text(
-            "revision: main\n"
-            "terraform_vars:\n"
-            "  app_code: infra\n"
-        )
-        env_dir = config_dir / "environments"
+        staging = config_dir / "staging"
+        staging.mkdir()
+        (staging / "defaults.yaml").write_text("revision: main\n")
+        prod = config_dir / "prod"
+        prod.mkdir()
+        (prod / "defaults.yaml").write_text("revision: main\n")
+
+        result = discover_environments(config_dir)
+        assert sorted(result) == ["prod", "staging"]
+
+    def test_excludes_dirs_without_defaults_yaml(self, tmp_path):
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        staging = config_dir / "staging"
+        staging.mkdir()
+        (staging / "defaults.yaml").write_text("revision: main\n")
+        # This dir has no defaults.yaml, should be excluded
+        (config_dir / "incomplete").mkdir()
+
+        result = discover_environments(config_dir)
+        assert result == ["staging"]
+
+    def test_excludes_templates_directory(self, tmp_path):
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        templates = config_dir / "templates"
+        templates.mkdir()
+        (templates / "defaults.yaml").write_text("something\n")
+
+        result = discover_environments(config_dir)
+        assert result == []
+
+    def test_excludes_hidden_directories(self, tmp_path):
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        hidden = config_dir / ".hidden"
+        hidden.mkdir()
+        (hidden / "defaults.yaml").write_text("revision: main\n")
+
+        result = discover_environments(config_dir)
+        assert result == []
+
+    def test_returns_sorted(self, tmp_path):
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        for name in ["zebra", "alpha", "middle"]:
+            d = config_dir / name
+            d.mkdir()
+            (d / "defaults.yaml").write_text("{}\n")
+
+        result = discover_environments(config_dir)
+        assert result == ["alpha", "middle", "zebra"]
+
+    def test_returns_empty_for_no_environments(self, tmp_path):
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        result = discover_environments(config_dir)
+        assert result == []
+
+
+# =============================================================================
+# discover_regions
+# =============================================================================
+
+
+class TestDiscoverRegions:
+    def test_finds_region_yaml_files(self, tmp_path):
+        env_dir = tmp_path / "staging"
         env_dir.mkdir()
-        (env_dir / "staging.config.yaml").write_text(
-            "region_deployments:\n"
-            "  us-east-1:\n"
-            "    account_id: '111'\n"
-            "    management_clusters:\n"
-            "      mc01: {}\n"
-        )
+        (env_dir / "defaults.yaml").write_text("{}\n")
+        (env_dir / "us-east-1.yaml").write_text("{}\n")
+        (env_dir / "us-west-2.yaml").write_text("{}\n")
 
-        file_result = load_config(single_file)
-        dir_result = load_config(config_dir)
-        assert file_result == dir_result
+        result = discover_regions(env_dir)
+        assert sorted(result) == ["us-east-1", "us-west-2"]
 
-    def test_nonexistent_path_raises(self, tmp_path):
-        """Raises FileNotFoundError for a path that doesn't exist."""
-        with pytest.raises(FileNotFoundError):
-            load_config(tmp_path / "nonexistent")
+    def test_excludes_defaults_yaml(self, tmp_path):
+        env_dir = tmp_path / "staging"
+        env_dir.mkdir()
+        (env_dir / "defaults.yaml").write_text("{}\n")
+        (env_dir / "us-east-1.yaml").write_text("{}\n")
 
+        result = discover_regions(env_dir)
+        assert result == ["us-east-1"]
 
-# =============================================================================
-# validate_region_deployment_uniqueness
-# =============================================================================
+    def test_returns_empty_for_no_regions(self, tmp_path):
+        env_dir = tmp_path / "staging"
+        env_dir.mkdir()
+        (env_dir / "defaults.yaml").write_text("{}\n")
 
+        result = discover_regions(env_dir)
+        assert result == []
 
-class TestValidateRegionDeploymentUniqueness:
-    def test_passes_for_unique_combinations(self):
-        rds = [
-            {"environment": "staging", "region_deployment": "us-east-1"},
-            {"environment": "staging", "region_deployment": "us-west-2"},
-            {"environment": "production", "region_deployment": "us-east-1"},
-        ]
-        validate_region_deployment_uniqueness(rds)  # should not raise
+    def test_returns_sorted(self, tmp_path):
+        env_dir = tmp_path / "staging"
+        env_dir.mkdir()
+        (env_dir / "eu-west-1.yaml").write_text("{}\n")
+        (env_dir / "ap-southeast-1.yaml").write_text("{}\n")
+        (env_dir / "us-east-1.yaml").write_text("{}\n")
 
-    def test_raises_on_duplicate(self):
-        rds = [
-            {"environment": "staging", "region_deployment": "us-east-1"},
-            {"environment": "staging", "region_deployment": "us-east-1"},
-        ]
-        with pytest.raises(ValueError, match="Duplicate"):
-            validate_region_deployment_uniqueness(rds)
-
-    def test_passes_for_empty_list(self):
-        validate_region_deployment_uniqueness([])
-
-
-# =============================================================================
-# validate_config_revisions
-# =============================================================================
-
-
-class TestValidateConfigRevisions:
-    def test_valid_short_hash(self):
-        rds = [{"region_deployment": "us-east-1", "environment": "staging", "revision": "abc1234"}]
-        validate_config_revisions(rds)  # should not raise
-
-    def test_valid_full_hash(self):
-        rds = [{"region_deployment": "us-east-1", "environment": "staging",
-                "revision": "826fa76d08fc2ce87c863196e52d5a4fa9259a82"}]
-        validate_config_revisions(rds)
-
-    def test_main_is_allowed(self):
-        rds = [{"region_deployment": "us-east-1", "environment": "staging", "revision": "main"}]
-        validate_config_revisions(rds)
-
-    def test_none_revision_is_allowed(self):
-        rds = [{"region_deployment": "us-east-1", "environment": "staging", "revision": None}]
-        validate_config_revisions(rds)
-
-    def test_missing_revision_key_is_allowed(self):
-        rds = [{"region_deployment": "us-east-1", "environment": "staging"}]
-        validate_config_revisions(rds)
-
-    def test_rejects_invalid_hash(self):
-        rds = [{"region_deployment": "us-east-1", "environment": "staging", "revision": "not-a-hash!"}]
-        with pytest.raises(ValueError, match="Invalid commit hash"):
-            validate_config_revisions(rds)
-
-    def test_rejects_too_short_hash(self):
-        rds = [{"region_deployment": "us-east-1", "environment": "staging", "revision": "abc12"}]
-        with pytest.raises(ValueError, match="Invalid commit hash"):
-            validate_config_revisions(rds)
-
-    def test_rejects_uppercase_hex(self):
-        rds = [{"region_deployment": "us-east-1", "environment": "staging", "revision": "ABC1234"}]
-        with pytest.raises(ValueError, match="Invalid commit hash"):
-            validate_config_revisions(rds)
+        result = discover_regions(env_dir)
+        assert result == ["ap-southeast-1", "eu-west-1", "us-east-1"]
 
 
 # =============================================================================
@@ -276,7 +301,9 @@ class TestDeepMerge:
         assert deep_merge(base, overlay) == {"x": {"y": {"a": 1, "b": 2}}}
 
     def test_overlay_replaces_non_dict_with_dict(self):
-        assert deep_merge({"a": 1}, {"a": {"nested": True}}) == {"a": {"nested": True}}
+        assert deep_merge({"a": 1}, {"a": {"nested": True}}) == {
+            "a": {"nested": True}
+        }
 
     def test_overlay_replaces_dict_with_non_dict(self):
         assert deep_merge({"a": {"nested": True}}, {"a": "flat"}) == {"a": "flat"}
@@ -337,702 +364,118 @@ class TestResolveTemplates:
 
 
 # =============================================================================
-# save_yaml
+# write_output
 # =============================================================================
 
 
-class TestSaveYaml:
-    def test_creates_file_with_header_and_content(self, tmp_path):
-        data = {"key": "value"}
-        rd = {"region_deployment": "us-east-1", "environment": "staging"}
-        output = tmp_path / "sub" / "output.yaml"
-
-        save_yaml(data, output, "regional-cluster", rd)
-
-        content = output.read_text()
-        assert "GENERATED FILE - DO NOT EDIT MANUALLY" in content
-        assert "regional-cluster" in content
-        assert "us-east-1" in content
-        assert "staging" in content
-        assert "key: value" in content
+class TestWriteOutput:
+    def test_creates_file_with_content(self, tmp_path):
+        output = tmp_path / "sub" / "output.txt"
+        write_output("hello world", output)
+        assert output.exists()
+        assert output.read_text() == "hello world\n"
 
     def test_creates_parent_directories(self, tmp_path):
-        data = {"a": 1}
-        rd = {"region_deployment": "r", "environment": "e"}
-        output = tmp_path / "deep" / "nested" / "dir" / "file.yaml"
-
-        save_yaml(data, output, "regional-cluster", rd)
+        output = tmp_path / "deep" / "nested" / "dir" / "file.txt"
+        write_output("content", output)
         assert output.exists()
 
-    def test_empty_data_produces_valid_yaml(self, tmp_path):
-        rd = {"region_deployment": "r", "environment": "e"}
-        output = tmp_path / "empty.yaml"
+    def test_adds_trailing_newline(self, tmp_path):
+        output = tmp_path / "file.txt"
+        write_output("no newline", output)
+        assert output.read_text().endswith("\n")
 
-        save_yaml({}, output, "regional-cluster", rd)
-
+    def test_preserves_existing_trailing_newline(self, tmp_path):
+        output = tmp_path / "file.txt"
+        write_output("has newline\n", output)
         content = output.read_text()
-        assert "GENERATED FILE" in content
-        # The YAML body should be "{}\n" for an empty dict
-        assert "{}" in content
+        assert content == "has newline\n"
+        assert not content.endswith("\n\n")
 
 
 # =============================================================================
-# get_cluster_types
+# build_context
 # =============================================================================
 
 
-class TestGetClusterTypes:
-    def test_finds_cluster_directories(self, tmp_path):
-        (tmp_path / "regional-cluster").mkdir()
-        (tmp_path / "management-cluster").mkdir()
-        (tmp_path / "shared").mkdir()  # should be excluded
-        (tmp_path / "some-file.txt").touch()  # should be excluded
+class TestBuildContext:
+    def test_injects_identity_variables(self):
+        ctx = build_context({}, "staging", "us-east-1", "")
+        assert ctx["environment"] == "staging"
+        assert ctx["aws_region"] == "us-east-1"
+        assert ctx["region"] == "us-east-1"
+        assert ctx["regional_id"] == "regional"
 
-        result = sorted(get_cluster_types(tmp_path))
-        assert result == ["management-cluster", "regional-cluster"]
+    def test_ci_prefix_in_regional_id(self):
+        ctx = build_context({}, "staging", "us-east-1", "xg4y")
+        assert ctx["regional_id"] == "xg4y-regional"
 
-    def test_excludes_hidden_directories(self, tmp_path):
-        (tmp_path / ".hidden-cluster").mkdir()
-        (tmp_path / "regional-cluster").mkdir()
+    def test_resolves_account_id_template(self):
+        merged = {"aws": {"account_id": "account-{{ environment }}-{{ aws_region }}"}}
+        ctx = build_context(merged, "staging", "us-east-1", "")
+        assert ctx["account_id"] == "account-staging-us-east-1"
 
-        result = get_cluster_types(tmp_path)
-        assert result == ["regional-cluster"]
-
-    def test_returns_empty_for_no_clusters(self, tmp_path):
-        (tmp_path / "shared").mkdir()
-        (tmp_path / "something-else").mkdir()
-
-        assert get_cluster_types(tmp_path) == []
-
-
-# =============================================================================
-# resolve_region_deployments
-# =============================================================================
-
-
-class TestResolveRegionDeployments:
-    def test_simple_region_deployment(self):
-        config = {
-            "defaults": {},
-            "environments": {
-                "staging": {
-                    "region_deployments": {
-                        "us-east-1": {
-                            "account_id": "111111111111",
-                            "management_clusters": {},
-                        }
-                    }
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert len(result) == 1
-        rd = result[0]
-        assert rd["environment"] == "staging"
-        assert rd["region_deployment"] == "us-east-1"
-        assert rd["aws_region"] == "us-east-1"
-        assert rd["account_id"] == "111111111111"
-
-    def test_deep_merge_inheritance(self):
-        config = {
-            "defaults": {
-                "terraform_vars": {"app_code": "infra", "service_phase": "dev"},
-            },
-            "environments": {
-                "staging": {
-                    "terraform_vars": {"service_phase": "staging"},
-                    "region_deployments": {
-                        "us-east-1": {
-                            "management_clusters": {},
-                        }
-                    },
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        rd = result[0]
-        # service_phase should be overridden by env level
-        assert rd["terraform_vars"]["app_code"] == "infra"
-        assert rd["terraform_vars"]["service_phase"] == "staging"
-
-    def test_rd_level_overrides_env_and_defaults(self):
-        config = {
-            "defaults": {"terraform_vars": {"key": "default"}},
-            "environments": {
-                "staging": {
-                    "terraform_vars": {"key": "env"},
-                    "region_deployments": {
-                        "us-east-1": {
-                            "terraform_vars": {"key": "rd"},
-                            "management_clusters": {},
-                        }
-                    },
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert result[0]["terraform_vars"]["key"] == "rd"
-
-    def test_jinja2_templates_resolved(self):
-        config = {
-            "defaults": {
-                "terraform_vars": {
-                    "region": "{{ aws_region }}",
-                    "env": "{{ environment }}",
-                },
-            },
-            "environments": {
-                "prod": {
-                    "region_deployments": {
-                        "eu-west-1": {"management_clusters": {}}
-                    }
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        rd = result[0]
-        assert rd["terraform_vars"]["region"] == "eu-west-1"
-        assert rd["terraform_vars"]["env"] == "prod"
-
-    def test_management_clusters_converted_to_list(self):
-        config = {
-            "defaults": {},
-            "environments": {
-                "staging": {
-                    "region_deployments": {
-                        "us-east-1": {
-                            "management_clusters": {
-                                "mc01": {"account_id": "111"},
-                                "mc02": {"account_id": "222"},
-                            }
-                        }
-                    }
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        mcs = result[0]["management_clusters"]
-        assert len(mcs) == 2
-        ids = {mc["management_id"] for mc in mcs}
-        assert ids == {"mc01", "mc02"}
-
-    def test_management_cluster_default_account_id(self):
-        config = {
-            "defaults": {
-                "management_cluster_account_id": "default-mc-account",
-            },
-            "environments": {
-                "staging": {
-                    "region_deployments": {
-                        "us-east-1": {
-                            "management_clusters": {
-                                "mc01": {},
-                            }
-                        }
-                    }
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        mc = result[0]["management_clusters"][0]
-        assert mc["account_id"] == "default-mc-account"
-
-    def test_management_cluster_explicit_account_overrides_default(self):
-        config = {
-            "defaults": {
-                "management_cluster_account_id": "default-mc-account",
-            },
-            "environments": {
-                "staging": {
-                    "region_deployments": {
-                        "us-east-1": {
-                            "management_clusters": {
-                                "mc01": {"account_id": "explicit-account"},
-                            }
-                        }
-                    }
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        mc = result[0]["management_clusters"][0]
-        assert mc["account_id"] == "explicit-account"
-
-    def test_ci_prefix_applied_to_management_id(self):
-        config = {
-            "defaults": {},
-            "environments": {
-                "staging": {
-                    "region_deployments": {
-                        "us-east-1": {
-                            "management_clusters": {"mc01": {}},
-                        }
-                    }
-                }
-            },
-        }
-        result = resolve_region_deployments(config, ci_prefix="xg4y")
-        mc = result[0]["management_clusters"][0]
-        assert mc["management_id"] == "xg4y-mc01"
-
-    def test_ci_prefix_applied_to_regional_id(self):
-        config = {
-            "defaults": {},
-            "environments": {
-                "staging": {
-                    "region_deployments": {
-                        "us-east-1": {"management_clusters": {}}
-                    }
-                }
-            },
-        }
-        result = resolve_region_deployments(config, ci_prefix="xg4y")
-        assert result[0]["regional_id"] == "xg4y-regional"
-
-    def test_no_ci_prefix(self):
-        config = {
-            "defaults": {},
-            "environments": {
-                "staging": {
-                    "region_deployments": {
-                        "us-east-1": {"management_clusters": {"mc01": {}}}
-                    }
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert result[0]["regional_id"] == "regional"
-        assert result[0]["management_clusters"][0]["management_id"] == "mc01"
-
-    def test_revision_inheritance(self):
-        config = {
-            "defaults": {"revision": "main"},
-            "environments": {
-                "staging": {
-                    "region_deployments": {
-                        "us-east-1": {
-                            "revision": "abc1234",
-                            "management_clusters": {},
-                        }
-                    }
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert result[0]["revision"] == "abc1234"
-
-    def test_revision_falls_back_to_defaults(self):
-        config = {
-            "defaults": {"revision": "main"},
-            "environments": {
-                "staging": {
-                    "region_deployments": {
-                        "us-east-1": {"management_clusters": {}}
-                    }
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert result[0]["revision"] == "main"
-
-    def test_domain_inheritance(self):
-        config = {
-            "defaults": {},
-            "environments": {
-                "integration": {
-                    "environment": {"domain": "int0.rosa.devshift.net"},
-                    "region_deployments": {
-                        "us-east-1": {"management_clusters": {}}
-                    },
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert result[0]["environment_config"]["domain"] == "int0.rosa.devshift.net"
-
-    def test_domain_falls_back_to_defaults(self):
-        config = {
-            "defaults": {"environment": {"domain": "rosa.devshift.net"}},
-            "environments": {
-                "staging": {
-                    "region_deployments": {
-                        "us-east-1": {"management_clusters": {}}
-                    }
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert result[0]["environment_config"]["domain"] == "rosa.devshift.net"
-
-    def test_domain_override(self):
-        """Most-specific non-None wins: region_deployment > env > defaults."""
-        config = {
-            "defaults": {"environment": {"domain": "rosa.devshift.net"}},
-            "environments": {
-                "integration": {
-                    "environment": {"domain": "int0.rosa.devshift.net"},
-                    "region_deployments": {
-                        "us-east-1": {"management_clusters": {}}
-                    },
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert result[0]["environment_config"]["domain"] == "int0.rosa.devshift.net"
-
-    def test_domain_none_when_not_set(self):
-        config = {
-            "defaults": {},
-            "environments": {
-                "staging": {
-                    "region_deployments": {
-                        "us-east-1": {"management_clusters": {}}
-                    }
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert result[0].get("environment_config", {}).get("domain") is None
-
-    def test_sector_support(self):
-        config = {
-            "defaults": {},
-            "environments": {
-                "prod": {
-                    "sectors": {
-                        "sector-a": {
-                            "region_deployments": {
-                                "us-east-1": {"management_clusters": {}}
-                            }
-                        }
-                    }
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert len(result) == 1
-        assert result[0]["sector"] == "sector-a"
-
-    def test_implicit_sector_uses_env_name(self):
-        config = {
-            "defaults": {},
-            "environments": {
-                "staging": {
-                    "region_deployments": {
-                        "us-east-1": {"management_clusters": {}}
-                    }
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        # Implicit default sector → sector set to env name
-        assert result[0]["sector"] == "staging"
-
-    def test_sector_terraform_vars_merge(self):
-        config = {
-            "defaults": {"terraform_vars": {"key": "default"}},
-            "environments": {
-                "prod": {
-                    "sectors": {
-                        "sector-a": {
-                            "terraform_vars": {"key": "sector"},
-                            "region_deployments": {
-                                "us-east-1": {"management_clusters": {}}
-                            },
-                        }
-                    }
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert result[0]["terraform_vars"]["key"] == "sector"
-
-    def test_multiple_environments_and_regions(self):
-        config = {
-            "defaults": {},
-            "environments": {
-                "staging": {
-                    "region_deployments": {
-                        "us-east-1": {"management_clusters": {}},
-                        "us-west-2": {"management_clusters": {}},
-                    }
-                },
-                "prod": {
-                    "region_deployments": {
-                        "eu-west-1": {"management_clusters": {}}
-                    }
-                },
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert len(result) == 3
-
-    def test_empty_environments(self):
-        config = {"defaults": {}, "environments": {}}
-        assert resolve_region_deployments(config) == []
-
-    def test_null_rd_config(self):
-        """region_deployment value can be None/null in yaml."""
-        config = {
-            "defaults": {},
-            "environments": {
-                "staging": {
-                    "region_deployments": {
-                        "us-east-1": None,
-                    }
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert len(result) == 1
-        assert result[0]["management_clusters"] == []
-
-    def test_account_id_template_resolution(self):
-        config = {
-            "defaults": {
-                "account_id": "account-{{ environment }}-{{ aws_region }}",
-            },
-            "environments": {
-                "staging": {
-                    "region_deployments": {
-                        "us-east-1": {"management_clusters": {}}
-                    }
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert result[0]["account_id"] == "account-staging-us-east-1"
-
-    def test_management_cluster_template_with_cluster_prefix(self):
-        config = {
-            "defaults": {
-                "management_cluster_account_id": "mc-{{ cluster_prefix }}-{{ aws_region }}",
-            },
-            "environments": {
-                "staging": {
-                    "region_deployments": {
-                        "us-east-1": {
-                            "management_clusters": {"mc01": {}},
-                        }
-                    }
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        mc = result[0]["management_clusters"][0]
-        assert mc["account_id"] == "mc-mc01-us-east-1"
-
-    def test_values_merge_chain(self):
-        config = {
-            "defaults": {
-                "values": {
-                    "regional-cluster": {"setting": "default"},
-                    "global": {"shared": "from-defaults"},
-                },
-            },
-            "environments": {
-                "staging": {
-                    "values": {
-                        "regional-cluster": {"setting": "env-override"},
-                    },
-                    "region_deployments": {
-                        "us-east-1": {"management_clusters": {}}
-                    },
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        values = result[0]["values"]
-        assert values["regional-cluster"]["setting"] == "env-override"
-        assert values["global"]["shared"] == "from-defaults"
-
-    def test_arbitrary_field_inherits_without_code_changes(self):
-        """Any field (not just known ones) inherits through the full chain."""
-        config = {
-            "defaults": {"custom_field": "from-defaults", "only_in_defaults": True},
-            "environments": {
-                "staging": {
-                    "custom_field": "from-env",
-                    "region_deployments": {
-                        "us-east-1": {"management_clusters": {}}
-                    },
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert result[0]["custom_field"] == "from-env"
-        assert result[0]["only_in_defaults"] is True
-
-    def test_full_four_level_merge(self):
-        """defaults -> env -> sector -> rd, most-specific wins at each level."""
-        config = {
-            "defaults": {
-                "terraform_vars": {"a": "default", "b": "default", "c": "default", "d": "default"},
-                "values": {"regional-cluster": {"x": "default", "y": "default"}},
-                "revision": "default-rev",
-                "account_id": "default-account",
-            },
-            "environments": {
-                "prod": {
-                    "sectors": {
-                        "sector-a": {
-                            "terraform_vars": {"c": "sector", "d": "sector"},
-                            "values": {"regional-cluster": {"y": "sector"}},
-                            "revision": "sector-rev",
-                            "region_deployments": {
-                                "us-east-1": {
-                                    "terraform_vars": {"d": "rd"},
-                                    "management_clusters": {},
-                                }
-                            },
-                        }
-                    },
-                    "terraform_vars": {"b": "env", "c": "env", "d": "env"},
-                    "revision": "env-rev",
-                    "account_id": "env-account",
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        rd = result[0]
-        # terraform_vars: each key won by its most-specific level
-        assert rd["terraform_vars"]["a"] == "default"
-        assert rd["terraform_vars"]["b"] == "env"
-        assert rd["terraform_vars"]["c"] == "sector"
-        assert rd["terraform_vars"]["d"] == "rd"
-        # values: sector overrides default
-        assert rd["values"]["regional-cluster"]["x"] == "default"
-        assert rd["values"]["regional-cluster"]["y"] == "sector"
-        # scalars: most-specific wins
-        assert rd["revision"] == "sector-rev"
-        assert rd["account_id"] == "env-account"
-
-    def test_revision_at_env_level(self):
-        config = {
-            "defaults": {"revision": "main"},
-            "environments": {
-                "staging": {
-                    "revision": "env-pinned",
-                    "region_deployments": {
-                        "us-east-1": {"management_clusters": {}}
-                    },
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert result[0]["revision"] == "env-pinned"
-
-    def test_revision_at_sector_level(self):
-        config = {
-            "defaults": {"revision": "main"},
-            "environments": {
-                "prod": {
-                    "revision": "env-rev",
-                    "sectors": {
-                        "sector-a": {
-                            "revision": "sector-rev",
-                            "region_deployments": {
-                                "us-east-1": {"management_clusters": {}}
-                            },
-                        }
-                    },
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert result[0]["revision"] == "sector-rev"
-
-    def test_account_id_at_env_level(self):
-        config = {
-            "defaults": {"account_id": "default-account"},
-            "environments": {
-                "staging": {
-                    "account_id": "env-account",
-                    "region_deployments": {
-                        "us-east-1": {"management_clusters": {}}
-                    },
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert result[0]["account_id"] == "env-account"
-
-    def test_account_id_at_sector_level(self):
-        config = {
-            "defaults": {"account_id": "default-account"},
-            "environments": {
-                "prod": {
-                    "account_id": "env-account",
-                    "sectors": {
-                        "sector-a": {
-                            "account_id": "sector-account",
-                            "region_deployments": {
-                                "us-east-1": {"management_clusters": {}}
-                            },
-                        }
-                    },
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert result[0]["account_id"] == "sector-account"
-
-    def test_values_full_merge_chain(self):
-        """values merge through defaults -> env -> sector -> rd."""
-        config = {
-            "defaults": {
-                "values": {
-                    "regional-cluster": {"a": "default", "b": "default"},
-                },
-            },
-            "environments": {
-                "prod": {
-                    "sectors": {
-                        "sector-a": {
-                            "values": {"regional-cluster": {"b": "sector", "c": "sector"}},
-                            "region_deployments": {
-                                "us-east-1": {
-                                    "values": {"regional-cluster": {"c": "rd"}},
-                                    "management_clusters": {},
-                                }
-                            },
-                        }
-                    },
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        rc = result[0]["values"]["regional-cluster"]
-        assert rc["a"] == "default"
-        assert rc["b"] == "sector"
-        assert rc["c"] == "rd"
-
-    def test_environment_config_at_sector_level(self):
-        config = {
-            "defaults": {"environment": {"domain": "default.example.com"}},
-            "environments": {
-                "prod": {
-                    "sectors": {
-                        "sector-a": {
-                            "environment": {"domain": "sector.example.com"},
-                            "region_deployments": {
-                                "us-east-1": {"management_clusters": {}}
-                            },
-                        }
-                    },
-                }
-            },
-        }
-        result = resolve_region_deployments(config)
-        assert result[0]["environment_config"]["domain"] == "sector.example.com"
+    def test_resolves_terraform_common_templates(self):
+        merged = {"terraform_common": {"region": "{{ aws_region }}"}}
+        ctx = build_context(merged, "prod", "eu-west-1", "")
+        assert ctx["terraform_common"]["region"] == "eu-west-1"
 
 
 # =============================================================================
-# create_applicationset_template
+# build_mc_list
 # =============================================================================
 
 
-class TestCreateApplicationsetTemplate:
+class TestBuildMcList:
+    def test_builds_mc_entries(self):
+        merged = {"management_clusters": {"mc01": {"account_id": "111"}}}
+        ctx = build_context(merged, "staging", "us-east-1", "")
+        mc_list, mc_account_ids = build_mc_list(ctx, merged, "")
+        assert len(mc_list) == 1
+        assert mc_list[0]["management_id"] == "mc01"
+        assert mc_list[0]["account_id"] == "111"
+        assert mc_account_ids == ["111"]
+
+    def test_ci_prefix_applied(self):
+        merged = {"management_clusters": {"mc01": {"account_id": "111"}}}
+        ctx = build_context(merged, "staging", "us-east-1", "xg4y")
+        mc_list, _ = build_mc_list(ctx, merged, "xg4y")
+        assert mc_list[0]["management_id"] == "xg4y-mc01"
+
+    def test_default_account_id(self):
+        merged = {
+            "aws": {"management_cluster_account_id": "default-account"},
+            "management_clusters": {"mc01": {}},
+        }
+        ctx = build_context(merged, "staging", "us-east-1", "")
+        mc_list, _ = build_mc_list(ctx, merged, "")
+        assert mc_list[0]["account_id"] == "default-account"
+
+    def test_explicit_account_overrides_default(self):
+        merged = {
+            "aws": {"management_cluster_account_id": "default-account"},
+            "management_clusters": {"mc01": {"account_id": "explicit-account"}},
+        }
+        ctx = build_context(merged, "staging", "us-east-1", "")
+        mc_list, _ = build_mc_list(ctx, merged, "")
+        assert mc_list[0]["account_id"] == "explicit-account"
+
+    def test_cluster_prefix_template_resolution(self):
+        merged = {
+            "aws": {"management_cluster_account_id": "mc-{{ cluster_prefix }}-{{ aws_region }}"},
+            "management_clusters": {"mc01": {}},
+        }
+        ctx = build_context(merged, "staging", "us-east-1", "")
+        mc_list, _ = build_mc_list(ctx, merged, "")
+        assert mc_list[0]["account_id"] == "mc-mc01-us-east-1"
+
+
+# =============================================================================
+# create_applicationset_content
+# =============================================================================
+
+
+class TestCreateApplicationsetContent:
     def _write_base_applicationset(self, base_dir):
         appset_dir = base_dir / "applicationset"
         appset_dir.mkdir(parents=True)
@@ -1058,475 +501,28 @@ class TestCreateApplicationsetTemplate:
                 },
             }
         }
-        with open(appset_dir / "base-applicationset.yaml", "w") as f:
+        base_path = appset_dir / "base-applicationset.yaml"
+        with open(base_path, "w") as f:
             yaml.dump(appset, f)
-        return base_dir
+        return base_path
 
     def test_without_config_revision(self, tmp_path):
-        base_dir = self._write_base_applicationset(tmp_path)
-        result = create_applicationset_template(
-            "regional-cluster", "staging", "us-east-1", None, base_dir
-        )
-        # Git generator revision should remain untouched
-        git_gen = result["spec"]["generators"][0]["matrix"]["generators"][1]["git"]
+        base_path = self._write_base_applicationset(tmp_path)
+        result = create_applicationset_content(base_path, None)
+        parsed = yaml.safe_load(result)
+        git_gen = parsed["spec"]["generators"][0]["matrix"]["generators"][1]["git"]
         assert git_gen["revision"] == "HEAD"
 
     def test_with_config_revision(self, tmp_path):
-        base_dir = self._write_base_applicationset(tmp_path)
-        result = create_applicationset_template(
-            "regional-cluster", "staging", "us-east-1", "abc1234def5", base_dir
-        )
-        # Git generator revision should be overridden
-        git_gen = result["spec"]["generators"][0]["matrix"]["generators"][1]["git"]
+        base_path = self._write_base_applicationset(tmp_path)
+        result = create_applicationset_content(base_path, "abc1234def5")
+        parsed = yaml.safe_load(result)
+        git_gen = parsed["spec"]["generators"][0]["matrix"]["generators"][1]["git"]
         assert git_gen["revision"] == "abc1234def5"
-
-        # First source (chart, no ref) should have targetRevision pinned
-        sources = result["spec"]["template"]["spec"]["sources"]
+        sources = parsed["spec"]["template"]["spec"]["sources"]
         assert sources[0]["targetRevision"] == "abc1234def5"
         # Second source (ref: values) should keep original
         assert sources[1]["targetRevision"] == "HEAD"
-
-    def test_raises_when_base_missing(self, tmp_path):
-        with pytest.raises(ValueError, match="Base ApplicationSet not found"):
-            create_applicationset_template(
-                "regional-cluster", "staging", "us-east-1", None, tmp_path
-            )
-
-
-# =============================================================================
-# render_region_deployment_values
-# =============================================================================
-
-
-class TestRenderRegionDeploymentValues:
-    def test_creates_values_files(self, tmp_path):
-        base_dir = tmp_path / "base"
-        deploy_dir = tmp_path / "deploy"
-        (base_dir / "regional-cluster").mkdir(parents=True)
-
-        rd = {
-            "environment": "staging",
-            "region_deployment": "us-east-1",
-            "values": {
-                "regional-cluster": {"setting": "value"},
-            },
-        }
-
-        render_region_deployment_values(rd, ["regional-cluster"], base_dir, deploy_dir)
-
-        output_file = deploy_dir / "staging" / "us-east-1" / "argocd" / "regional-cluster-values.yaml"
-        assert output_file.exists()
-        content = output_file.read_text()
-        assert "setting: value" in content
-
-    def test_global_values_merged_into_cluster_types(self, tmp_path):
-        deploy_dir = tmp_path / "deploy"
-        rd = {
-            "environment": "staging",
-            "region_deployment": "us-east-1",
-            "values": {
-                "global": {"shared_key": "shared_val"},
-                "regional-cluster": {"specific": "val"},
-            },
-        }
-
-        render_region_deployment_values(rd, ["regional-cluster"], tmp_path, deploy_dir)
-
-        output_file = deploy_dir / "staging" / "us-east-1" / "argocd" / "regional-cluster-values.yaml"
-        content = yaml.safe_load(
-            # Strip the header comment lines
-            "\n".join(
-                line for line in output_file.read_text().splitlines()
-                if not line.startswith("#") and line.strip()
-            )
-        )
-        assert content["shared_key"] == "shared_val"
-        assert content["specific"] == "val"
-
-    def test_empty_values_still_creates_file(self, tmp_path):
-        deploy_dir = tmp_path / "deploy"
-        rd = {
-            "environment": "staging",
-            "region_deployment": "us-east-1",
-            "values": {},
-        }
-
-        render_region_deployment_values(rd, ["regional-cluster"], tmp_path, deploy_dir)
-
-        output_file = deploy_dir / "staging" / "us-east-1" / "argocd" / "regional-cluster-values.yaml"
-        assert output_file.exists()
-
-
-# =============================================================================
-# render_region_deployment_applicationsets
-# =============================================================================
-
-
-class TestRenderRegionDeploymentApplicationsets:
-    def _setup_base(self, tmp_path):
-        appset_dir = tmp_path / "base" / "applicationset"
-        appset_dir.mkdir(parents=True)
-        appset = {
-            "spec": {
-                "generators": [
-                    {
-                        "matrix": {
-                            "generators": [
-                                {"clusters": {}},
-                                {"git": {"revision": "HEAD"}},
-                            ]
-                        }
-                    }
-                ],
-                "template": {
-                    "spec": {
-                        "sources": [
-                            {"targetRevision": "HEAD", "path": "chart"},
-                            {"targetRevision": "HEAD", "ref": "values"},
-                        ]
-                    }
-                },
-            }
-        }
-        with open(appset_dir / "base-applicationset.yaml", "w") as f:
-            yaml.dump(appset, f)
-        return tmp_path / "base"
-
-    def test_creates_applicationset_files(self, tmp_path):
-        base_dir = self._setup_base(tmp_path)
-        deploy_dir = tmp_path / "deploy"
-
-        rd = {
-            "environment": "staging",
-            "region_deployment": "us-east-1",
-            "revision": None,
-        }
-
-        render_region_deployment_applicationsets(rd, ["regional-cluster"], deploy_dir, base_dir)
-
-        output_file = (
-            deploy_dir / "staging" / "us-east-1" / "argocd"
-            / "regional-cluster-manifests" / "applicationset.yaml"
-        )
-        assert output_file.exists()
-        content = output_file.read_text()
-        assert "GENERATED FILE" in content
-
-    def test_pinned_revision_sets_commit_hash(self, tmp_path):
-        base_dir = self._setup_base(tmp_path)
-        deploy_dir = tmp_path / "deploy"
-
-        rd = {
-            "environment": "staging",
-            "region_deployment": "us-east-1",
-            "revision": "abc1234def5678901234567890abcdef12345678",
-        }
-
-        render_region_deployment_applicationsets(rd, ["regional-cluster"], deploy_dir, base_dir)
-
-        output_file = (
-            deploy_dir / "staging" / "us-east-1" / "argocd"
-            / "regional-cluster-manifests" / "applicationset.yaml"
-        )
-        content = output_file.read_text()
-        assert "abc1234d" in content  # truncated hash in header
-
-    def test_main_revision_is_not_pinned(self, tmp_path):
-        base_dir = self._setup_base(tmp_path)
-        deploy_dir = tmp_path / "deploy"
-
-        rd = {
-            "environment": "staging",
-            "region_deployment": "us-east-1",
-            "revision": "main",
-        }
-
-        render_region_deployment_applicationsets(rd, ["regional-cluster"], deploy_dir, base_dir)
-
-        output_file = (
-            deploy_dir / "staging" / "us-east-1" / "argocd"
-            / "regional-cluster-manifests" / "applicationset.yaml"
-        )
-        content = output_file.read_text()
-        assert "metadata.annotations.git_revision" in content
-
-
-# =============================================================================
-# render_region_deployment_terraform
-# =============================================================================
-
-
-class TestRenderRegionDeploymentTerraform:
-    def test_creates_regional_json(self, tmp_path):
-        deploy_dir = tmp_path / "deploy"
-        rd = {
-            "environment": "staging",
-            "region_deployment": "us-east-1",
-            "regional_id": "regional",
-            "sector": "staging",
-            "terraform_vars": {"app_code": "infra", "region": "us-east-1"},
-            "management_clusters": [],
-        }
-
-        render_region_deployment_terraform(rd, deploy_dir)
-
-        regional_file = deploy_dir / "staging" / "us-east-1" / "terraform" / "regional.json"
-        assert regional_file.exists()
-        data = json.loads(regional_file.read_text())
-        assert data["app_code"] == "infra"
-        assert data["regional_id"] == "regional"
-        assert data["sector"] == "staging"
-        assert data["_generated"].startswith("DO NOT EDIT")
-
-    def test_creates_management_cluster_json(self, tmp_path):
-        deploy_dir = tmp_path / "deploy"
-        rd = {
-            "environment": "staging",
-            "region_deployment": "us-east-1",
-            "regional_id": "regional",
-            "account_id": "999999999999",
-            "sector": "staging",
-            "terraform_vars": {"app_code": "infra"},
-            "management_clusters": [
-                {"management_id": "mc01", "account_id": "111111111111"},
-            ],
-        }
-
-        render_region_deployment_terraform(rd, deploy_dir)
-
-        mc_file = deploy_dir / "staging" / "us-east-1" / "terraform" / "management" / "mc01.json"
-        assert mc_file.exists()
-        data = json.loads(mc_file.read_text())
-        assert data["management_id"] == "mc01"
-        assert data["account_id"] == "111111111111"
-        assert data["regional_aws_account_id"] == "999999999999"
-        assert data["app_code"] == "infra"  # inherited from rd terraform_vars
-
-    def test_mc_account_ids_added_to_regional(self, tmp_path):
-        deploy_dir = tmp_path / "deploy"
-        rd = {
-            "environment": "staging",
-            "region_deployment": "us-east-1",
-            "regional_id": "regional",
-            "account_id": "999",
-            "sector": "staging",
-            "terraform_vars": {},
-            "management_clusters": [
-                {"management_id": "mc01", "account_id": "111"},
-                {"management_id": "mc02", "account_id": "222"},
-            ],
-        }
-
-        render_region_deployment_terraform(rd, deploy_dir)
-
-        regional_file = deploy_dir / "staging" / "us-east-1" / "terraform" / "regional.json"
-        data = json.loads(regional_file.read_text())
-        assert data["management_cluster_account_ids"] == ["111", "222"]
-
-    def test_no_mc_account_ids_when_empty(self, tmp_path):
-        deploy_dir = tmp_path / "deploy"
-        rd = {
-            "environment": "staging",
-            "region_deployment": "us-east-1",
-            "regional_id": "regional",
-            "sector": "staging",
-            "terraform_vars": {},
-            "management_clusters": [],
-        }
-
-        render_region_deployment_terraform(rd, deploy_dir)
-
-        regional_file = deploy_dir / "staging" / "us-east-1" / "terraform" / "regional.json"
-        data = json.loads(regional_file.read_text())
-        assert "management_cluster_account_ids" not in data
-
-    def test_raises_on_missing_management_id(self, tmp_path):
-        deploy_dir = tmp_path / "deploy"
-        rd = {
-            "environment": "staging",
-            "region_deployment": "us-east-1",
-            "regional_id": "regional",
-            "account_id": "999",
-            "sector": "staging",
-            "terraform_vars": {},
-            "management_clusters": [{"account_id": "111"}],  # missing management_id
-        }
-
-        with pytest.raises(ValueError, match="missing 'management_id'"):
-            render_region_deployment_terraform(rd, deploy_dir)
-
-    def test_mc_extra_fields_preserved(self, tmp_path):
-        """MC-specific fields like delete: true should appear in the output."""
-        deploy_dir = tmp_path / "deploy"
-        rd = {
-            "environment": "staging",
-            "region_deployment": "us-east-1",
-            "regional_id": "regional",
-            "account_id": "999",
-            "sector": "staging",
-            "terraform_vars": {},
-            "management_clusters": [
-                {"management_id": "mc01", "account_id": "111", "delete": True},
-            ],
-        }
-
-        render_region_deployment_terraform(rd, deploy_dir)
-
-        mc_file = deploy_dir / "staging" / "us-east-1" / "terraform" / "management" / "mc01.json"
-        data = json.loads(mc_file.read_text())
-        assert data["delete"] is True
-
-
-# =============================================================================
-# render_environment_config
-# =============================================================================
-
-
-class TestRenderEnvironmentConfig:
-    def test_single_env_single_region(self, tmp_path):
-        deploy_dir = tmp_path / "deploy"
-        rds = [
-            {
-                "environment": "brian",
-                "region_deployment": "us-east-1",
-                "aws_region": "us-east-1",
-                "management_clusters": [],
-            }
-        ]
-
-        render_environment_config(rds, deploy_dir)
-
-        accounts_file = deploy_dir / "brian" / "environment.json"
-        assert accounts_file.exists()
-        data = json.loads(accounts_file.read_text())
-        assert "us-east-1" in data["region_definitions"]
-        entry = data["region_definitions"]["us-east-1"]
-        assert entry["name"] == "brian"
-        assert entry["environment"] == "brian"
-        assert entry["aws_region"] == "us-east-1"
-
-    def test_single_env_multiple_regions(self, tmp_path):
-        deploy_dir = tmp_path / "deploy"
-        rds = [
-            {
-                "environment": "prod",
-                "region_deployment": "us-east-1",
-                "aws_region": "us-east-1",
-                "management_clusters": [],
-            },
-            {
-                "environment": "prod",
-                "region_deployment": "us-west-2",
-                "aws_region": "us-west-2",
-                "management_clusters": [],
-            },
-        ]
-
-        render_environment_config(rds, deploy_dir)
-
-        accounts_file = deploy_dir / "prod" / "environment.json"
-        data = json.loads(accounts_file.read_text())
-        assert len(data["region_definitions"]) == 2
-        assert "us-east-1" in data["region_definitions"]
-        assert "us-west-2" in data["region_definitions"]
-
-    def test_multiple_environments(self, tmp_path):
-        deploy_dir = tmp_path / "deploy"
-        rds = [
-            {
-                "environment": "staging",
-                "region_deployment": "us-east-1",
-                "aws_region": "us-east-1",
-                "management_clusters": [],
-            },
-            {
-                "environment": "prod",
-                "region_deployment": "eu-west-1",
-                "aws_region": "eu-west-1",
-                "management_clusters": [],
-            },
-        ]
-
-        render_environment_config(rds, deploy_dir)
-
-        assert (deploy_dir / "staging" / "environment.json").exists()
-        assert (deploy_dir / "prod" / "environment.json").exists()
-
-    def test_contains_generated_metadata(self, tmp_path):
-        deploy_dir = tmp_path / "deploy"
-        rds = [
-            {
-                "environment": "e2e",
-                "region_deployment": "us-east-1",
-                "aws_region": "us-east-1",
-                "management_clusters": [],
-            }
-        ]
-
-        render_environment_config(rds, deploy_dir)
-
-        accounts_file = deploy_dir / "e2e" / "environment.json"
-        data = json.loads(accounts_file.read_text())
-        assert "_generated" in data
-        assert "DO NOT EDIT" in data["_generated"]
-
-    def test_entry_fields(self, tmp_path):
-        """Each entry should have exactly name, environment, and aws_region."""
-        deploy_dir = tmp_path / "deploy"
-        rds = [
-            {
-                "environment": "cdoan-central",
-                "region_deployment": "us-east-2",
-                "aws_region": "us-east-2",
-                "management_clusters": [],
-            }
-        ]
-
-        render_environment_config(rds, deploy_dir)
-
-        accounts_file = deploy_dir / "cdoan-central" / "environment.json"
-        data = json.loads(accounts_file.read_text())
-        entry = data["region_definitions"]["us-east-2"]
-        assert entry == {
-            "name": "cdoan-central",
-            "environment": "cdoan-central",
-            "aws_region": "us-east-2",
-        }
-
-    def test_domain_included(self, tmp_path):
-        deploy_dir = tmp_path / "deploy"
-        rds = [
-            {
-                "environment": "integration",
-                "region_deployment": "us-east-1",
-                "aws_region": "us-east-1",
-                "environment_config": {"domain": "int0.rosa.devshift.net"},
-                "management_clusters": [],
-            }
-        ]
-
-        render_environment_config(rds, deploy_dir)
-
-        accounts_file = deploy_dir / "integration" / "environment.json"
-        data = json.loads(accounts_file.read_text())
-        assert data["domain"] == "int0.rosa.devshift.net"
-
-    def test_domain_omitted_when_not_set(self, tmp_path):
-        deploy_dir = tmp_path / "deploy"
-        rds = [
-            {
-                "environment": "brian",
-                "region_deployment": "us-east-1",
-                "aws_region": "us-east-1",
-                "management_clusters": [],
-            }
-        ]
-
-        render_environment_config(rds, deploy_dir)
-
-        accounts_file = deploy_dir / "brian" / "environment.json"
-        data = json.loads(accounts_file.read_text())
-        assert "domain" not in data
 
 
 # =============================================================================
@@ -1535,55 +531,101 @@ class TestRenderEnvironmentConfig:
 
 
 class TestCleanupStaleFiles:
-    def test_removes_stale_region_deployment(self, tmp_path):
+    def test_removes_stale_environment(self, tmp_path):
         deploy_dir = tmp_path / "deploy"
-        # Create a directory for a region deployment that no longer exists
-        stale_dir = deploy_dir / "staging" / "us-west-2" / "argocd"
+        stale_dir = deploy_dir / "old-env" / "us-east-1"
         stale_dir.mkdir(parents=True)
-        (stale_dir / "values.yaml").touch()
+        (stale_dir / "file.txt").touch()
 
-        # Only us-east-1 is valid
-        rds = [{"environment": "staging", "region_deployment": "us-east-1", "management_clusters": []}]
+        cleanup_stale_files(
+            valid_envs={"staging"},
+            env_regions={"staging": {"us-east-1"}},
+            env_region_mcs={"staging": {"us-east-1": set()}},
+            deploy_dir=deploy_dir,
+        )
 
-        cleanup_stale_files(rds, deploy_dir)
+        assert not (deploy_dir / "old-env").exists()
+
+    def test_removes_stale_region(self, tmp_path):
+        deploy_dir = tmp_path / "deploy"
+        stale_dir = deploy_dir / "staging" / "us-west-2"
+        stale_dir.mkdir(parents=True)
+        (stale_dir / "file.txt").touch()
+        valid_dir = deploy_dir / "staging" / "us-east-1"
+        valid_dir.mkdir(parents=True)
+
+        cleanup_stale_files(
+            valid_envs={"staging"},
+            env_regions={"staging": {"us-east-1"}},
+            env_region_mcs={"staging": {"us-east-1": set()}},
+            deploy_dir=deploy_dir,
+        )
 
         assert not (deploy_dir / "staging" / "us-west-2").exists()
+        assert (deploy_dir / "staging" / "us-east-1").exists()
 
-    def test_keeps_valid_region_deployment(self, tmp_path):
+    def test_keeps_valid_region(self, tmp_path):
         deploy_dir = tmp_path / "deploy"
-        valid_dir = deploy_dir / "staging" / "us-east-1" / "argocd"
+        valid_dir = deploy_dir / "staging" / "us-east-1"
         valid_dir.mkdir(parents=True)
-        (valid_dir / "values.yaml").touch()
+        (valid_dir / "file.txt").touch()
 
-        rds = [{"environment": "staging", "region_deployment": "us-east-1", "management_clusters": []}]
-
-        cleanup_stale_files(rds, deploy_dir)
+        cleanup_stale_files(
+            valid_envs={"staging"},
+            env_regions={"staging": {"us-east-1"}},
+            env_region_mcs={"staging": {"us-east-1": set()}},
+            deploy_dir=deploy_dir,
+        )
 
         assert (deploy_dir / "staging" / "us-east-1").exists()
 
-    def test_removes_stale_management_cluster_files(self, tmp_path):
+    def test_removes_stale_mc_input_directories(self, tmp_path):
         deploy_dir = tmp_path / "deploy"
-        mc_dir = deploy_dir / "staging" / "us-east-1" / "terraform" / "management"
-        mc_dir.mkdir(parents=True)
-        (mc_dir / "mc01.json").touch()
-        (mc_dir / "mc02.json").touch()  # stale
+        region_dir = deploy_dir / "staging" / "us-east-1"
+        # Valid MC dir
+        (region_dir / "pipeline-management-cluster-mc01-inputs").mkdir(parents=True)
+        # Stale MC dir
+        (region_dir / "pipeline-management-cluster-mc02-inputs").mkdir(parents=True)
 
-        rds = [
-            {
-                "environment": "staging",
-                "region_deployment": "us-east-1",
-                "management_clusters": [{"management_id": "mc01"}],
-            }
-        ]
+        cleanup_stale_files(
+            valid_envs={"staging"},
+            env_regions={"staging": {"us-east-1"}},
+            env_region_mcs={"staging": {"us-east-1": {"mc01"}}},
+            deploy_dir=deploy_dir,
+        )
 
-        cleanup_stale_files(rds, deploy_dir)
+        assert (
+            region_dir / "pipeline-management-cluster-mc01-inputs"
+        ).exists()
+        assert not (
+            region_dir / "pipeline-management-cluster-mc02-inputs"
+        ).exists()
 
-        assert (mc_dir / "mc01.json").exists()
-        assert not (mc_dir / "mc02.json").exists()
+    def test_removes_stale_mc_provisioner_files(self, tmp_path):
+        deploy_dir = tmp_path / "deploy"
+        prov_dir = deploy_dir / "staging" / "us-east-1" / "pipeline-provisioner-inputs"
+        prov_dir.mkdir(parents=True)
+        (prov_dir / "management-cluster-mc01.json").touch()
+        (prov_dir / "management-cluster-mc02.json").touch()  # stale
+
+        cleanup_stale_files(
+            valid_envs={"staging"},
+            env_regions={"staging": {"us-east-1"}},
+            env_region_mcs={"staging": {"us-east-1": {"mc01"}}},
+            deploy_dir=deploy_dir,
+        )
+
+        assert (prov_dir / "management-cluster-mc01.json").exists()
+        assert not (prov_dir / "management-cluster-mc02.json").exists()
 
     def test_no_op_when_deploy_dir_missing(self, tmp_path):
         deploy_dir = tmp_path / "nonexistent"
-        cleanup_stale_files([], deploy_dir)  # should not raise
+        cleanup_stale_files(
+            valid_envs=set(),
+            env_regions={},
+            env_region_mcs={},
+            deploy_dir=deploy_dir,
+        )  # should not raise
 
     def test_ignores_hidden_directories(self, tmp_path):
         deploy_dir = tmp_path / "deploy"
@@ -1591,42 +633,1136 @@ class TestCleanupStaleFiles:
         hidden.mkdir(parents=True)
         (hidden / "file.txt").touch()
 
-        cleanup_stale_files([], deploy_dir)
+        cleanup_stale_files(
+            valid_envs=set(),
+            env_regions={},
+            env_region_mcs={},
+            deploy_dir=deploy_dir,
+        )
 
-        # Hidden dirs should be left untouched
         assert hidden.exists()
 
 
 # =============================================================================
-# resolve_config_path
+# Integration tests: config merge + output files
 # =============================================================================
 
 
-class TestResolveConfigPath:
-    def test_returns_explicit_path(self, tmp_path):
-        custom = tmp_path / "custom" / "my-config"
-        result = resolve_config_path(str(custom), project_root=tmp_path)
-        assert result == custom
+class TestConfigMergeAndRendering:
+    """Tests that exercise the full merge chain (global -> env -> region)
+    by creating config structures and verifying the merged output."""
 
-    def test_prefers_config_dir_when_defaults_exists(self, tmp_path):
-        """When config/defaults.config.yaml exists, returns config/ directory."""
-        config_dir = tmp_path / "config"
-        config_dir.mkdir()
-        (config_dir / "defaults.config.yaml").write_text("revision: main\n")
-        # Also create config.yaml to verify directory is preferred
-        (tmp_path / "config.yaml").write_text("defaults: {}\n")
+    def test_deep_merge_inheritance(self, tmp_path):
+        """Global defaults are merged with env defaults and region config."""
+        global_defaults = {
+            "terraform_common": {"app_code": "infra", "service_phase": "dev"},
+        }
+        config_dir = _create_config_structure(
+            tmp_path,
+            global_defaults=global_defaults,
+            environments={
+                "staging": {
+                    "defaults": {"terraform_common": {"service_phase": "staging"}},
+                    "regions": {
+                        "us-east-1": {"management_clusters": {}},
+                    },
+                }
+            },
+        )
 
-        result = resolve_config_path(None, project_root=tmp_path)
-        assert result == config_dir
+        gd = load_yaml(config_dir / "defaults.yaml")
+        ed = load_yaml(config_dir / "staging" / "defaults.yaml")
+        rc = load_yaml(config_dir / "staging" / "us-east-1.yaml")
+        merged = deep_merge(gd, ed)
+        merged = deep_merge(merged, rc)
 
-    def test_falls_back_to_config_yaml(self, tmp_path):
-        """When config/defaults.yaml doesn't exist, falls back to config.yaml."""
-        result = resolve_config_path(None, project_root=tmp_path)
-        assert result == tmp_path / "config.yaml"
+        assert merged["terraform_common"]["app_code"] == "infra"
+        assert merged["terraform_common"]["service_phase"] == "staging"
 
-    def test_empty_string_falls_back_to_auto_detect(self, tmp_path):
-        result = resolve_config_path("", project_root=tmp_path)
-        assert result == tmp_path / "config.yaml"
+    def test_region_level_overrides_env_and_defaults(self, tmp_path):
+        config_dir = _create_config_structure(
+            tmp_path,
+            global_defaults={"terraform_common": {"key": "default"}},
+            environments={
+                "staging": {
+                    "defaults": {"terraform_common": {"key": "env"}},
+                    "regions": {
+                        "us-east-1": {
+                            "terraform_common": {"key": "region"},
+                            "management_clusters": {},
+                        },
+                    },
+                }
+            },
+        )
+
+        gd = load_yaml(config_dir / "defaults.yaml")
+        ed = load_yaml(config_dir / "staging" / "defaults.yaml")
+        rc = load_yaml(config_dir / "staging" / "us-east-1.yaml")
+        merged = deep_merge(gd, ed)
+        merged = deep_merge(merged, rc)
+
+        assert merged["terraform_common"]["key"] == "region"
+
+    def test_jinja2_templates_resolved_in_terraform(self, tmp_path):
+        config_dir = _create_config_structure(
+            tmp_path,
+            global_defaults={
+                "terraform_common": {
+                    "region": "{{ aws_region }}",
+                    "env": "{{ environment }}",
+                },
+            },
+            environments={
+                "prod": {
+                    "defaults": {},
+                    "regions": {
+                        "eu-west-1": {"management_clusters": {}},
+                    },
+                }
+            },
+        )
+
+        gd = load_yaml(config_dir / "defaults.yaml")
+        ed = load_yaml(config_dir / "prod" / "defaults.yaml")
+        rc = load_yaml(config_dir / "prod" / "eu-west-1.yaml")
+        merged = deep_merge(gd, ed)
+        merged = deep_merge(merged, rc)
+
+        ctx = build_context(merged, "prod", "eu-west-1", "")
+        assert ctx["terraform_common"]["region"] == "eu-west-1"
+        assert ctx["terraform_common"]["env"] == "prod"
+
+    def test_management_clusters_in_region(self, tmp_path):
+        config_dir = _create_config_structure(
+            tmp_path,
+            global_defaults={},
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {
+                            "management_clusters": {
+                                "mc01": {"account_id": "111"},
+                                "mc02": {"account_id": "222"},
+                            },
+                        },
+                    },
+                }
+            },
+        )
+
+        rc = load_yaml(config_dir / "staging" / "us-east-1.yaml")
+        mc_dict = rc.get("management_clusters", {})
+        assert len(mc_dict) == 2
+        assert "mc01" in mc_dict
+        assert "mc02" in mc_dict
+
+    def test_management_cluster_default_account_id(self, tmp_path):
+        config_dir = _create_config_structure(
+            tmp_path,
+            global_defaults={
+                "aws": {"management_cluster_account_id": "default-mc-account"},
+            },
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {
+                            "management_clusters": {"mc01": {}},
+                        },
+                    },
+                }
+            },
+        )
+
+        gd = load_yaml(config_dir / "defaults.yaml")
+        ed = load_yaml(config_dir / "staging" / "defaults.yaml")
+        rc = load_yaml(config_dir / "staging" / "us-east-1.yaml")
+        merged = deep_merge(gd, ed)
+        merged = deep_merge(merged, rc)
+        ctx = build_context(merged, "staging", "us-east-1", "")
+        mc_list, _ = build_mc_list(ctx, merged, "")
+        assert mc_list[0]["account_id"] == "default-mc-account"
+
+    def test_management_cluster_explicit_account_overrides_default(self, tmp_path):
+        config_dir = _create_config_structure(
+            tmp_path,
+            global_defaults={
+                "aws": {"management_cluster_account_id": "default-mc-account"},
+            },
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {
+                            "management_clusters": {
+                                "mc01": {"account_id": "explicit-account"},
+                            },
+                        },
+                    },
+                }
+            },
+        )
+
+        gd = load_yaml(config_dir / "defaults.yaml")
+        ed = load_yaml(config_dir / "staging" / "defaults.yaml")
+        rc = load_yaml(config_dir / "staging" / "us-east-1.yaml")
+        merged = deep_merge(gd, ed)
+        merged = deep_merge(merged, rc)
+        ctx = build_context(merged, "staging", "us-east-1", "")
+        mc_list, _ = build_mc_list(ctx, merged, "")
+        assert mc_list[0]["account_id"] == "explicit-account"
+
+    def test_ci_prefix_applied_to_management_id(self, tmp_path):
+        config_dir = _create_config_structure(
+            tmp_path,
+            global_defaults={},
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {
+                            "management_clusters": {"mc01": {}},
+                        },
+                    },
+                }
+            },
+        )
+
+        rc = load_yaml(config_dir / "staging" / "us-east-1.yaml")
+        mc_dict = rc.get("management_clusters", {})
+        ci_prefix = "xg4y"
+        for mc_key in mc_dict:
+            mc_id = f"{ci_prefix}-{mc_key}" if ci_prefix else mc_key
+            assert mc_id == "xg4y-mc01"
+
+    def test_ci_prefix_applied_to_regional_id(self):
+        ctx = build_context({}, "staging", "us-east-1", "xg4y")
+        assert ctx["regional_id"] == "xg4y-regional"
+
+    def test_no_ci_prefix(self):
+        ctx = build_context({}, "staging", "us-east-1", "")
+        assert ctx["regional_id"] == "regional"
+
+    def test_revision_inheritance(self, tmp_path):
+        config_dir = _create_config_structure(
+            tmp_path,
+            global_defaults={"git": {"revision": "main"}},
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {
+                            "git": {"revision": "abc1234"},
+                            "management_clusters": {},
+                        },
+                    },
+                }
+            },
+        )
+
+        gd = load_yaml(config_dir / "defaults.yaml")
+        ed = load_yaml(config_dir / "staging" / "defaults.yaml")
+        rc = load_yaml(config_dir / "staging" / "us-east-1.yaml")
+        merged = deep_merge(gd, ed)
+        merged = deep_merge(merged, rc)
+        assert merged["git"]["revision"] == "abc1234"
+
+    def test_revision_falls_back_to_defaults(self, tmp_path):
+        config_dir = _create_config_structure(
+            tmp_path,
+            global_defaults={"git": {"revision": "main"}},
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {"management_clusters": {}},
+                    },
+                }
+            },
+        )
+
+        gd = load_yaml(config_dir / "defaults.yaml")
+        ed = load_yaml(config_dir / "staging" / "defaults.yaml")
+        rc = load_yaml(config_dir / "staging" / "us-east-1.yaml")
+        merged = deep_merge(gd, ed)
+        merged = deep_merge(merged, rc)
+        assert merged["git"]["revision"] == "main"
+
+    def test_applications_merge_chain(self, tmp_path):
+        """applications values merge through defaults -> env -> region."""
+        config_dir = _create_config_structure(
+            tmp_path,
+            global_defaults={
+                "applications": {
+                    "regional-cluster": {"setting": "default", "shared": "from-defaults"},
+                },
+            },
+            environments={
+                "staging": {
+                    "defaults": {
+                        "applications": {
+                            "regional-cluster": {"setting": "env-override"},
+                        },
+                    },
+                    "regions": {
+                        "us-east-1": {"management_clusters": {}},
+                    },
+                }
+            },
+        )
+
+        gd = load_yaml(config_dir / "defaults.yaml")
+        ed = load_yaml(config_dir / "staging" / "defaults.yaml")
+        rc = load_yaml(config_dir / "staging" / "us-east-1.yaml")
+        merged = deep_merge(gd, ed)
+        merged = deep_merge(merged, rc)
+        apps = merged["applications"]
+        assert apps["regional-cluster"]["setting"] == "env-override"
+        assert apps["regional-cluster"]["shared"] == "from-defaults"
+
+    def test_arbitrary_field_inherits_without_code_changes(self, tmp_path):
+        """Any field inherits through the full merge chain."""
+        config_dir = _create_config_structure(
+            tmp_path,
+            global_defaults={"custom_field": "from-defaults", "only_in_defaults": True},
+            environments={
+                "staging": {
+                    "defaults": {"custom_field": "from-env"},
+                    "regions": {
+                        "us-east-1": {"management_clusters": {}},
+                    },
+                }
+            },
+        )
+
+        gd = load_yaml(config_dir / "defaults.yaml")
+        ed = load_yaml(config_dir / "staging" / "defaults.yaml")
+        rc = load_yaml(config_dir / "staging" / "us-east-1.yaml")
+        merged = deep_merge(gd, ed)
+        merged = deep_merge(merged, rc)
+        assert merged["custom_field"] == "from-env"
+        assert merged["only_in_defaults"] is True
+
+    def test_account_id_template_resolution(self, tmp_path):
+        config_dir = _create_config_structure(
+            tmp_path,
+            global_defaults={
+                "aws": {"account_id": "account-{{ environment }}-{{ aws_region }}"},
+            },
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {"management_clusters": {}},
+                    },
+                }
+            },
+        )
+
+        gd = load_yaml(config_dir / "defaults.yaml")
+        ed = load_yaml(config_dir / "staging" / "defaults.yaml")
+        rc = load_yaml(config_dir / "staging" / "us-east-1.yaml")
+        merged = deep_merge(gd, ed)
+        merged = deep_merge(merged, rc)
+        ctx = build_context(merged, "staging", "us-east-1", "")
+        assert ctx["account_id"] == "account-staging-us-east-1"
+
+    def test_management_cluster_template_with_cluster_prefix(self, tmp_path):
+        config_dir = _create_config_structure(
+            tmp_path,
+            global_defaults={
+                "aws": {"management_cluster_account_id": "mc-{{ cluster_prefix }}-{{ aws_region }}"},
+            },
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {
+                            "management_clusters": {"mc01": {}},
+                        },
+                    },
+                }
+            },
+        )
+
+        gd = load_yaml(config_dir / "defaults.yaml")
+        ed = load_yaml(config_dir / "staging" / "defaults.yaml")
+        rc = load_yaml(config_dir / "staging" / "us-east-1.yaml")
+        merged = deep_merge(gd, ed)
+        merged = deep_merge(merged, rc)
+        ctx = build_context(merged, "staging", "us-east-1", "")
+        mc_list, _ = build_mc_list(ctx, merged, "")
+        assert mc_list[0]["account_id"] == "mc-mc01-us-east-1"
+
+
+# =============================================================================
+# Integration tests: full main() run
+# =============================================================================
+
+
+class TestMainIntegration:
+    """Tests that run main() end-to-end and verify deploy/ output files."""
+
+    def _run_main(self, tmp_path, global_defaults, environments, ci_prefix=""):
+        """Helper to run main() with a tmp_path-based project root."""
+        import sys
+        import render
+
+        config_dir = _create_config_structure(
+            tmp_path,
+            global_defaults=global_defaults,
+            environments=environments,
+        )
+        _create_argocd_config(tmp_path)
+
+        deploy_dir = tmp_path / "deploy"
+
+        # Patch sys.argv
+        old_argv = sys.argv
+        args = ["render.py", "--config-dir", str(config_dir)]
+        if ci_prefix:
+            args.extend(["--ci-prefix", ci_prefix])
+        sys.argv = args
+
+        # Patch the project_root derivation in main()
+        old_file = render.__file__
+        render.__file__ = str(tmp_path / "scripts" / "render.py")
+
+        try:
+            result = main()
+        finally:
+            sys.argv = old_argv
+            render.__file__ = old_file
+
+        assert result == 0, "main() should return 0 on success"
+        return deploy_dir
+
+    def test_region_definitions_json(self, tmp_path):
+        deploy_dir = self._run_main(
+            tmp_path,
+            global_defaults={},
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {"management_clusters": {}},
+                    },
+                }
+            },
+        )
+
+        region_defs_file = deploy_dir / "staging" / "region-definitions.json"
+        assert region_defs_file.exists()
+        data = json.loads(region_defs_file.read_text())
+        assert "us-east-1" in data
+        entry = data["us-east-1"]
+        assert entry["name"] == "staging"
+        assert entry["environment"] == "staging"
+        assert entry["aws_region"] == "us-east-1"
+
+    def test_region_definitions_multiple_regions(self, tmp_path):
+        deploy_dir = self._run_main(
+            tmp_path,
+            global_defaults={},
+            environments={
+                "prod": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {"management_clusters": {}},
+                        "us-west-2": {"management_clusters": {}},
+                    },
+                }
+            },
+        )
+
+        region_defs_file = deploy_dir / "prod" / "region-definitions.json"
+        data = json.loads(region_defs_file.read_text())
+        assert len(data) == 2
+        assert "us-east-1" in data
+        assert "us-west-2" in data
+
+    def test_region_definitions_multiple_environments(self, tmp_path):
+        deploy_dir = self._run_main(
+            tmp_path,
+            global_defaults={},
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {"management_clusters": {}},
+                    },
+                },
+                "prod": {
+                    "defaults": {},
+                    "regions": {
+                        "eu-west-1": {"management_clusters": {}},
+                    },
+                },
+            },
+        )
+
+        assert (deploy_dir / "staging" / "region-definitions.json").exists()
+        assert (deploy_dir / "prod" / "region-definitions.json").exists()
+
+    def test_region_definitions_with_management_clusters(self, tmp_path):
+        deploy_dir = self._run_main(
+            tmp_path,
+            global_defaults={},
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {
+                            "management_clusters": {
+                                "mc01": {},
+                                "mc02": {},
+                            },
+                        },
+                    },
+                }
+            },
+        )
+
+        region_defs_file = deploy_dir / "staging" / "region-definitions.json"
+        data = json.loads(region_defs_file.read_text())
+        assert sorted(data["us-east-1"]["management_clusters"]) == ["mc01", "mc02"]
+
+    def test_pipeline_provisioner_terraform_json(self, tmp_path):
+        deploy_dir = self._run_main(
+            tmp_path,
+            global_defaults={"dns": {"domain": "test.example.com"}},
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {"management_clusters": {}},
+                    },
+                }
+            },
+        )
+
+        tf_file = (
+            deploy_dir
+            / "staging"
+            / "us-east-1"
+            / "pipeline-provisioner-inputs"
+            / "terraform.json"
+        )
+        assert tf_file.exists()
+        data = json.loads(tf_file.read_text())
+        assert data["domain"] == "test.example.com"
+
+    def test_pipeline_provisioner_regional_cluster_json(self, tmp_path):
+        deploy_dir = self._run_main(
+            tmp_path,
+            global_defaults={"aws": {"account_id": "111111111111"}},
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {"management_clusters": {}},
+                    },
+                }
+            },
+        )
+
+        rc_file = (
+            deploy_dir
+            / "staging"
+            / "us-east-1"
+            / "pipeline-provisioner-inputs"
+            / "regional-cluster.json"
+        )
+        assert rc_file.exists()
+        data = json.loads(rc_file.read_text())
+        assert data["region"] == "us-east-1"
+        assert data["regional_id"] == "regional"
+        assert data["account_id"] == "111111111111"
+
+    def test_pipeline_provisioner_management_cluster_json(self, tmp_path):
+        deploy_dir = self._run_main(
+            tmp_path,
+            global_defaults={
+                "aws": {
+                    "account_id": "999999999999",
+                    "management_cluster_account_id": "111111111111",
+                },
+            },
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {
+                            "management_clusters": {"mc01": {}},
+                        },
+                    },
+                }
+            },
+        )
+
+        mc_file = (
+            deploy_dir
+            / "staging"
+            / "us-east-1"
+            / "pipeline-provisioner-inputs"
+            / "management-cluster-mc01.json"
+        )
+        assert mc_file.exists()
+        data = json.loads(mc_file.read_text())
+        assert data["management_id"] == "mc01"
+        assert data["account_id"] == "111111111111"
+        assert data["region"] == "us-east-1"
+
+    def test_pipeline_regional_cluster_inputs_terraform_json(self, tmp_path):
+        deploy_dir = self._run_main(
+            tmp_path,
+            global_defaults={
+                "aws": {"account_id": "111111111111"},
+                "terraform_common": {
+                    "app_code": "infra",
+                    "service_phase": "dev",
+                    "cost_center": "000",
+                    "enable_bastion": False,
+                },
+            },
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {"management_clusters": {}},
+                    },
+                }
+            },
+        )
+
+        tf_file = (
+            deploy_dir
+            / "staging"
+            / "us-east-1"
+            / "pipeline-regional-cluster-inputs"
+            / "terraform.json"
+        )
+        assert tf_file.exists()
+        data = json.loads(tf_file.read_text())
+        assert data["app_code"] == "infra"
+        assert data["regional_id"] == "regional"
+        assert data["environment"] == "staging"
+        assert data["region"] == "us-east-1"
+        assert data["_generated"].startswith("DO NOT EDIT")
+
+    def test_pipeline_management_cluster_inputs_terraform_json(self, tmp_path):
+        deploy_dir = self._run_main(
+            tmp_path,
+            global_defaults={
+                "aws": {
+                    "account_id": "999999999999",
+                    "management_cluster_account_id": "111111111111",
+                },
+                "terraform_common": {
+                    "app_code": "infra",
+                    "service_phase": "dev",
+                    "cost_center": "000",
+                    "enable_bastion": False,
+                },
+            },
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {
+                            "management_clusters": {
+                                "mc01": {},
+                            },
+                        },
+                    },
+                }
+            },
+        )
+
+        mc_tf_file = (
+            deploy_dir
+            / "staging"
+            / "us-east-1"
+            / "pipeline-management-cluster-mc01-inputs"
+            / "terraform.json"
+        )
+        assert mc_tf_file.exists()
+        data = json.loads(mc_tf_file.read_text())
+        assert data["management_id"] == "mc01"
+        assert data["account_id"] == "111111111111"
+        assert data["regional_aws_account_id"] == "999999999999"
+        assert data["app_code"] == "infra"
+
+    def test_mc_account_ids_added_to_regional_terraform(self, tmp_path):
+        deploy_dir = self._run_main(
+            tmp_path,
+            global_defaults={
+                "aws": {"account_id": "999"},
+                "terraform_common": {
+                    "app_code": "infra",
+                    "service_phase": "dev",
+                    "cost_center": "000",
+                    "enable_bastion": False,
+                },
+            },
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {
+                            "management_clusters": {
+                                "mc01": {"account_id": "111"},
+                                "mc02": {"account_id": "222"},
+                            },
+                        },
+                    },
+                }
+            },
+        )
+
+        tf_file = (
+            deploy_dir
+            / "staging"
+            / "us-east-1"
+            / "pipeline-regional-cluster-inputs"
+            / "terraform.json"
+        )
+        data = json.loads(tf_file.read_text())
+        assert sorted(data["management_cluster_account_ids"]) == ["111", "222"]
+
+    def test_argocd_values_files(self, tmp_path):
+        deploy_dir = self._run_main(
+            tmp_path,
+            global_defaults={
+                "applications": {
+                    "regional-cluster": {"setting": "value"},
+                },
+            },
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {"management_clusters": {}},
+                    },
+                }
+            },
+        )
+
+        values_file = (
+            deploy_dir / "staging" / "us-east-1" / "argocd-values-regional-cluster.yaml"
+        )
+        assert values_file.exists()
+        content = values_file.read_text()
+        assert "setting: value" in content
+        assert "GENERATED FILE" in content
+
+    def test_argocd_values_empty_creates_file(self, tmp_path):
+        deploy_dir = self._run_main(
+            tmp_path,
+            global_defaults={},
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {"management_clusters": {}},
+                    },
+                }
+            },
+        )
+
+        values_file = (
+            deploy_dir / "staging" / "us-east-1" / "argocd-values-regional-cluster.yaml"
+        )
+        assert values_file.exists()
+
+    def test_argocd_bootstrap_applicationset(self, tmp_path):
+        deploy_dir = self._run_main(
+            tmp_path,
+            global_defaults={},
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {"management_clusters": {}},
+                    },
+                }
+            },
+        )
+
+        appset_file = (
+            deploy_dir
+            / "staging"
+            / "us-east-1"
+            / "argocd-bootstrap-regional-cluster"
+            / "applicationset.yaml"
+        )
+        assert appset_file.exists()
+        content = appset_file.read_text()
+        assert "GENERATED FILE" in content
+
+    def test_argocd_bootstrap_pinned_revision(self, tmp_path):
+        deploy_dir = self._run_main(
+            tmp_path,
+            global_defaults={},
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {
+                            "git": {"revision": "abc1234def5678901234567890abcdef12345678"},
+                            "management_clusters": {},
+                        },
+                    },
+                }
+            },
+        )
+
+        appset_file = (
+            deploy_dir
+            / "staging"
+            / "us-east-1"
+            / "argocd-bootstrap-regional-cluster"
+            / "applicationset.yaml"
+        )
+        content = appset_file.read_text()
+        assert "abc1234d" in content  # truncated hash in header
+
+    def test_argocd_bootstrap_main_revision_not_pinned(self, tmp_path):
+        deploy_dir = self._run_main(
+            tmp_path,
+            global_defaults={"git": {"revision": "main"}},
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {"management_clusters": {}},
+                    },
+                }
+            },
+        )
+
+        appset_file = (
+            deploy_dir
+            / "staging"
+            / "us-east-1"
+            / "argocd-bootstrap-regional-cluster"
+            / "applicationset.yaml"
+        )
+        content = appset_file.read_text()
+        assert "metadata.annotations.git_revision" in content
+
+    def test_ci_prefix_in_regional_id(self, tmp_path):
+        deploy_dir = self._run_main(
+            tmp_path,
+            global_defaults={
+                "aws": {"account_id": "111111111111"},
+            },
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {"management_clusters": {}},
+                    },
+                }
+            },
+            ci_prefix="xg4y",
+        )
+
+        rc_file = (
+            deploy_dir
+            / "staging"
+            / "us-east-1"
+            / "pipeline-provisioner-inputs"
+            / "regional-cluster.json"
+        )
+        data = json.loads(rc_file.read_text())
+        assert data["regional_id"] == "xg4y-regional"
+
+    def test_ci_prefix_in_management_id(self, tmp_path):
+        deploy_dir = self._run_main(
+            tmp_path,
+            global_defaults={
+                "aws": {
+                    "account_id": "999",
+                    "management_cluster_account_id": "111",
+                },
+            },
+            environments={
+                "staging": {
+                    "defaults": {},
+                    "regions": {
+                        "us-east-1": {
+                            "management_clusters": {"mc01": {}},
+                        },
+                    },
+                }
+            },
+            ci_prefix="xg4y",
+        )
+
+        mc_file = (
+            deploy_dir
+            / "staging"
+            / "us-east-1"
+            / "pipeline-provisioner-inputs"
+            / "management-cluster-xg4y-mc01.json"
+        )
+        assert mc_file.exists()
+        data = json.loads(mc_file.read_text())
+        assert data["management_id"] == "xg4y-mc01"
+
+    def test_domain_in_provisioner_terraform(self, tmp_path):
+        deploy_dir = self._run_main(
+            tmp_path,
+            global_defaults={},
+            environments={
+                "integration": {
+                    "defaults": {"dns": {"domain": "int0.rosa.devshift.net"}},
+                    "regions": {
+                        "us-east-1": {"management_clusters": {}},
+                    },
+                }
+            },
+        )
+
+        tf_file = (
+            deploy_dir
+            / "integration"
+            / "us-east-1"
+            / "pipeline-provisioner-inputs"
+            / "terraform.json"
+        )
+        data = json.loads(tf_file.read_text())
+        assert data["domain"] == "int0.rosa.devshift.net"
+
+
+# =============================================================================
+# Documentation system tests
+# =============================================================================
+
+
+class TestScanAnnotations:
+    def test_parses_doc_and_used_by(self):
+        content = "# @doc dns.domain The domain\n# @used-by dns.domain template.j2\n"
+        result = scan_annotations(content)
+        assert "dns.domain" in result
+        assert result["dns.domain"]["doc"] == "The domain"
+        assert result["dns.domain"]["used_by"] == ["template.j2"]
+
+    def test_multiple_used_by(self):
+        content = (
+            "# @doc tf.app Application code.\n"
+            "# @used-by tf.app a.j2\n"
+            "# @used-by tf.app b.j2\n"
+        )
+        result = scan_annotations(content)
+        assert result["tf.app"]["used_by"] == ["a.j2", "b.j2"]
+
+    def test_context_sentinel(self):
+        content = "# @doc aws.id Account ID.\n# @used-by aws.id _context\n"
+        result = scan_annotations(content)
+        assert result["aws.id"]["used_by"] == ["_context"]
+
+    def test_indented_annotations(self):
+        content = "  # @doc dns.domain The domain\n  # @used-by dns.domain template.j2\n"
+        result = scan_annotations(content)
+        assert "dns.domain" in result
+        assert result["dns.domain"]["used_by"] == ["template.j2"]
+
+    def test_empty_content(self):
+        assert scan_annotations("") == {}
+
+    def test_ignores_non_annotation_comments(self):
+        content = "# This is a regular comment\nkey: value\n"
+        assert scan_annotations(content) == {}
+
+
+class TestScanTemplateVariables:
+    def test_finds_expression_variables(self, tmp_path):
+        tpl_dir = tmp_path / "templates"
+        tpl_dir.mkdir()
+        (tpl_dir / "test.json.j2").write_text('{{ dns.domain }}')
+        result = scan_template_variables(tpl_dir)
+        assert "dns.domain" in result
+        assert result["dns.domain"] == ["test.json.j2"]
+
+    def test_finds_if_variables(self, tmp_path):
+        tpl_dir = tmp_path / "templates"
+        tpl_dir.mkdir()
+        (tpl_dir / "test.j2").write_text("{% if delete %}yes{% endif %}")
+        result = scan_template_variables(tpl_dir)
+        assert "delete" in result
+
+    def test_ignores_builtins(self, tmp_path):
+        tpl_dir = tmp_path / "templates"
+        tpl_dir.mkdir()
+        (tpl_dir / "test.j2").write_text("{{ loop.index }}")
+        assert "loop.index" not in scan_template_variables(tpl_dir)
+
+    def test_subdirectory_templates(self, tmp_path):
+        tpl_dir = tmp_path / "templates"
+        sub = tpl_dir / "sub"
+        sub.mkdir(parents=True)
+        (sub / "test.j2").write_text("{{ dns.domain }}")
+        result = scan_template_variables(tpl_dir)
+        assert result["dns.domain"] == ["sub/test.j2"]
+
+
+class TestCollectLeafPaths:
+    def test_flat_dict(self):
+        assert collect_leaf_paths({"a": 1, "b": 2}) == {"a", "b"}
+
+    def test_nested_dict(self):
+        assert collect_leaf_paths({"a": {"b": 1}}) == {"a.b"}
+
+    def test_deeply_nested(self):
+        assert collect_leaf_paths({"a": {"b": {"c": 1}}}) == {"a.b.c"}
+
+    def test_empty_dict_is_leaf(self):
+        assert collect_leaf_paths({"a": {}}) == {"a"}
+
+    def test_mixed(self):
+        result = collect_leaf_paths({"a": 1, "b": {"c": 2, "d": 3}})
+        assert result == {"a", "b.c", "b.d"}
+
+
+class TestCheckDocs:
+    def _setup(self, tmp_path, defaults_content, templates=None):
+        config = tmp_path / "config"
+        config.mkdir()
+        tpl = config / "templates"
+        tpl.mkdir()
+        (config / "defaults.yaml").write_text(defaults_content)
+        if templates:
+            for path, content in templates.items():
+                full = tpl / path
+                full.parent.mkdir(parents=True, exist_ok=True)
+                full.write_text(content)
+        return config, tpl
+
+    def test_passes_when_all_documented(self, tmp_path):
+        config, tpl = self._setup(
+            tmp_path,
+            "# @doc dns.domain The domain\n# @used-by dns.domain test.j2\ndns:\n  domain: ''\n",
+            {"test.j2": "{{ dns.domain }}"},
+        )
+        assert check_docs(config, tpl) == 0
+
+    def test_fails_undocumented_leaf(self, tmp_path):
+        config, tpl = self._setup(tmp_path, "undocumented: value\n")
+        assert check_docs(config, tpl) == 1
+
+    def test_fails_missing_used_by(self, tmp_path):
+        config, tpl = self._setup(
+            tmp_path,
+            "# @doc my.key desc\nmy:\n  key: val\n",
+        )
+        assert check_docs(config, tpl) == 1
+
+    def test_fails_bad_template_ref(self, tmp_path):
+        config, tpl = self._setup(
+            tmp_path,
+            "# @doc my.key desc\n# @used-by my.key nonexistent.j2\nmy:\n  key: val\n",
+        )
+        assert check_docs(config, tpl) == 1
+
+    def test_fails_wrong_consumer(self, tmp_path):
+        config, tpl = self._setup(
+            tmp_path,
+            "# @doc my.key desc\n# @used-by my.key test.j2\nmy:\n  key: val\n",
+            {"test.j2": "{{ other_var }}"},
+        )
+        assert check_docs(config, tpl) == 1
+
+    def test_fails_undocumented_template_var(self, tmp_path):
+        config, tpl = self._setup(
+            tmp_path,
+            "{}\n",
+            {"test.j2": "{{ undocumented.var }}"},
+        )
+        assert check_docs(config, tpl) == 1
+
+    def test_fails_unused_leaf(self, tmp_path):
+        config, tpl = self._setup(
+            tmp_path,
+            "# @doc my.key desc\n# @used-by my.key test.j2\nmy:\n  key: val\n",
+            {"test.j2": "{{ dns.domain }}"},
+        )
+        assert check_docs(config, tpl) == 1
+
+    def test_context_skips_template_check(self, tmp_path):
+        config, tpl = self._setup(
+            tmp_path,
+            "# @doc git.rev Revision.\n# @used-by git.rev _context\ngit:\n  rev: main\n",
+        )
+        assert check_docs(config, tpl) == 0
+
+    def test_context_vars_not_flagged(self, tmp_path):
+        """Template vars in CONTEXT_VARS (e.g. environment) don't need @doc."""
+        config, tpl = self._setup(
+            tmp_path,
+            "{}\n",
+            {"test.j2": "{{ environment }}"},
+        )
+        assert check_docs(config, tpl) == 0
+
+    def test_ancestor_doc_covers_leaf(self, tmp_path):
+        """A @doc on a parent key covers child leaves."""
+        config, tpl = self._setup(
+            tmp_path,
+            "# @doc tf desc\n# @used-by tf test.j2\ntf:\n  a: 1\n  b: 2\n",
+            {"test.j2": "{{ tf.a }} {{ tf.b }}"},
+        )
+        assert check_docs(config, tpl) == 0
+
+    def test_real_config(self):
+        """Verify the actual project config passes the check."""
+        config_dir = PROJECT_ROOT / "config"
+        templates_dir = config_dir / "templates"
+        assert check_docs(config_dir, templates_dir) == 0
+
+
+class TestUpdateDocs:
+    def test_regenerates_used_by(self, tmp_path):
+        config = tmp_path / "config"
+        config.mkdir()
+        tpl = config / "templates"
+        tpl.mkdir()
+        (tpl / "test.j2").write_text("{{ dns.domain }}")
+        (config / "defaults.yaml").write_text(
+            "# @doc dns.domain The domain\n# @used-by dns.domain wrong.j2\ndns:\n  domain: ''\n"
+        )
+        assert update_docs(config, tpl) == 0
+        content = (config / "defaults.yaml").read_text()
+        assert "# @used-by dns.domain test.j2" in content
+        assert "wrong.j2" not in content
+
+    def test_preserves_context_entries(self, tmp_path):
+        config = tmp_path / "config"
+        config.mkdir()
+        tpl = config / "templates"
+        tpl.mkdir()
+        (config / "defaults.yaml").write_text(
+            "# @doc git.rev Revision\n# @used-by git.rev _context\ngit:\n  rev: main\n"
+        )
+        assert update_docs(config, tpl) == 0
+        content = (config / "defaults.yaml").read_text()
+        assert "# @used-by git.rev _context" in content
+
+    def test_preserves_doc_descriptions(self, tmp_path):
+        config = tmp_path / "config"
+        config.mkdir()
+        tpl = config / "templates"
+        tpl.mkdir()
+        (tpl / "test.j2").write_text("{{ dns.domain }}")
+        (config / "defaults.yaml").write_text(
+            "# @doc dns.domain My custom description\n# @used-by dns.domain old.j2\ndns:\n  domain: ''\n"
+        )
+        update_docs(config, tpl)
+        content = (config / "defaults.yaml").read_text()
+        assert "My custom description" in content
 
 
 if __name__ == "__main__":

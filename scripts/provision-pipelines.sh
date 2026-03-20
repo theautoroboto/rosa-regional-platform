@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Provision regional and management cluster pipelines from deploy/ directory structure.
 #
-# Reads region and management cluster configs from deploy/<environment>/<region>/terraform/
+# Reads region and management cluster configs from deploy/<environment>/<region>/pipeline-provisioner-inputs/
 # and runs terraform to create/update the corresponding CodePipeline pipelines.
 #
 # Required environment variables:
@@ -98,12 +98,11 @@ if [[ ! "$ENVIRONMENT" =~ ^[A-Za-z0-9._-]+$ ]]; then
     exit 1
 fi
 
-# Try to read tf_state_region from config.yaml via the first regional.json file found
-# This allows sectors to configure tf_state_region in their terraform_vars
+# Try to read tf_state_region from the first regional-cluster.json file found
 TF_STATE_REGION=""
 if [ -d "deploy/${ENVIRONMENT}" ]; then
-    # Find first regional.json file in this environment
-    FIRST_REGIONAL_JSON=$(find "deploy/${ENVIRONMENT}" -name "regional.json" -type f | head -n 1)
+    # Find first regional-cluster.json file in this environment
+    FIRST_REGIONAL_JSON=$(find "deploy/${ENVIRONMENT}" -name "regional-cluster.json" -path "*/pipeline-provisioner-inputs/*" -type f | head -n 1)
     if [ -n "$FIRST_REGIONAL_JSON" ]; then
         TF_STATE_REGION=$(jq -r '.tf_state_region // empty' "$FIRST_REGIONAL_JSON" 2>/dev/null || echo "")
     fi
@@ -232,7 +231,7 @@ echo ""
 # =============================================================================
 # DNS Environment Zone (optional)
 #
-# When domain is configured in environment.json, create the environment
+# When domain is configured in pipeline-provisioner-inputs/terraform.json, create the environment
 # hosted zone (e.g. int0.rosa.devshift.net) in the central account before
 # processing regions. The zone ID is passed to regional pipelines for NS delegation.
 # =============================================================================
@@ -240,7 +239,15 @@ echo ""
 ENVIRONMENT_DOMAIN=""
 ENVIRONMENT_HOSTED_ZONE_ID=""
 
-ENVIRONMENT_DOMAIN=$(jq -r '.domain // empty' "deploy/${ENVIRONMENT}/environment.json" 2>/dev/null || echo "")
+# Read domain from first region's provisioner inputs
+for _first_region_dir in deploy/${ENVIRONMENT}/*/; do
+    [ -d "$_first_region_dir" ] || continue
+    _prov_tf="${_first_region_dir}pipeline-provisioner-inputs/terraform.json"
+    if [ -f "$_prov_tf" ]; then
+        ENVIRONMENT_DOMAIN=$(jq -r '.domain // empty' "$_prov_tf" 2>/dev/null || echo "")
+    fi
+    break
+done
 
 if [ -n "$ENVIRONMENT_DOMAIN" ]; then
     echo "=========================================="
@@ -282,11 +289,11 @@ for region_dir in deploy/${ENVIRONMENT}/*/; do
     echo "Processing: $ENVIRONMENT / $REGION_DEPLOYMENT"
     echo "=========================================="
 
-    # 1. Check for regional.json in this region
-    if [ -f "${region_dir}terraform/regional.json" ]; then
-        echo "Found regional.json for ${ENVIRONMENT}-${REGION_DEPLOYMENT}"
+    # 1. Check for regional-cluster.json in this region
+    if [ -f "${region_dir}pipeline-provisioner-inputs/regional-cluster.json" ]; then
+        echo "Found regional-cluster.json for ${ENVIRONMENT}-${REGION_DEPLOYMENT}"
 
-        REGIONAL_CONFIG="${region_dir}terraform/regional.json"
+        REGIONAL_CONFIG="${region_dir}pipeline-provisioner-inputs/regional-cluster.json"
 
         # Extract configuration from JSON
         AWS_REGION=$(jq -r '.region // .target_region // "us-east-1"' "$REGIONAL_CONFIG")
@@ -294,8 +301,8 @@ for region_dir in deploy/${ENVIRONMENT}/*/; do
         TARGET_ACCOUNT_ID=$(resolve_ssm_param "$TARGET_ACCOUNT_ID")
         REGIONAL_ID=$(jq -r '.regional_id // ""' "$REGIONAL_CONFIG")
 
-        # Read delete_pipeline from environment.json (per-region lifecycle flag)
-        DELETE_FLAG=$(jq -r ".region_definitions[\"${REGION_DEPLOYMENT}\"].delete_pipeline // false" "deploy/${ENVIRONMENT}/environment.json" 2>/dev/null || echo "false")
+        # Read delete_pipeline from the regional-cluster provisioner input
+        DELETE_FLAG=$(jq -r '.delete_pipeline // false' "$REGIONAL_CONFIG")
 
         # TEMPORARY CI HACK (see top of file)
         # Sets DELETE_FLAG to true if FORCE_DELETE_ALL_PIPELINES is true
@@ -370,18 +377,22 @@ for region_dir in deploy/${ENVIRONMENT}/*/; do
             fi
         fi
     else
-        echo "No terraform/regional.json found in $region_dir, skipping regional pipeline..."
+        echo "No pipeline-provisioner-inputs/regional-cluster.json found in $region_dir, skipping regional pipeline..."
     fi
 
-    # 2. Check for management/*.json files in this region
-    if [ -d "${region_dir}terraform/management" ]; then
+    # 2. Check for management-cluster-*.json files in this region
+    shopt -s nullglob
+    _mc_configs=(${region_dir}pipeline-provisioner-inputs/management-cluster-*.json)
+    shopt -u nullglob
+    if [ ${#_mc_configs[@]} -gt 0 ]; then
         echo "Checking for management cluster configs in ${ENVIRONMENT}-${REGION_DEPLOYMENT}..."
 
-        for mc_config in ${region_dir}terraform/management/*.json; do
+        for mc_config in ${region_dir}pipeline-provisioner-inputs/management-cluster-*.json; do
             [ -e "$mc_config" ] || continue
 
-            # Extract cluster name from filename (e.g., mc01-us-east-1.json -> mc01-us-east-1)
-            CLUSTER_NAME=$(basename "$mc_config" .json)
+            # Extract cluster name from filename (e.g., management-cluster-mc01.json -> mc01)
+            _mc_basename=$(basename "$mc_config" .json)
+            CLUSTER_NAME="${_mc_basename#management-cluster-}"
 
             echo "Found management cluster config: $CLUSTER_NAME"
 
@@ -391,8 +402,8 @@ for region_dir in deploy/${ENVIRONMENT}/*/; do
             TARGET_ACCOUNT_ID=$(resolve_ssm_param "$TARGET_ACCOUNT_ID")
             MANAGEMENT_ID=$(jq -r '.management_id // ""' "$mc_config")
 
-            # Read delete_pipeline from environment.json (per-MC lifecycle flag)
-            DELETE_FLAG=$(jq -r ".region_definitions[\"${REGION_DEPLOYMENT}\"].management_clusters[\"${MANAGEMENT_ID}\"].delete_pipeline // false" "deploy/${ENVIRONMENT}/environment.json" 2>/dev/null || echo "false")
+            # Read delete_pipeline from the management-cluster provisioner input
+            DELETE_FLAG=$(jq -r '.delete_pipeline // false' "$mc_config")
 
             # TEMPORARY CI HACK (see top of file)
             # Sets DELETE_FLAG to true if FORCE_DELETE_ALL_PIPELINES is true
@@ -466,7 +477,7 @@ for region_dir in deploy/${ENVIRONMENT}/*/; do
             fi
         done
     else
-        echo "No terraform/management/ directory in $region_dir, skipping management pipelines..."
+        echo "No pipeline-provisioner-inputs/management-cluster-*.json files in $region_dir, skipping management pipelines..."
     fi
 
     echo ""
