@@ -12,7 +12,7 @@
 # =============================================================================
 
 resource "aws_cloudfront_origin_access_control" "oidc" {
-  name                              = "${var.cluster_id}-oidc"
+  name                              = "${var.cluster_id}-oidc-${substr(data.aws_caller_identity.current.account_id, -8, 8)}"
   description                       = "OAC for HyperShift OIDC S3 bucket"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
