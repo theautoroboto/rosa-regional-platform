@@ -10,6 +10,5 @@
   "enable_bastion": true,
   "regional_id": "regional",
   "node_instance_types": ["t3.medium", "t3a.medium"],
-  "management_cluster_account_ids": ["ssm:///infra/integration/us-east-1/mc01/account_id"],
-  "delete": true
+  "management_cluster_account_ids": ["ssm:///infra/integration/us-east-1/mc01/account_id"]
 }
