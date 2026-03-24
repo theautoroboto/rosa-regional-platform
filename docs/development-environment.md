@@ -133,6 +133,39 @@ Example commands:
 {"status":"ok"}
 ```
 
+## Bastion Access
+
+Connect to a bastion ECS task to access the Kubernetes API of the ephemeral environment's Regional Cluster (RC) or Management Cluster (MC). The bastion runs inside the cluster's VPC and has `kubectl` pre-configured with cluster-admin access.
+
+> ⚠️ _Bastion must be enabled in your environment config (`enable_bastion: true` in `defaults.yaml`). The default ephemeral preset already has it enabled._
+
+```bash
+# Regional Cluster bastion
+make ephemeral-bastion-rc
+
+# Management Cluster bastion
+make ephemeral-bastion-mc
+
+# Explicit environment selection
+make ephemeral-bastion-rc ID=6bd2d3d7
+```
+
+This fetches credentials from Vault, starts a bastion ECS task if none is running, waits for the execute command agent, and drops you into an interactive shell on the bastion. From there you can run `kubectl` commands against the cluster:
+
+```
+==> Bastion task ready
+    ECS cluster: ci-f16cec-regional-bastion
+    Task ID:     683c1f0af6ae4e1bba3552f2c8215bd3
+
+==> Connecting to bastion...
+
+bash-5.2# kubectl get nodes
+NAME                          STATUS   ROLES    AGE   VERSION
+ip-10-0-1-42.ec2.internal    Ready    <none>   2h    v1.31.4-eks-aeac579
+```
+
+The bastion task stays running until explicitly stopped or until the environment is torn down (teardown automatically cleans up running bastion tasks).
+
 ## Run E2E Tests
 
 Run the end-to-end test suite against one of your development environments:
