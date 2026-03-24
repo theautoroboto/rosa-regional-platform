@@ -215,3 +215,25 @@ variable "node_instance_types" {
     error_message = "Must specify at least one instance type."
   }
 }
+
+# =============================================================================
+# Thanos Configuration Variables
+# =============================================================================
+
+variable "thanos_metrics_retention_days" {
+  description = "Number of days to retain metrics in S3 (FedRAMP minimum: 30 days)"
+  type        = number
+  default     = 365
+}
+
+variable "thanos_namespace" {
+  description = "Kubernetes namespace where Thanos is deployed"
+  type        = string
+  default     = "thanos"
+}
+
+variable "thanos_service_account" {
+  description = "Kubernetes service account name for Thanos"
+  type        = string
+  default     = "thanos-operator"
+}

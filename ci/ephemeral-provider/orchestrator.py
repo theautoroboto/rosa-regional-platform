@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -18,6 +19,23 @@ from git import GitManager
 from pipeline import PipelineMonitor
 
 log = logging.getLogger(__name__)
+
+
+def discover_region(env_config_dir: Path) -> str:
+    """Find the single region YAML in an env config directory.
+
+    Returns the region name (stem of the YAML file, e.g. "us-east-1").
+    Errors if zero or more than one region file exists.
+    """
+    region_files = [f for f in env_config_dir.glob("*.yaml") if f.name != "defaults.yaml"]
+    if len(region_files) == 0:
+        raise ValueError(f"No region YAML file found in {env_config_dir}")
+    if len(region_files) > 1:
+        names = sorted(f.name for f in region_files)
+        raise ValueError(
+            f"Ephemeral provisioner supports exactly 1 region, found {len(region_files)}: {names}"
+        )
+    return region_files[0].stem
 
 
 class EphemeralEnvOrchestrator:
@@ -39,12 +57,14 @@ class EphemeralEnvOrchestrator:
         env.teardown()
     """
 
-    def __init__(self, repo: str, branch: str, creds_dir: str, region: str, ci_prefix: str):
+    def __init__(self, repo: str, branch: str, creds_dir: str, region: str, ci_prefix: str,
+                 override_dir: str | None = None):
         self.repo = repo
         self.branch = branch
         self.creds_dir = creds_dir
         self.region = region
         self.ci_prefix = ci_prefix
+        self.override_dir = Path(override_dir) if override_dir else None
         self.provisioner_name = f"{ci_prefix}-pipeline-provisioner"
         # TODO: compute deterministic RC/MC pipeline names from rendered config
         # instead of using prefix-based discovery (e.g. {ci_prefix}-regional-pipe, {ci_prefix}-mc01-pipe)
@@ -85,7 +105,9 @@ class EphemeralEnvOrchestrator:
         """Tear down a previously provisioned ephemeral environment.
 
         Can run independently of provision() — reconnects to the existing
-        CI branch and pipeline resources using the ci_prefix.
+        CI branch and pipeline resources using the ci_prefix. The region is
+        discovered from the CI branch's config (not the local workspace),
+        so teardown always matches the provisioned environment.
 
         Args:
             fire_and_forget: If True, only pushes the initial infrastructure
@@ -95,6 +117,16 @@ class EphemeralEnvOrchestrator:
                 skipped — teardown is expected to be driven to completion by
                 external means (a periodic janitor job).
         """
+        # Check out the CI branch first to discover region from its config
+        git = GitManager(self.creds_dir, self.repo, self.branch)
+        self.git = git
+        git.checkout_ci_branch(self.ci_prefix)
+
+        # Discover region from the CI branch's config
+        env_config_dir = git.work_dir / "config" / TARGET_ENVIRONMENT
+        self.region = discover_region(env_config_dir)
+        log.info("Region (from CI branch): %s", self.region)
+
         self._setup_aws()
 
         # Collect CodeBuild logs before teardown destroys infrastructure.
@@ -102,13 +134,24 @@ class EphemeralEnvOrchestrator:
         # from the provisioning phase that would otherwise be lost.
         self.collect_codebuild_logs()
 
-        git = GitManager(self.creds_dir, self.repo, self.branch)
-        self.git = git
-        git.checkout_ci_branch(self.ci_prefix)
-
         self.central_monitor = PipelineMonitor(self.aws.session)
         self.target_monitor = PipelineMonitor(self.aws.target_session)
         self._run_teardown(git, fire_and_forget=fire_and_forget)
+
+    def resync(self):
+        """Resync the CI branch: rebase onto latest source, re-inject config, re-render.
+
+        Re-reads the environment config (including .ephemeral-env/ overrides if
+        mounted) so that config changes are picked up alongside code changes.
+        """
+        self._setup_aws()
+
+        git = GitManager(self.creds_dir, self.repo, self.branch)
+        self.git = git
+        git.resync_ci_branch(self.ci_prefix)
+
+        self._inject_ephemeral_config(git)
+        git.render_and_push("ci: resync ephemeral environment config")
 
     def collect_codebuild_logs(self):
         """Download CloudWatch logs for all CodeBuild projects matching our CI prefix.
@@ -149,11 +192,64 @@ class EphemeralEnvOrchestrator:
         self.aws.setup_central_account()
 
     def _inject_ephemeral_config(self, git: GitManager):
-        """Inject the ephemeral environment by writing a config/<env>/<region>.yaml file.
+        """Inject the ephemeral environment config into the cloned repo.
 
-        Writes the region YAML in the format render.py expects so that account IDs
-        are baked directly into the rendered output (no SSM resolution needed).
+        If an override directory (.ephemeral-env/) is provided, it replaces the
+        config/ephemeral/ directory entirely. Otherwise the repo's default
+        config/ephemeral/ is used as-is.
+
+        In both cases, AWS account IDs are injected into the region config from
+        the runtime credentials (never from config files).
         """
+        env_config_dir = git.work_dir / "config" / TARGET_ENVIRONMENT
+
+        # Replace config with overrides if provided
+        if self.override_dir and self.override_dir.exists():
+            log.info("Applying environment overrides from %s", self.override_dir)
+            # Ensure target directory exists and clear existing config
+            env_config_dir.mkdir(parents=True, exist_ok=True)
+            for existing in env_config_dir.glob("*.yaml"):
+                existing.unlink()
+            for override_file in self.override_dir.glob("*.yaml"):
+                shutil.copy2(override_file, env_config_dir / override_file.name)
+
+        # Validate: exactly 1 region file must exist (enforced by discover_region
+        # at startup, but re-check after override replacement)
+        region = discover_region(env_config_dir)
+        if region != self.region:
+            raise ValueError(
+                f"Region in config ({region}) does not match expected region ({self.region}). "
+                "This should not happen — region is derived from the same config."
+            )
+
+        # Read and validate the region config
+        region_file = env_config_dir / f"{self.region}.yaml"
+        with open(region_file) as f:
+            region_config = yaml.safe_load(f) or {}
+
+        # Validate provision_mcs
+        if "provision_mcs" not in region_config:
+            raise ValueError(
+                f"Region config {region_file.name} must define 'provision_mcs'. "
+                "Example:\n  provision_mcs:\n    mc01: {}"
+            )
+        mc_count = len(region_config["provision_mcs"])
+        if mc_count > 1:
+            raise ValueError(
+                f"Ephemeral environments support at most 1 management cluster "
+                f"(only 1 MC account available), but {mc_count} were defined in "
+                f"{region_file.name}: {list(region_config['provision_mcs'].keys())}"
+            )
+
+        # Reject lifecycle flags that are managed by the provisioner
+        for forbidden in ("delete", "delete_pipeline"):
+            if forbidden in region_config:
+                raise ValueError(
+                    f"Region config must not set '{forbidden}' — "
+                    "this is managed by the provisioner lifecycle."
+                )
+
+        # Inject runtime AWS account IDs
         regional_account_id = self.aws.get_target_account_id("regional")
         management_account_id = self.aws.get_target_account_id("management")
 
@@ -164,25 +260,11 @@ class EphemeralEnvOrchestrator:
             management_account_id,
         )
 
-        region_config = {
-            "aws": {
-                "account_id": regional_account_id,
-                "management_cluster_account_id": management_account_id,
-            },
-            "provision_mcs": {
-                "mc01": {},
-            },
-        }
+        if "aws" not in region_config:
+            region_config["aws"] = {}
+        region_config["aws"]["account_id"] = regional_account_id
+        region_config["aws"]["management_cluster_account_id"] = management_account_id
 
-        env_config_dir = git.work_dir / "config" / TARGET_ENVIRONMENT
-        env_config_dir.mkdir(parents=True, exist_ok=True)
-
-        # Remove region files that don't match the target region
-        for existing in env_config_dir.glob("*.yaml"):
-            if existing.name != "defaults.yaml" and existing.stem != self.region:
-                existing.unlink()
-
-        region_file = env_config_dir / f"{self.region}.yaml"
         with open(region_file, "w") as f:
             yaml.dump(region_config, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 

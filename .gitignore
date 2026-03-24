@@ -32,3 +32,6 @@ codebuild-logs*
 # Ephemeral environment state
 .ephemeral-envs
 .ephemeral-envs.tmp
+
+# Local ephemeral environment overrides
+.ephemeral-env/

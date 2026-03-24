@@ -28,9 +28,10 @@ import os
 import re
 import sys
 import uuid
+from pathlib import Path
 
-from git import GitManager
-from orchestrator import EphemeralEnvOrchestrator
+from __init__ import TARGET_ENVIRONMENT
+from orchestrator import EphemeralEnvOrchestrator, discover_region
 
 logging.basicConfig(
     level=logging.INFO,
@@ -90,9 +91,10 @@ def main():
         help="Directory containing CI credentials (optional if credentials are passed as env vars)",
     )
     parser.add_argument(
-        "--region",
-        default=os.environ.get("AWS_REGION", "us-east-1"),
-        help="AWS region (default: us-east-1)",
+        "--override-dir",
+        default=os.environ.get("EPHEMERAL_OVERRIDE_DIR", ""),
+        help="Path to local config overrides directory that replaces config/ephemeral/ "
+             "(default: from EPHEMERAL_OVERRIDE_DIR env var)",
     )
     parser.add_argument(
         "--save-regional-state",
@@ -122,29 +124,38 @@ def main():
     ci_prefix = make_ci_prefix()
     log.info("CI prefix: %s (BUILD_ID: %s)", ci_prefix, build_id)
 
-    if args.resync:
-        try:
-            git = GitManager(creds_dir=args.creds_dir, repo=repo, branch=args.branch)
-            git.resync_ci_branch(ci_prefix)
-            log.info("")
-            log.info("==========================================")
-            log.info("Resync completed successfully!")
-            log.info("==========================================")
-        except Exception:
-            log.exception("Ephemeral environment resync failed")
-            sys.exit(1)
-        return
+    # Discover region from config files (override dir takes precedence).
+    # For teardown, region is discovered from the CI branch after checkout
+    # (inside the orchestrator), so we pass a placeholder here.
+    override_dir = args.override_dir or None
+    if is_teardown:
+        region = ""  # discovered from CI branch in orchestrator.teardown()
+    else:
+        if override_dir and Path(override_dir).exists():
+            env_config_dir = Path(override_dir)
+        else:
+            workspace = Path(os.environ.get("WORKSPACE_DIR", "."))
+            env_config_dir = workspace / "config" / TARGET_ENVIRONMENT
+        region = discover_region(env_config_dir)
+        log.info("Region: %s (from %s)", region, env_config_dir)
 
     env = EphemeralEnvOrchestrator(
         repo=repo,
         branch=args.branch,
         creds_dir=args.creds_dir,
-        region=args.region,
+        region=region,
         ci_prefix=ci_prefix,
+        override_dir=override_dir,
     )
 
     try:
-        if is_teardown:
+        if args.resync:
+            env.resync()
+            log.info("")
+            log.info("==========================================")
+            log.info("Resync completed successfully!")
+            log.info("==========================================")
+        elif is_teardown:
             env.teardown(fire_and_forget=args.teardown_fire_and_forget)
             log.info("")
             log.info("==========================================")
@@ -152,6 +163,10 @@ def main():
             log.info("==========================================")
         else:
             env.provision(save_state=args.save_regional_state)
+            # Write discovered region to output dir so the Makefile can capture it
+            if args.save_regional_state:
+                region_file = Path(args.save_regional_state).parent / "region"
+                region_file.write_text(region)
             log.info("")
             log.info("==========================================")
             log.info("Provisioning completed successfully!")
@@ -162,7 +177,8 @@ def main():
             log.info("    BUILD_ID=%s ./ci/ephemeral-provider/main.py --teardown", build_id)
             log.info("")
     except Exception:
-        log.exception("Ephemeral environment %s failed", "teardown" if is_teardown else "provision")
+        log.exception("Ephemeral environment %s failed",
+                       "resync" if args.resync else "teardown" if is_teardown else "provision")
         sys.exit(1)
 
 
