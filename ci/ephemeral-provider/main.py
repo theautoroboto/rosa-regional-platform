@@ -124,16 +124,20 @@ def main():
     ci_prefix = make_ci_prefix()
     log.info("CI prefix: %s (BUILD_ID: %s)", ci_prefix, build_id)
 
-    # Discover region from config files (override dir takes precedence)
+    # Discover region from config files (override dir takes precedence).
+    # For teardown, region is discovered from the CI branch after checkout
+    # (inside the orchestrator), so we pass a placeholder here.
     override_dir = args.override_dir or None
-    if override_dir and Path(override_dir).exists():
-        env_config_dir = Path(override_dir)
+    if is_teardown:
+        region = ""  # discovered from CI branch in orchestrator.teardown()
     else:
-        # Look in the workspace's config/ephemeral/ (mounted at /workspace in container)
-        workspace = Path(os.environ.get("WORKSPACE_DIR", "."))
-        env_config_dir = workspace / "config" / TARGET_ENVIRONMENT
-    region = discover_region(env_config_dir)
-    log.info("Region: %s (from %s)", region, env_config_dir)
+        if override_dir and Path(override_dir).exists():
+            env_config_dir = Path(override_dir)
+        else:
+            workspace = Path(os.environ.get("WORKSPACE_DIR", "."))
+            env_config_dir = workspace / "config" / TARGET_ENVIRONMENT
+        region = discover_region(env_config_dir)
+        log.info("Region: %s (from %s)", region, env_config_dir)
 
     env = EphemeralEnvOrchestrator(
         repo=repo,

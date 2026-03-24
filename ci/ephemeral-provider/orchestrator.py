@@ -105,7 +105,9 @@ class EphemeralEnvOrchestrator:
         """Tear down a previously provisioned ephemeral environment.
 
         Can run independently of provision() — reconnects to the existing
-        CI branch and pipeline resources using the ci_prefix.
+        CI branch and pipeline resources using the ci_prefix. The region is
+        discovered from the CI branch's config (not the local workspace),
+        so teardown always matches the provisioned environment.
 
         Args:
             fire_and_forget: If True, only pushes the initial infrastructure
@@ -115,16 +117,22 @@ class EphemeralEnvOrchestrator:
                 skipped — teardown is expected to be driven to completion by
                 external means (a periodic janitor job).
         """
+        # Check out the CI branch first to discover region from its config
+        git = GitManager(self.creds_dir, self.repo, self.branch)
+        self.git = git
+        git.checkout_ci_branch(self.ci_prefix)
+
+        # Discover region from the CI branch's config
+        env_config_dir = git.work_dir / "config" / TARGET_ENVIRONMENT
+        self.region = discover_region(env_config_dir)
+        log.info("Region (from CI branch): %s", self.region)
+
         self._setup_aws()
 
         # Collect CodeBuild logs before teardown destroys infrastructure.
         # In Prow, teardown runs as a separate step — this captures logs
         # from the provisioning phase that would otherwise be lost.
         self.collect_codebuild_logs()
-
-        git = GitManager(self.creds_dir, self.repo, self.branch)
-        self.git = git
-        git.checkout_ci_branch(self.ci_prefix)
 
         self.central_monitor = PipelineMonitor(self.aws.session)
         self.target_monitor = PipelineMonitor(self.aws.target_session)
