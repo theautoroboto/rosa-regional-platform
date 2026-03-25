@@ -28,6 +28,8 @@ spec:
       terminationGracePeriodSeconds: 10
       securityContext:
         runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: manager
           image: {{ .Values.operator.image.repository }}:{{ .Values.operator.image.tag }}
