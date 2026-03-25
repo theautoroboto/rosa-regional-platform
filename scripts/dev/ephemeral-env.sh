@@ -601,7 +601,7 @@ cmd_bastion_interactive() {
 
     while [ "${1:-}" != "" ]; do
         case $1 in
-            --cluster-type )        cluster_type=$2
+            --cluster-type )        cluster_type=${2:-}
                                     shift
                                     ;;
             --help )                usage_bastion_interactive
@@ -648,7 +648,7 @@ cmd_bastion_port_forward() {
     case $1 in
         --all )                 all_svcs=true
                                 ;;
-        --cluster-type )        cluster_type=$2
+        --cluster-type )        cluster_type=${2:-}
                                 shift
                                 ;;
         --help )                usage_port_forward
@@ -681,8 +681,8 @@ cmd_bastion_port_forward() {
     # If we provide the all-services flag, set all the services
     if [ $all_svcs == true ]; then
         case "$cluster_type" in
-            regional )      services="${regional_svc_list[*]}" ;;
-            management )    services="${management_svc_list[*]}" ;;
+            regional )      services=$(printf '%s\n' "${regional_svc_list[@]}") ;;
+            management )    services=$(printf '%s\n' "${management_svc_list[@]}") ;;
         esac
     else
         # otherwise, prompt the user
@@ -692,7 +692,7 @@ cmd_bastion_port_forward() {
             services=$(fzf_pick "Select service (${cluster_type}):" "${management_svc_list[@]}" "$custom")
         fi
     fi
-    services=$(echo "$services" | cut -d' ' -f1)
+    services=$(awk '{print $1}' <<< "$services")
 
     local forwards=()
     for service in $services
