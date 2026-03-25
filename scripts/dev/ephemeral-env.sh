@@ -773,7 +773,7 @@ cmd_bastion_port_forward() {
 
     # For ArgoCD, fetch and display the admin password from the bastion.
     # Use a marker prefix so we can extract the password from the SSM session noise.
-    if [ "$service" = "argocd" ]; then
+    if [[ " $services " =~ " argocd " ]]; then
         echo ""
         echo "==> Fetching ArgoCD admin password..."
         argocd_get_password=$(aws ecs execute-command \
