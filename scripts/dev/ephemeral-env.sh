@@ -37,6 +37,20 @@ VAULT_CRED_KEYS=(
 
 die() { echo "Error: $*" >&2; exit 1; }
 
+usage() {
+    echo "Usage: $0 <command>"
+    echo ""
+    echo "Commands:"
+    echo "  provision       Provision an ephemeral environment"
+    echo "  teardown        Tear down an ephemeral environment"
+    echo "  resync          Resync an ephemeral environment to your branch"
+    echo "  list            List ephemeral environments"
+    echo "  shell           Interactive shell for Platform API access"
+    echo "  bastion         Connect to RC/MC bastion in an ephemeral env"
+    echo "  port-forward    Forward ports through RC/MC bastion in an ephemeral env"
+    echo "  e2e             Run e2e tests against an ephemeral env"
+}
+
 # Extract a KEY=VALUE field from an .ephemeral-envs line.
 get_field() {
     echo "$1" | sed -n "s/.*${2}=\([^ ]*\).*/\1/p"
@@ -141,6 +155,14 @@ fetch_creds() {
     done
 
     echo "Credentials loaded (in-memory only)."
+}
+
+validate_cluster_type() {
+    cluster_type=$1
+    case "$cluster_type" in
+      regional|management) ;;
+      *) echo "Error: invalid cluster type '$cluster_type'"; echo ""; usage ;;
+    esac
 }
 
 # Initial bastion connectivity and setup
@@ -559,6 +581,7 @@ cmd_shell() {
 }
 
 cmd_bastion_interactive() {
+    validate_cluster_type $1
     bastion_setup $1
 
     ## Leave these here so we can ensure that the variables
@@ -585,30 +608,28 @@ cmd_bastion_port_forward() {
     cluster_type=$1
 
     # --- Validations ------------------------
-    case "$cluster_type" in
-      regional|management) ;;
-      *) echo "Error: invalid cluster type '$cluster_type'"; echo ""; usage ;;
-    esac
+    validate_cluster_type $cluster_type
 
+    local service
     if [ "$cluster_type" = "regional" ]; then
-        SERVICE=$(fzf_pick "Select service (${cluster_type}):" \
+        service=$(fzf_pick "Select service (${cluster_type}):" \
         "maestro   - Maestro HTTP + gRPC" \
         "argocd    - ArgoCD server HTTPS" \
         "custom    - Custom service / ports")
     else
-        SERVICE=$(fzf_pick "Select service (${cluster_type}):" \
+        service=$(fzf_pick "Select service (${cluster_type}):" \
         "argocd      - ArgoCD server HTTPS" \
         "prometheus  - Prometheus Monitoring Dashboard" \
         "custom      - Custom service / ports")
     fi
-    SERVICE="${SERVICE%%[[:space:]]*}"
+    service="${service%%[[:space:]]*}"
 
-    case "$SERVICE" in
+    case "$service" in
     maestro|argocd|prometheus|custom) ;;
-    *) echo "Error: unknown service '$SERVICE'" ;;
+    *) echo "Error: unknown service '$service'"; echo ""; usage ;;
     esac
 
-    if [ "$SERVICE" = "maestro" ] && [ "$CLUSTER_TYPE" != "regional" ]; then
+    if [ "$service" = "maestro" ] && [ "$cluster_type" != "regional" ]; then
       echo "Error: maestro is only available on regional clusters."
       exit 1
     fi
@@ -616,48 +637,52 @@ cmd_bastion_port_forward() {
     # ── Build port-forward definitions ───────────────────────────────────────────
     # Each entry: "label remote_port local_port k8s_svc k8s_namespace k8s_svc_port"
 
-    case "$SERVICE" in
+    local forwards
+
+    case "$service" in
     maestro)
-        FORWARDS=(
+        forwards=(
         "Maestro-HTTP 8080 8080 maestro-http maestro-server 8080"
         "Maestro-gRPC 8090 8090 maestro-grpc maestro-server 8090"
         )
         ;;
     argocd)
-        FORWARDS=(
+        forwards=(
         "ArgoCD-Server 8443 8443 argocd-server argocd 443"
         )
         ;;
     prometheus)
-        FORWARDS=(
+        forwards=(
         "Prometheus 9090 9090 monitoring-prometheus monitoring 9090"
         )
         ;;
     custom)
+        local k8s_ns k8s_svc k8s_svc_port local_port remote_port
         echo ""
-        read -rp "Kubernetes namespace: " K8S_NS
-        read -rp "Service name (without svc/ prefix): " K8S_SVC
-        read -rp "Service port [443]: " K8S_SVC_PORT
-        K8S_SVC_PORT="${K8S_SVC_PORT:-443}"
-        read -rp "Local port [${K8S_SVC_PORT}]: " LOCAL_PORT
-        LOCAL_PORT="${LOCAL_PORT:-$K8S_SVC_PORT}"
-        REMOTE_PORT="$LOCAL_PORT"
+        read -rp "Kubernetes namespace: " k8s_ns
+        read -rp "Service name (without svc/ prefix): " k8s_svc
+        read -rp "Service port [443]: " k8s_svc_port
+        k8s_svc_port="${k8s_svc_port:-443}"
+        read -rp "Local port [${k8s_svc_port}]: " local_port
+        local_port="${local_port:-$k8s_svc_port}"
+        remote_port="$local_port"
 
-        FORWARDS=(
-        "Custom ${REMOTE_PORT} ${LOCAL_PORT} ${K8S_SVC} ${K8S_NS} ${K8S_SVC_PORT}"
+        forwards=(
+        "Custom ${remote_port} ${local_port} ${k8s_svc} ${k8s_ns} ${k8s_svc_port}"
         )
         ;;
     esac
 
     # ── Pre-flight: check local ports are free ───────────────────────────────────
 
-    for entry in "${FORWARDS[@]}"; do
-      read -r label _ local_port _ _ _ <<< "$entry"
-      if lsof -iTCP:"$local_port" -sTCP:LISTEN -t &>/dev/null; then
-        echo "Error: Local port ${local_port} (${label}) is already in use."
-        echo "Kill the process using it first: lsof -iTCP:${local_port} -sTCP:LISTEN"
-        exit 1
-      fi
+    for entry in "${forwards[@]}"; do
+        local local_port
+        read -r label _ local_port _ _ _ <<< "$entry"
+        if lsof -iTCP:"$local_port" -sTCP:LISTEN -t &>/dev/null; then
+            echo "Error: Local port ${local_port} (${label}) is already in use."
+            echo "Kill the process using it first: lsof -iTCP:${local_port} -sTCP:LISTEN"
+            exit 1
+        fi
     done
 
     # ── Connect to Bastion ──────────────────────────────────────────────────────
@@ -676,8 +701,6 @@ cmd_bastion_port_forward() {
       exit 1
     fi
 
-    ## Leave these here so we can ensure that the variables
-    ## are actually available since we refactored out the logic
     echo ""
     echo "==> Bastion task ready"
     echo "    ECS cluster: $ecs_cluster"
@@ -688,18 +711,18 @@ cmd_bastion_port_forward() {
 
     # ── Port forwarding ─────────────────────────────────────────────────────────
 
-    SSM_PIDS=()
+    ssm_pids=()
 
     cleanup() {
     echo ""
     echo "Stopping all port-forward sessions..."
-    for pid in "${SSM_PIDS[@]}"; do
+    for pid in "${ssm_pids[@]}"; do
         kill "$pid" 2>/dev/null || true
     done
     }
     trap cleanup EXIT
 
-    TARGET="ecs:${ecs_cluster}_${task_id}_${runtime_id}"
+    target="ecs:${ecs_cluster}_${task_id}_${runtime_id}"
 
     # Kill stale port-forwards on bastion
     echo "==> Cleaning up stale port-forwards on bastion..."
@@ -713,16 +736,16 @@ cmd_bastion_port_forward() {
 
     # Start kubectl port-forward(s) inside the bastion (one ECS exec per forward).
     # The ECS exec session is short-lived but kubectl keeps running in the container.
-    for entry in "${FORWARDS[@]}"; do
-    read -r label remote_port local_port k8s_svc k8s_ns k8s_svc_port <<< "$entry"
+    for entry in "${forwards[@]}"; do
+        read -r label remote_port local_port k8s_svc k8s_ns k8s_svc_port <<< "$entry"
 
-    echo "==> [bastion] kubectl port-forward svc/${k8s_svc} ${remote_port}:${k8s_svc_port} -n ${k8s_ns}"
-    aws ecs execute-command \
-        --cluster "$ecs_cluster" \
-        --task "$task_id" \
-        --container bastion \
-        --interactive \
-        --command "kubectl port-forward svc/${k8s_svc} ${remote_port}:${k8s_svc_port} -n ${k8s_ns} --address 0.0.0.0" &
+        echo "==> [bastion] kubectl port-forward svc/${k8s_svc} ${remote_port}:${k8s_svc_port} -n ${k8s_ns}"
+        aws ecs execute-command \
+            --cluster "$ecs_cluster" \
+            --task "$task_id" \
+            --container bastion \
+            --interactive \
+            --command "kubectl port-forward svc/${k8s_svc} ${remote_port}:${k8s_svc_port} -n ${k8s_ns} --address 0.0.0.0" &
     done
     # Not tracked in SSM_PIDS — the ECS exec processes are expected to exit
 
@@ -732,45 +755,45 @@ cmd_bastion_port_forward() {
     sleep 5
 
     # Hop 2: SSM port forward from laptop to bastion
-    for entry in "${FORWARDS[@]}"; do
-    read -r label remote_port local_port _ _ _ <<< "$entry"
+    for entry in "${forwards[@]}"; do
+        read -r label remote_port local_port _ _ _ <<< "$entry"
 
-    echo "==> [local] SSM forwarding ${label} (localhost:${local_port} -> bastion:${remote_port})..."
-    aws ssm start-session \
-        --target "$TARGET" \
-        --document-name AWS-StartPortForwardingSession \
-        --parameters "{\"portNumber\":[\"${remote_port}\"],\"localPortNumber\":[\"${local_port}\"]}" &
-    SSM_PIDS+=($!)
+        echo "==> [local] SSM forwarding ${label} (localhost:${local_port} -> bastion:${remote_port})..."
+        aws ssm start-session \
+            --target "$target" \
+            --document-name AWS-StartPortForwardingSession \
+            --parameters "{\"portNumber\":[\"${remote_port}\"],\"localPortNumber\":[\"${local_port}\"]}" &
+        ssm_pids+=($!)
     done
 
     echo ""
     echo "==> Port forwarding active. Forwarded ports:"
-    for entry in "${FORWARDS[@]}"; do
-    read -r label _ local_port _ _ _ <<< "$entry"
-    echo "    ${label}: localhost:${local_port}"
+    for entry in "${forwards[@]}"; do
+        read -r label _ local_port _ _ _ <<< "$entry"
+        echo "    ${label}: localhost:${local_port}"
     done
 
     # For ArgoCD, fetch and display the admin password from the bastion.
     # Use a marker prefix so we can extract the password from the SSM session noise.
-    if [ "$SERVICE" = "argocd" ]; then
-    echo ""
-    echo "==> Fetching ArgoCD admin password..."
-    PASS_OUTPUT=$(aws ecs execute-command \
-        --cluster "$ecs_cluster" \
-        --task "$task_id" \
-        --container bastion \
-        --interactive \
-        --command "sh -c \"echo ARGOCD_PW=\$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath={.data.password} | base64 -d)\"" 2>/dev/null || true)
-    ARGOCD_PASS=$(echo "$PASS_OUTPUT" | grep -o 'ARGOCD_PW=.*' | cut -d= -f2 | tr -d '[:space:]')
-    echo ""
-    echo "    ArgoCD UI:       https://localhost:8443"
-    echo "    Username:        admin"
-    if [ -n "$ARGOCD_PASS" ]; then
-        echo "    Password:        ${ARGOCD_PASS}"
-    else
-        echo "    Password:        (could not retrieve - run on bastion manually):"
-        echo "                     kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath={.data.password} | base64 -d"
-    fi
+    if [ "$service" = "argocd" ]; then
+        echo ""
+        echo "==> Fetching ArgoCD admin password..."
+        argocd_get_password=$(aws ecs execute-command \
+            --cluster "$ecs_cluster" \
+            --task "$task_id" \
+            --container bastion \
+            --interactive \
+            --command "sh -c \"echo ARGOCD_PW=\$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath={.data.password} | base64 -d)\"" 2>/dev/null || true)
+        argocd_password=$(echo "$argocd_get_password" | grep -o 'ARGOCD_PW=.*' | cut -d= -f2 | tr -d '[:space:]')
+        echo ""
+        echo "    ArgoCD UI:       https://localhost:8443"
+        echo "    Username:        admin"
+        if [ -n "$argocd_password" ]; then
+            echo "    Password:        ${argocd_password}"
+        else
+            echo "    Password:        (could not retrieve - run on bastion manually):"
+            echo "                     kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath={.data.password} | base64 -d"
+        fi
     fi
 
     echo ""
@@ -778,7 +801,7 @@ cmd_bastion_port_forward() {
 
     # Wait for any SSM session to exit — if one dies, tear everything down
     while true; do
-    for pid in "${SSM_PIDS[@]}"; do
+    for pid in "${ssm_pids[@]}"; do
         if ! kill -0 "$pid" 2>/dev/null; then
         wait "$pid" 2>/dev/null || true
         echo ""
@@ -845,6 +868,11 @@ case "${1:-help}" in
             command -v "$tool" >/dev/null 2>&1 || die "Missing required tool: $tool"
         done
         ;;
+    port-forward)
+        for tool in vault aws fzf lsof; do
+            command -v "$tool" >/dev/null 2>&1 || die "Missing required tool: $tool"
+        done
+        ;;
     *)
         # All other commands need tools + container image
         preflight
@@ -857,20 +885,10 @@ case "${1:-help}" in
     teardown)       cmd_teardown ;;
     resync)         cmd_resync ;;
     shell)          cmd_shell ;;
-    bastion)        cmd_bastion_interactive "$2" ;;
-    port-forward)   cmd_bastion_port_forward "$2" ;;
+    bastion)        cmd_bastion_interactive "${2:-}" ;;
+    port-forward)   cmd_bastion_port_forward "${2:-}" ;;
     e2e)            cmd_e2e ;;
     help|*)
-        echo "Usage: $0 <command>"
-        echo ""
-        echo "Commands:"
-        echo "  provision       Provision an ephemeral environment"
-        echo "  teardown        Tear down an ephemeral environment"
-        echo "  resync          Resync an ephemeral environment to your branch"
-        echo "  list            List ephemeral environments"
-        echo "  shell           Interactive shell for Platform API access"
-        echo "  bastion         Connect to RC/MC bastion in an ephemeral env"
-        echo "  port-forward    Forward ports through RC/MC bastion in an ephemeral env"
-        echo "  e2e             Run e2e tests against an ephemeral env"
+        usage
         ;;
 esac
