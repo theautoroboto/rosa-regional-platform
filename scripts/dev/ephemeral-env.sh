@@ -51,6 +51,25 @@ usage() {
     echo "  e2e             Run e2e tests against an ephemeral env"
 }
 
+usage_bastion_interactive() {
+    echo "Usage: $0 bastion --cluster-type [value]"
+    echo ""
+    echo "Connect to RC/MC bastion in an ephemeral environment"
+    echo ""
+    echo "Flags:"
+    echo "  --cluster-type  Defines which cluster type to connect to. Accepted values are \"regional\" or \"management\""
+}
+
+usage_port_forward() {
+    echo "Usage: $0 port-forward --cluster-type [value] <additional flags>"
+    echo ""
+    echo "Opens Port Forwards to the various services that are running on a cluster in the ephemeral env"
+    echo ""
+    echo "Flags:"
+    echo "  --all           Automatically open all port forwards to the various services"
+    echo "  --cluster-type  Defines which cluster type to connect to. Accepted values are \"regional\" or \"management\""
+}
+
 # Extract a KEY=VALUE field from an .ephemeral-envs line.
 get_field() {
     echo "$1" | sed -n "s/.*${2}=\([^ ]*\).*/\1/p"
@@ -155,14 +174,6 @@ fetch_creds() {
     done
 
     echo "Credentials loaded (in-memory only)."
-}
-
-validate_cluster_type() {
-    cluster_type=$1
-    case "$cluster_type" in
-      regional|management) ;;
-      *) echo "Error: invalid cluster type '$cluster_type'"; echo ""; usage; exit 1 ;;
-    esac
 }
 
 # Initial bastion connectivity and setup
@@ -575,8 +586,29 @@ cmd_shell() {
 }
 
 cmd_bastion_interactive() {
-    validate_cluster_type $1
-    bastion_setup $1
+    local cluster_type
+
+    while [ "${1:-}" != "" ]; do
+        case $1 in
+            --cluster-type )        cluster_type=$2
+                                    shift
+                                    ;;
+            --help )                usage_bastion_interactive
+                                    exit 0
+                                    ;;
+            * ) echo "Unexpected parameter $1"
+                usage
+                exit 1
+        esac
+        shift
+    done
+
+    case "$cluster_type" in
+      regional|management) ;;
+      *) echo "Error: invalid cluster type '$cluster_type'"; echo ""; usage_bastion_interactive; exit 1 ;;
+    esac
+
+    bastion_setup $cluster_type
 
     ## Leave these here so we can ensure that the variables
     ## are actually available since we refactored out the logic
@@ -598,39 +630,65 @@ cmd_bastion_interactive() {
 }
 
 cmd_bastion_port_forward() {
+    local all_svcs=false
     local cluster_type
-    cluster_type=$1
+
+    while [ "${1:-}" != "" ]; do
+    case $1 in
+        --all )                 all_svcs=true
+                                ;;
+        --cluster-type )        cluster_type=$2
+                                shift
+                                ;;
+        --help )                usage_port_forward
+                                exit 0
+                                ;;
+        * ) echo "Unexpected parameter $1"
+            usage
+            exit 1
+    esac
+    shift
+    done
 
     # --- Validations ------------------------
-    validate_cluster_type $cluster_type
+    case "$cluster_type" in
+      regional|management) ;;
+      *) echo "Error: invalid cluster type '$cluster_type'"; echo ""; usage_port_forward; exit 1 ;;
+    esac
+
+    local maestro="maestro   - Maestro HTTP + gRPC"
+    local argocd="argocd    - ArgoCD server HTTPS"
+    local prometheus="prometheus  - Prometheus Monitoring Dashboard"
+    local custom="custom    - Custom service / ports"
+
+    # custom services are added only for interactive
+    local regional_svc_list=("$maestro" "$argocd")
+    local management_svc_list=("$argocd" "$prometheus")
 
     local services
-    if [ "$cluster_type" = "regional" ]; then
-        services=$(fzf_pick "Select service (${cluster_type}):" \
-        "maestro   - Maestro HTTP + gRPC" \
-        "argocd    - ArgoCD server HTTPS" \
-        "custom    - Custom service / ports")
+
+    # If we provide the all-services flag, set all the services
+    if [ $all_svcs == true ]; then
+        case "$cluster_type" in
+            regional )      services="${regional_svc_list[*]}" ;;
+            management )    services="${management_svc_list[*]}" ;;
+        esac
     else
-        services=$(fzf_pick "Select service (${cluster_type}):" \
-        "argocd      - ArgoCD server HTTPS" \
-        "prometheus  - Prometheus Monitoring Dashboard" \
-        "custom      - Custom service / ports")
+        # otherwise, prompt the user
+        if [ "$cluster_type" = "regional" ]; then
+            services=$(fzf_pick "Select service (${cluster_type}):" "${regional_svc_list[@]}" "$custom")
+        else
+            services=$(fzf_pick "Select service (${cluster_type}):" "${management_svc_list[@]}" "$custom")
+        fi
     fi
     services=$(echo "$services" | cut -d' ' -f1)
 
-    local forwards
-    forwards=()
-
+    local forwards=()
     for service in $services
     do
-        case "$service" in
-        maestro|argocd|prometheus|custom) ;;
-        *) echo "Error: unknown service '$service'"; echo ""; usage; exit 1 ;;
-        esac
-
         if [ "$service" = "maestro" ] && [ "$cluster_type" != "regional" ]; then
-        echo "Error: maestro is only available on regional clusters."
-        exit 1
+            echo "Error: maestro is only available on regional clusters."
+            exit 1
         fi
 
         # ── Build port-forward definitions ───────────────────────────────────────────
@@ -668,6 +726,7 @@ cmd_bastion_port_forward() {
             "Custom ${remote_port} ${local_port} ${k8s_svc} ${k8s_ns} ${k8s_svc_port}"
             )
             ;;
+        *) echo "Error: unknown service '$service'"; echo ""; usage; exit 1 ;;
         esac
     done
 
@@ -685,7 +744,7 @@ cmd_bastion_port_forward() {
 
     # ── Connect to Bastion ──────────────────────────────────────────────────────
 
-    bastion_setup $1
+    bastion_setup $cluster_type
 
     local runtime_id
     runtime_id=$(aws ecs describe-tasks \
@@ -883,8 +942,8 @@ case "${1:-help}" in
     teardown)       cmd_teardown ;;
     resync)         cmd_resync ;;
     shell)          cmd_shell ;;
-    bastion)        cmd_bastion_interactive "${2:-}" ;;
-    port-forward)   cmd_bastion_port_forward "${2:-}" ;;
+    bastion)        shift; cmd_bastion_interactive "$@" ;;
+    port-forward)   shift; cmd_bastion_port_forward "$@" ;;
     e2e)            cmd_e2e ;;
     help|*)
         usage

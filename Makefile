@@ -1,4 +1,4 @@
-.PHONY: help terraform-fmt terraform-init terraform-validate terraform-upgrade terraform-output-management terraform-output-regional helm-lint check-rendered-files ephemeral-provision ephemeral-teardown ephemeral-resync ephemeral-list ephemeral-shell ephemeral-bastion-rc ephemeral-bastion-mc ephemeral-port-forward-rc ephemeral-port-forward-mc ephemeral-e2e check-docs pre-push
+.PHONY: help terraform-fmt terraform-init terraform-validate terraform-upgrade terraform-output-management terraform-output-regional helm-lint check-rendered-files ephemeral-provision ephemeral-teardown ephemeral-resync ephemeral-list ephemeral-shell ephemeral-bastion-rc ephemeral-bastion-mc ephemeral-port-forward-rc ephemeral-port-forward-mc ephemeral-port-forward-rc-all ephemeral-port-forward-mc-all ephemeral-e2e check-docs pre-push
 
 # Default target
 help:
@@ -188,16 +188,22 @@ ephemeral-shell:
 	@ID="$(ID)" ./scripts/dev/ephemeral-env.sh shell
 
 ephemeral-bastion-rc:
-	@ID="$(ID)" ./scripts/dev/ephemeral-env.sh bastion regional
+	@ID="$(ID)" ./scripts/dev/ephemeral-env.sh bastion --cluster-type regional
 
 ephemeral-bastion-mc:
-	@ID="$(ID)" ./scripts/dev/ephemeral-env.sh bastion management
+	@ID="$(ID)" ./scripts/dev/ephemeral-env.sh bastion --cluster-type management
 
 ephemeral-port-forward-rc:
-	@ID="$(ID)" ./scripts/dev/ephemeral-env.sh port-forward regional
+	@ID="$(ID)" ./scripts/dev/ephemeral-env.sh port-forward --cluster-type regional
 
 ephemeral-port-forward-mc:
-	@ID="$(ID)" ./scripts/dev/ephemeral-env.sh port-forward management
+	@ID="$(ID)" ./scripts/dev/ephemeral-env.sh port-forward --cluster-type management
+
+ephemeral-port-forward-rc-all:
+	@ID="$(ID)" ./scripts/dev/ephemeral-env.sh port-forward --cluster-type regional --all
+
+ephemeral-port-forward-mc-all:
+	@ID="$(ID)" ./scripts/dev/ephemeral-env.sh port-forward --cluster-type management --all
 
 ephemeral-e2e:
 	@ID="$(ID)" API_REF="$(or $(API_REF),main)" ./scripts/dev/ephemeral-env.sh e2e
