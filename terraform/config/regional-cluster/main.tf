@@ -65,6 +65,12 @@ module "ecs_bootstrap" {
   # ArgoCD bootstrap configuration
   repository_url    = var.repository_url
   repository_branch = var.repository_branch
+
+  # Thanos infrastructure (wired to ArgoCD cluster secret annotations)
+  thanos_s3_bucket   = module.thanos_infrastructure.s3_bucket_name
+  thanos_s3_endpoint = module.thanos_infrastructure.s3_bucket_endpoint
+  thanos_kms_key_arn = module.thanos_infrastructure.kms_key_arn
+  thanos_role_arn    = module.thanos_infrastructure.iam_role_arn
 }
 
 # =============================================================================

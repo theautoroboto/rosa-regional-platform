@@ -163,6 +163,22 @@ resource "aws_ecs_task_definition" "bootstrap" {
         {
           name  = "AWS_DEFAULT_REGION"
           value = data.aws_region.current.id
+        },
+        {
+          name  = "THANOS_S3_BUCKET"
+          value = var.thanos_s3_bucket
+        },
+        {
+          name  = "THANOS_S3_ENDPOINT"
+          value = var.thanos_s3_endpoint
+        },
+        {
+          name  = "THANOS_KMS_KEY_ARN"
+          value = var.thanos_kms_key_arn
+        },
+        {
+          name  = "THANOS_ROLE_ARN"
+          value = var.thanos_role_arn
         }
       ]
 
