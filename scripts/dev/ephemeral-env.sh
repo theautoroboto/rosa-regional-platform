@@ -673,7 +673,7 @@ cmd_bastion_port_forward() {
     local custom="custom    - Custom service / ports"
 
     # custom services are added only for interactive
-    local regional_svc_list=("$maestro" "$argocd")
+    local regional_svc_list=("$maestro" "$argocd" "$prometheus")
     local management_svc_list=("$argocd" "$prometheus")
 
     local services
