@@ -55,8 +55,6 @@ receive:
   storage:
     size: 50Gi
     storageClass: ebs-immediate
-    # Set this StorageClass as cluster default (only enable if no other default exists)
-    isDefaultClass: false
 
 # Thanos Query configuration
 query:
