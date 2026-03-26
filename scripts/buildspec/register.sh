@@ -35,6 +35,41 @@ if [ "${DELETE_FLAG}" == "true" ]; then
 fi
 
 # =====================================================================
+# Read CloudFront URL from MC terraform state
+# =====================================================================
+
+MC_STATE_BUCKET="terraform-state-${TARGET_ACCOUNT_ID}-${TARGET_REGION}"
+MC_STATE_KEY="management-cluster/${MANAGEMENT_ID}.tfstate"
+
+echo "MC state:"
+echo "  Bucket: $MC_STATE_BUCKET"
+echo "  Key: $MC_STATE_KEY"
+echo "  Region: $TARGET_REGION"
+echo ""
+
+use_mc_account
+
+(
+    cd terraform/config/management-cluster
+    terraform init -reconfigure \
+        -backend-config="bucket=${MC_STATE_BUCKET}" \
+        -backend-config="key=${MC_STATE_KEY}" \
+        -backend-config="region=${TARGET_REGION}" \
+        -backend-config="use_lockfile=true"
+)
+
+CLOUDFRONT_DOMAIN=$(cd terraform/config/management-cluster && terraform output -raw oidc_cloudfront_domain)
+
+if [ -z "$CLOUDFRONT_DOMAIN" ]; then
+    echo "ERROR: Failed to read oidc_cloudfront_domain from MC terraform state"
+    exit 1
+fi
+
+CLOUDFRONT_URL="https://${CLOUDFRONT_DOMAIN}"
+echo "CloudFront URL: $CLOUDFRONT_URL"
+echo ""
+
+# =====================================================================
 # Read API Gateway URL from RC terraform state
 # =====================================================================
 
@@ -136,7 +171,8 @@ PAYLOAD=$(cat <<EOJSON
     "cluster_type": "management",
     "management_id": "${CLUSTER_ID}",
     "region": "${TARGET_REGION}",
-    "alias": "${MANAGEMENT_ID}"
+    "alias": "${MANAGEMENT_ID}",
+    "cloudfront_url": "${CLOUDFRONT_URL}"
   }
 }
 EOJSON
