@@ -166,6 +166,47 @@ ip-10-0-1-42.ec2.internal    Ready    <none>   2h    v1.31.4-eks-aeac579
 
 The bastion task stays running until explicitly stopped or until the environment is torn down (teardown automatically cleans up running bastion tasks).
 
+## Port Forwarding
+
+Forward ports from cluster-internal services to your local machine through the bastion, without needing an interactive shell. This is useful for accessing ArgoCD, Prometheus, and Maestro UIs directly in your browser.
+
+> ⚠️ _Bastion must be enabled in your environment config (`enable_bastion: true` in `defaults.yaml`). The default ephemeral preset already has it enabled._
+
+### Interactive service selection
+
+```bash
+# Select services interactively (fzf multi-select) — Regional Cluster
+make ephemeral-port-forward-rc
+
+# Select services interactively — Management Cluster
+make ephemeral-port-forward-mc
+
+# Explicit environment selection
+make ephemeral-port-forward-rc ID=6bd2d3d7
+```
+
+### Forward all services at once
+
+```bash
+# Forward all available services — Regional Cluster
+make ephemeral-port-forward-rc-all
+
+# Forward all available services — Management Cluster
+make ephemeral-port-forward-mc-all
+```
+
+Available services per cluster type:
+
+| Service    | RC  | MC  | Local address                                       |
+| ---------- | --- | --- | --------------------------------------------------- |
+| ArgoCD     | yes | yes | https://localhost:8443                              |
+| Prometheus | yes | yes | http://localhost:9090                               |
+| Maestro    | yes | no  | http://localhost:8080 (HTTP), localhost:8090 (gRPC) |
+
+The command fetches the ArgoCD admin password automatically and prints it to the terminal. Port forwards remain active until you press `Ctrl+C`.
+
+Prerequisites: `vault`, `aws`, `fzf`, and `lsof` must be in `PATH`.
+
 ## Run E2E Tests
 
 Run the end-to-end test suite against one of your development environments:
