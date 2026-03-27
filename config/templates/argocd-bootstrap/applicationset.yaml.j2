@@ -57,6 +57,7 @@ spec:
               cluster_type: '{{ '{{ .metadata.labels.cluster_type }}' }}'
               environment: '{{ '{{ .metadata.labels.environment }}' }}'
               aws_region: '{{ '{{ .metadata.labels.aws_region }}' }}'
+              aws_account_id: '{{ '{{ .metadata.annotations.aws_account_id }}' }}'
               cluster_name: '{{ '{{ .metadata.labels.cluster_name }}' }}'
             platformApi:
               targetGroup:
@@ -74,6 +75,8 @@ spec:
             hyperfleetAdapter:
               aws:
                 region: '{{ '{{ .metadata.labels.aws_region }}' }}'
+            thanos:
+              kmsKeyArn: '{{ '{{ .metadata.annotations.thanos_kms_key_arn }}' }}'
         path: '{{ '{{ .path.path }}' }}'
         repoURL: '{{ '{{ .metadata.annotations.git_repo }}' }}'
         targetRevision: '{% if pinned %}{{ pinned }}{% else %}{{ "{{ .metadata.annotations.git_revision }}" }}{% endif %}'

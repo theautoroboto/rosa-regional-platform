@@ -47,26 +47,8 @@ variable "repository_branch" {
   default     = "main"
 }
 
-variable "thanos_s3_bucket" {
-  description = "S3 bucket name for Thanos metrics storage"
-  type        = string
-  default     = ""
-}
-
-variable "thanos_s3_endpoint" {
-  description = "S3 endpoint for Thanos configuration"
-  type        = string
-  default     = ""
-}
-
 variable "thanos_kms_key_arn" {
   description = "KMS key ARN for Thanos S3 encryption"
-  type        = string
-  default     = ""
-}
-
-variable "thanos_role_arn" {
-  description = "IAM role ARN for Thanos Pod Identity"
   type        = string
   default     = ""
 }

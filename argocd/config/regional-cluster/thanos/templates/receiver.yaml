@@ -28,5 +28,5 @@ spec:
     replicationFactor: {{ .Values.receive.replicationFactor }}
     externalLabels:
       receive: "true"
-      region: {{ .Values.aws.region | default "unknown" | quote }}
+      region: {{ .Values.global.aws_region | quote }}
 {{- end }}

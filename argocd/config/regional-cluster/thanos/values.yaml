@@ -29,16 +29,6 @@ namespace: thanos
 objectStore:
   # Secret name containing objstore.yml
   secretName: thanos-objstore-config
-  # S3 configuration (populated from Terraform via ArgoCD ApplicationSet)
-  # Note: AWS SDK credential chain is used automatically (Pod Identity/IRSA)
-  config:
-    type: S3
-    bucket: ""
-    endpoint: ""
-    region: ""
-    sse_config:
-      type: "SSE-KMS"
-      kms_key_id: ""
 
 # Thanos Receive configuration
 receive:
@@ -94,12 +84,12 @@ serviceAccount:
   name: thanos-operator
   annotations: {}
 
-# AWS Pod Identity configuration
-aws:
-  region: ""
-  podIdentity:
-    enabled: true
-    roleArn: ""
+# Thanos-specific values injected by ApplicationSet
+# Bucket name derived from global.cluster_name: {cluster_name}-thanos-metrics
+# Role ARN derived from global.aws_account_id + global.cluster_name: arn:aws:iam::{account}:role/{cluster_name}-thanos
+# S3 endpoint derived from global.aws_region: s3.{region}.amazonaws.com
+thanos:
+  kmsKeyArn: ""
 
 # TargetGroupBinding for ALB integration (expose Receiver)
 targetGroupBinding:
