@@ -17,7 +17,19 @@ CI is managed through the [OpenShift CI](https://docs.ci.openshift.org/) system 
 
 ## Build Image
 
-The CI image is built from [ci/Containerfile](ci/Containerfile) and includes all required tools (Terraform, Helm, AWS CLI, Python/uv, etc.).
+The CI image is built from [ci/Containerfile](ci/Containerfile) and includes all required tools:
+
+| Tool      | Purpose                                       |
+| --------- | --------------------------------------------- |
+| Terraform | Infrastructure provisioning                   |
+| Helm      | Kubernetes chart templating and linting       |
+| AWS CLI   | AWS account and resource management           |
+| Python/uv | Ephemeral provider and scripting              |
+| Prettier  | Markdown formatting checks (`check-docs` job) |
+| aws-nuke  | AWS resource cleanup (janitor job)            |
+| yq        | YAML processing                               |
+
+These tools are available in all CI job containers and can be used in scripts run by CI jobs.
 
 ## Ephemeral Environment
 
