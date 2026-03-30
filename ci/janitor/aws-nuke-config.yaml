@@ -32,14 +32,14 @@ blocklist:
 
 # CI accounts don't have IAM aliases; skip that safety check.
 bypass-alias-check-accounts:
-  - "018092638725"
-  - "791666871613"
-  - "855246887846"
-  - "599476212575"
-  - "662212752128"
-  - "811685182089"
-  - "696000197236"
-  - "720644165472"
+# CI accounts
+  - "662212752128" # Central
+  - "720644165472" # Regional
+  - "129678139271" # Management
+# Shared Dev accounts
+  - "791666871613" # Central
+  - "599476212575" # Regional
+  - "855246887846" # Management
 
 presets:
   globals:
@@ -183,50 +183,37 @@ accounts:
 
       CodeBuildSourceCredential: *glob-name-all
 
-  # Dev Control Account
-  "791666871613":
-    presets:
-      - globals
-      - resource-explorer
-    filters: *e2e-preserve-filters
-
-  # e2e-dev-regional-cluster
-  "599476212575":
-    presets:
-      - globals
-      - resource-explorer
-    filters: *e2e-preserve-filters
-
-  # e2e-dev-management-cluster-0
-  "855246887846":
-    presets:
-      - globals
-      - resource-explorer
-    filters: *e2e-preserve-filters
-
-  # CI Control
   "662212752128":
     presets:
       - globals
       - resource-explorer
     filters: *e2e-preserve-filters
 
-  # CI Mgmt 0
-  "811685182089":
-    presets:
-      - globals
-      - resource-explorer
-    filters: *e2e-preserve-filters
-
-  # CI Mgmt 1
-  "696000197236":
-    presets:
-      - globals
-      - resource-explorer
-    filters: *e2e-preserve-filters
-
-  # CI RC
   "720644165472":
+    presets:
+      - globals
+      - resource-explorer
+    filters: *e2e-preserve-filters
+
+  "129678139271":
+    presets:
+      - globals
+      - resource-explorer
+    filters: *e2e-preserve-filters
+
+  "791666871613":
+    presets:
+      - globals
+      - resource-explorer
+    filters: *e2e-preserve-filters
+
+  "599476212575":
+    presets:
+      - globals
+      - resource-explorer
+    filters: *e2e-preserve-filters
+
+  "855246887846":
     presets:
       - globals
       - resource-explorer
