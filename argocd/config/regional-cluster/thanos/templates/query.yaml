@@ -10,7 +10,21 @@ metadata:
     {{- include "thanos-operator.annotations" . | nindent 4 }}
 spec:
   replicas: {{ .Values.query.replicas | default 2 }}
+  resourceRequirements:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
   # Query will auto-discover stores via operator labels
   queryFrontend:
     replicas: {{ .Values.query.frontend.replicas | default 1 }}
+    resourceRequirements:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
 {{- end }}

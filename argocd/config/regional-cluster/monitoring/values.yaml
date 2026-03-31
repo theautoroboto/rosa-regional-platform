@@ -12,12 +12,43 @@ kube-prometheus-stack:
   grafana:
     enabled: false
 
+  prometheusOperator:
+    resources:
+      requests:
+        memory: 128Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 500m
+
+  kube-state-metrics:
+    resources:
+      requests:
+        memory: 128Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 500m
+
+  prometheus-node-exporter:
+    # Bottlerocket sets IPV6_V6ONLY=1 so [HOST_IP]:9100 only binds IPv6.
+    # listenOnAllInterfaces replaces the HOST_IP arg with 0.0.0.0:9100.
+    service:
+      listenOnAllInterfaces: true
+
   prometheus:
     prometheusSpec:
       replicas: 2
       retention: "14d"
       retentionSize: "85GB"
       serviceMonitorSelectorNilUsesHelmValues: false
+      # External labels are required for Thanos to differentiate metrics from
+      # multiple clusters. These are injected by the ApplicationSet at sync time.
+      externalLabels:
+        cluster: '{{ .Values.global.cluster_name }}'
+        cluster_type: '{{ .Values.global.cluster_type }}'
+      remoteWrite:
+        - url: http://thanos-receive-router-thanos-receive.thanos:19291/api/v1/receive
       serviceMonitorNamespaceSelector: {}
       serviceMonitorSelector: {}
 
@@ -30,6 +61,14 @@ kube-prometheus-stack:
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: prometheus
+
+      resources:
+        requests:
+          memory: 1Gi
+          cpu: 250m
+        limits:
+          memory: 4Gi
+          cpu: 2000m
 
       storageSpec:
         volumeClaimTemplate:

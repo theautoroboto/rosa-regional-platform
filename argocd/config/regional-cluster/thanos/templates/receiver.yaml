@@ -13,6 +13,19 @@ spec:
     defaultObjectStorageConfig:
       name: {{ .Values.objectStore.secretName }}
       key: objstore.yml
+    # Allow extra time for WAL replay on startup after node drain/reschedule
+    livenessProbe:
+      initialDelaySeconds: 120
+      failureThreshold: 10
+      timeoutSeconds: 30
+    readinessProbe:
+      initialDelaySeconds: 60
+      failureThreshold: 10
+      timeoutSeconds: 30
+    {{- if .Values.receive.ingester.resources }}
+    resourceRequirements:
+      {{- toYaml .Values.receive.ingester.resources | nindent 6 }}
+    {{- end }}
     hashrings:
       - name: default
         replicas: {{ .Values.receive.replicas }}
@@ -26,6 +39,10 @@ spec:
   routerSpec:
     replicas: {{ .Values.receive.router.replicas | default 1 }}
     replicationFactor: {{ .Values.receive.replicationFactor }}
+    {{- if .Values.receive.router.resources }}
+    resourceRequirements:
+      {{- toYaml .Values.receive.router.resources | nindent 6 }}
+    {{- end }}
     externalLabels:
       receive: "true"
       region: {{ .Values.global.aws_region | quote }}

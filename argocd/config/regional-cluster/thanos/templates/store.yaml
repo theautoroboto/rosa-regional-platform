@@ -15,6 +15,10 @@ spec:
     key: objstore.yml
   shardingStrategy:
     type: block
+  {{- if .Values.storeGateway.resources }}
+  resourceRequirements:
+    {{- toYaml .Values.storeGateway.resources | nindent 4 }}
+  {{- end }}
   storage:
     size: {{ .Values.storeGateway.storage.size }}
     {{- if .Values.storeGateway.storage.storageClass }}
