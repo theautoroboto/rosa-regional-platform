@@ -247,7 +247,7 @@ resource "aws_lambda_function" "slack_notifier" {
   environment {
     variables = {
       SLACK_WEBHOOK_SSM_PARAM = var.slack_webhook_ssm_param
-      AWS_REGION_NAME         = data.aws_region.current.name
+      AWS_REGION_NAME         = data.aws_region.current.region
     }
   }
 }
