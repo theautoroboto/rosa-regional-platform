@@ -8,17 +8,6 @@ output "grafana_secret_key_arn" {
   value       = aws_secretsmanager_secret.grafana_secrets.arn
 }
 
-output "grafana_admin_username" {
-  description = "TEMPORARY - Grafana admin username. Remove once SSO is configured."
-  value       = var.grafana_admin_username
-}
-
-output "grafana_admin_password" {
-  description = "TEMPORARY - Grafana admin password. Remove once SSO is configured."
-  value       = random_password.grafana_admin.result
-  sensitive   = true
-}
-
 # TEMPORARY: kubectl command to retrieve the Grafana URL after ArgoCD deploys.
 # Remove once Grafana has a Route53 domain + TLS.
 output "grafana_url_command" {

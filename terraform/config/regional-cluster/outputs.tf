@@ -364,28 +364,12 @@ output "hyperfleet_configuration_summary" {
 
 # =============================================================================
 # Grafana Outputs
-# TEMPORARY: These outputs expose plain-text credentials and an HTTP URL.
-# Remove once Grafana is integrated with an IdP (SSO) and served via HTTPS.
 # =============================================================================
 
-output "grafana_admin_username" {
-  description = "TEMPORARY - Grafana admin username. Remove once SSO is configured."
-  value       = module.grafana_secrets.grafana_admin_username
-}
-
-output "grafana_admin_password" {
-  description = "TEMPORARY - Grafana admin password. Remove once SSO is configured."
-  value       = module.grafana_secrets.grafana_admin_password
-  sensitive   = true
-}
-
-output "grafana_login" {
-  description = "TEMPORARY - Shell commands to print Grafana login details. Remove once SSO and HTTPS are configured."
-  value       = <<-EOT
-    echo "URL:      $(${module.grafana_secrets.grafana_url_command})"
-    echo "Username: $(terraform output -raw grafana_admin_username)"
-    echo "Password: $(terraform output -raw grafana_admin_password)"
-  EOT
+# TEMPORARY: plain HTTP NLB URL. Remove once Grafana has a Route53 domain + TLS.
+output "grafana_url_command" {
+  description = "TEMPORARY - Run this command to get the Grafana URL after ArgoCD deploys the service."
+  value       = module.grafana_secrets.grafana_url_command
 }
 
 # =============================================================================
