@@ -53,6 +53,13 @@ argo-cd:
       serviceMonitor:
         enabled: true
 
+  # Notifications controller
+  notifications:
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+
   # Redis Secret Init configuration
   redisSecretInit:
     enabled: false # Ref: https://github.com/argoproj/argo-helm/issues/2887
