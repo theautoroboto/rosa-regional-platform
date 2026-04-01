@@ -234,21 +234,19 @@ spec:
                 spec:
                   refreshInterval: 1h
                   secretStoreRef:
-                    name: "aws-secrets-manager"
+                    name: "aws-parameter-store"
                     kind: ClusterSecretStore
                   target:
                     name: pull-secret
-                    # creationPolicy: Owner
-                    # Set creationPolicy to Orphan to prevent the Secret from being deleted 
-                    # when the ExternalSecret is deleted. This is to potentially prevent loadbalancer deletion when the cluster is deleted.
+                    # Set creationPolicy to Orphan to prevent the Secret from being deleted
+                    # when the ExternalSecret is deleted. This prevents loadbalancer deletion when the cluster is deleted.
                     creationPolicy: Orphan
                     template:
                       type: kubernetes.io/dockerconfigjson
                   data:
                     - secretKey: .dockerconfigjson
                       remoteRef:
-                        key: "{{ .managementClusterName }}-openshift-pull-secret"
-                        property: ".dockerconfigjson"
+                        key: /infra/pull-secret
 
               - apiVersion: hypershift.openshift.io/v1beta1
                 kind: HostedCluster

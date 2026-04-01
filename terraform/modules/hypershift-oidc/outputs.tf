@@ -46,17 +46,6 @@ output "config_secret_name" {
   value       = aws_secretsmanager_secret.hypershift_config.name
 }
 
-# OpenShift Pull Secret
-output "openshift_pull_secret_name" {
-  description = "Secrets Manager secret name for OpenShift pull secret"
-  value       = aws_secretsmanager_secret.openshift_pull_secret.name
-}
-
-output "openshift_pull_secret_arn" {
-  description = "Secrets Manager secret ARN for OpenShift pull secret"
-  value       = aws_secretsmanager_secret.openshift_pull_secret.arn
-}
-
 # External Secrets Operator
 output "external_secrets_operator_role_arn" {
   description = "IAM role ARN for External Secrets Operator"

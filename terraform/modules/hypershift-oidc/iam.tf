@@ -186,9 +186,9 @@ resource "aws_eks_pod_identity_association" "hypershift_installer" {
 # =============================================================================
 # IAM Role and Pod Identity for External Secrets Operator
 #
-# Grants the External Secrets Operator permission to read the OpenShift pull
-# secret from Secrets Manager. ESO will sync this secret to cluster namespaces
-# managed by CLM/Maestro.
+# Grants the External Secrets Operator permission to read secrets from SSM
+# Parameter Store. ESO will sync these to cluster namespaces managed by
+# CLM/Maestro.
 #
 # The operator runs in the external-secrets namespace and uses Pod Identity
 # for AWS authentication.
@@ -196,7 +196,7 @@ resource "aws_eks_pod_identity_association" "hypershift_installer" {
 
 resource "aws_iam_role" "external_secrets_operator" {
   name        = "${var.cluster_id}-external-secrets-operator"
-  description = "IAM role for External Secrets Operator to read OpenShift pull secret"
+  description = "IAM role for External Secrets Operator to read secrets from SSM Parameter Store"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -221,30 +221,20 @@ resource "aws_iam_role" "external_secrets_operator" {
 }
 
 resource "aws_iam_role_policy" "external_secrets_operator" {
-  name = "${var.cluster_id}-external-secrets-operator-secrets"
+  name = "${var.cluster_id}-external-secrets-operator-ssm"
   role = aws_iam_role.external_secrets_operator.id
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue",
-          "secretsmanager:DescribeSecret"
-        ]
-        Resource = [
-          aws_secretsmanager_secret.openshift_pull_secret.arn
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:ListSecrets"
-        ]
-        Resource = "*"
-      }
-    ]
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath"
+      ]
+      Resource = "arn:aws:ssm:*:*:parameter/infra/*"
+    }]
   })
 }
 
