@@ -9,12 +9,12 @@ output "grafana_secret_key_arn" {
 }
 
 output "grafana_admin_username" {
-  description = "Grafana admin username"
+  description = "TEMPORARY - Grafana admin username. Remove once SSO is configured."
   value       = var.grafana_admin_username
 }
 
 output "grafana_admin_password" {
-  description = "Grafana admin password (sensitive)"
+  description = "TEMPORARY - Grafana admin password. Remove once SSO is configured."
   value       = random_password.grafana_admin.result
   sensitive   = true
 }
