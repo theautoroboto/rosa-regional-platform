@@ -23,6 +23,10 @@ grafana:
     seccompProfile:
       type: RuntimeDefault
 
+  # Static password prevents ArgoCD out-of-sync diffs.
+  # Login form is disabled; this value is not used for access.
+  adminPassword: "admin"
+
   serviceAccount:
     create: true
     name: grafana
