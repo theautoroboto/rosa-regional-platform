@@ -18,8 +18,24 @@ receive:
   replicationFactor: 1
   retention: 2h
 
+  ingester:
+    resources:
+      requests:
+        memory: 512Mi
+        cpu: 100m
+      limits:
+        memory: 1Gi
+        cpu: 500m
+
   router:
     replicas: 1
+    resources:
+      requests:
+        memory: 128Mi
+        cpu: 100m
+      limits:
+        memory: 256Mi
+        cpu: 500m
 
   storage:
     size: 50Gi
@@ -36,12 +52,28 @@ storeGateway:
   enabled: true
   replicas: 2
 
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+
   storage:
     size: 20Gi
     storageClass: gp3
 
 compactor:
   enabled: true
+
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 500m
 
   retentionResolutionRaw: 90d
   retentionResolution5m: 180d

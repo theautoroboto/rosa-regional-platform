@@ -16,6 +16,10 @@ spec:
     raw: {{ .Values.compactor.retentionResolutionRaw }}
     fiveMinutes: {{ .Values.compactor.retentionResolution5m }}
     oneHour: {{ .Values.compactor.retentionResolution1h }}
+  {{- if .Values.compactor.resources }}
+  resourceRequirements:
+    {{- toYaml .Values.compactor.resources | nindent 4 }}
+  {{- end }}
   storage:
     size: {{ .Values.compactor.storage.size }}
     {{- if .Values.compactor.storage.storageClass }}

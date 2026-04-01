@@ -39,7 +39,7 @@ output "iam_role_name" {
 
 output "region" {
   description = "AWS region"
-  value       = data.aws_region.current.name
+  value       = data.aws_region.current.region
 }
 
 output "fips_enabled" {
@@ -57,7 +57,7 @@ output "helm_values" {
   description = "Values to pass to the Thanos Receiver Helm chart"
   value = {
     aws = {
-      region = data.aws_region.current.name
+      region = data.aws_region.current.region
       podIdentity = {
         enabled = true
         roleArn = aws_iam_role.thanos_receiver.arn
@@ -69,7 +69,7 @@ output "helm_values" {
         config = {
           bucket       = aws_s3_bucket.thanos.id
           endpoint     = local.s3_endpoint
-          region       = data.aws_region.current.name
+          region       = data.aws_region.current.region
           aws_sdk_auth = true
           sse_config = {
             type       = "SSE-KMS"

@@ -363,6 +363,30 @@ output "hyperfleet_configuration_summary" {
 }
 
 # =============================================================================
+# Grafana Outputs
+# =============================================================================
+
+output "grafana_admin_username" {
+  description = "Grafana admin username"
+  value       = module.grafana_secrets.grafana_admin_username
+}
+
+output "grafana_admin_password" {
+  description = "Grafana admin password"
+  value       = module.grafana_secrets.grafana_admin_password
+  sensitive   = true
+}
+
+output "grafana_login" {
+  description = "Shell commands to print Grafana login details after ArgoCD deploys the service"
+  value       = <<-EOT
+    echo "URL:      $(${module.grafana_secrets.grafana_url_command})"
+    echo "Username: $(terraform output -raw grafana_admin_username)"
+    echo "Password: $(terraform output -raw grafana_admin_password)"
+  EOT
+}
+
+# =============================================================================
 # Thanos Infrastructure Outputs
 # =============================================================================
 output "thanos_helm_values" {
