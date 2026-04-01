@@ -10,7 +10,7 @@ metadata:
     {{- include "thanos-operator.annotations" . | nindent 4 }}
 spec:
   replicas: {{ .Values.storeGateway.replicas }}
-  resources:
+  resourceRequirements:
     requests:
       cpu: {{ .Values.storeGateway.resources.requests.cpu }}
       memory: {{ .Values.storeGateway.resources.requests.memory }}

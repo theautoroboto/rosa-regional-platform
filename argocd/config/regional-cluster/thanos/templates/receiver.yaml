@@ -18,7 +18,7 @@ spec:
         replicas: {{ .Values.receive.replicas }}
         tsdbConfig:
           retention: {{ .Values.receive.retention }}
-        resources:
+        resourceRequirements:
           requests:
             cpu: {{ .Values.receive.resources.requests.cpu }}
             memory: {{ .Values.receive.resources.requests.memory }}
@@ -32,7 +32,7 @@ spec:
   routerSpec:
     replicas: {{ .Values.receive.router.replicas | default 1 }}
     replicationFactor: {{ .Values.receive.replicationFactor }}
-    resources:
+    resourceRequirements:
       requests:
         cpu: {{ .Values.receive.router.resources.requests.cpu }}
         memory: {{ .Values.receive.router.resources.requests.memory }}

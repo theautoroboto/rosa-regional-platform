@@ -10,7 +10,7 @@ metadata:
     {{- include "thanos-operator.annotations" . | nindent 4 }}
 spec:
   replicas: {{ .Values.query.replicas | default 2 }}
-  resources:
+  resourceRequirements:
     requests:
       cpu: {{ .Values.query.resources.requests.cpu }}
       memory: {{ .Values.query.resources.requests.memory }}
@@ -19,7 +19,7 @@ spec:
   # Query will auto-discover stores via operator labels
   queryFrontend:
     replicas: {{ .Values.query.frontend.replicas | default 1 }}
-    resources:
+    resourceRequirements:
       requests:
         cpu: {{ .Values.query.frontend.resources.requests.cpu }}
         memory: {{ .Values.query.frontend.resources.requests.memory }}
