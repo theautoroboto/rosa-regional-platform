@@ -13,7 +13,9 @@ CI is managed through the [OpenShift CI](https://docs.ci.openshift.org/) system 
 | [`on-demand-e2e`](https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/directory/pull-ci-openshift-online-rosa-regional-platform-main-on-demand-e2e)                    | Pre-submit (manual)       | End-to-end: provisions ephemeral environment using PR rosa-regional-platform branch, runs tests, tears down. Trigger with `/test on-demand-e2e` on a PR |
 | [`nightly-ephemeral`](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-online-rosa-regional-platform-main-nightly-ephemeral)                     | Daily at 04:00 UTC        | End-to-end: provisions ephemeral environment using `main` rosa-regional-platform branch, runs tests, tears down                                         |
 | [`nightly-integration`](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-online-rosa-regional-platform-main-nightly-integration)                 | Daily at 04:00 UTC        | Runs e2e tests against a standing integration environment                                                                                               |
-| [`ephemeral-resources-janitor`](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-online-rosa-regional-platform-main-ephemeral-resources-janitor) | Weekly (Sunday 12:00 UTC) | Purges leaked AWS resources using [aws-nuke](https://github.com/ekristen/aws-nuke)                                                                      |
+| [`ephemeral-resources-janitor`](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-online-rosa-regional-platform-main-ephemeral-resources-janitor)                                 | Weekly (Sunday 12:00 UTC) | Purges leaked AWS resources across all ephemeral CI accounts using [aws-nuke](https://github.com/ekristen/aws-nuke)                                     |
+| [`customer-account-ephemeral-ci-janitor`](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-online-rosa-regional-platform-main-customer-account-ephemeral-ci-janitor)             | Daily at 02:00 UTC        | Purges leaked HCP customer account resources (ephemeral CI) — mitigates missing HCP teardown flow                                                       |
+| [`customer-account-ephemeral-dev-janitor`](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-online-rosa-regional-platform-main-customer-account-ephemeral-dev-janitor)           | Daily at 02:00 UTC        | Purges leaked HCP customer account resources (ephemeral dev) — mitigates missing HCP teardown flow                                                      |
 
 ## Cross-Component E2E Testing
 
@@ -100,16 +102,36 @@ When a Prow job is running (e.g. `on-demand-e2e`), you can watch its logs in rea
 
 The e2e jobs use credentials mounted at `/var/run/rosa-credentials/`. Credentials are managed in [Vault](https://vault.ci.openshift.org/ui/vault/secrets/kv/kv/list/selfservice/cluster-secrets-rosa-regional-platform-int/). Two credential secrets are used:
 
-- `rosa-regional-platform-ephemeral-creds` — grants access to the AWS accounts used to spin up an ephemeral environment. Used by `nightly-ephemeral`, `on-demand-e2e`, and `ephemeral-resources-janitor`.
+- `rosa-regional-platform-ephemeral-creds` — grants access to the AWS accounts used to spin up an ephemeral environment. Used by `nightly-ephemeral`, `on-demand-e2e`, `ephemeral-resources-janitor`, and `customer-account-ephemeral-ci-janitor`.
+- `rosa-regional-platform-ephemeral-dev-creds` — grants access to the shared dev AWS accounts. Used by `customer-account-ephemeral-dev-janitor`.
 - `rosa-regional-platform-integration-creds` — grants access to AWS credentials for testing against the API gateway in the regional integration account. Used by `nightly-integration`.
 
 ## Ephemeral Resources Janitor
 
 The ephemeral tests create AWS resources across multiple accounts. Teardown relies on `terraform destroy`, which can fail and leak resources. The **ephemeral-resources-janitor** job is a weekly fallback that purges everything except resources we need to keep between tests using [aws-nuke](https://github.com/ekristen/aws-nuke).
 
+The **customer-account janitor** jobs run daily to clean up HCP customer accounts, since there is currently no automated HCP teardown flow.
+
+### Account selection
+
+The janitor script accepts account names as arguments. If none are given, all accounts are purged.
+
+```bash
+# Purge all accounts
+./ci/ephemeral-resources-janitor.sh
+
+# Purge customer account only
+./ci/ephemeral-resources-janitor.sh customer
+
+# Purge specific accounts
+./ci/ephemeral-resources-janitor.sh regional customer
+```
+
+Valid accounts: `regional`, `management`, `central`, `customer`.
+
 ### What is preserved
 
-See `./ci/aws-nuke-config.yaml`.
+See `./ci/janitor/aws-nuke-config.yaml`. Preservation rules are organized as presets (`globals`, `ci`, `shared-dev`, `central`, `mc`, `customer`) composed per account.
 
 ### Running locally
 
@@ -121,4 +143,4 @@ See `./ci/aws-nuke-config.yaml`.
 ./ci/janitor/purge-aws-account.sh --no-dry-run
 ```
 
-The script uses whatever AWS credentials are active in your environment. The account must be in the allowlist in `purge-aws-account.sh`.
+The script uses whatever AWS credentials are active in your environment. The account must be in the allowlist in `ci/janitor/aws-nuke-config.yaml`.
