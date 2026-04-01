@@ -47,6 +47,9 @@ kube-prometheus-stack:
       externalLabels:
         cluster: '{{ .Values.global.cluster_name }}'
         cluster_type: '{{ .Values.global.cluster_type }}'
+      # TEMPORARY: direct in-cluster remote write to Thanos Receive.
+      # Replace with SigV4-signed remote write to the RHOBS API Gateway once
+      # the sigv4-proxy approach used by management clusters is implemented for RC.
       remoteWrite:
         - url: http://thanos-receive-router-thanos-receive.thanos:19291/api/v1/receive
       serviceMonitorNamespaceSelector: {}
