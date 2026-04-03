@@ -21,7 +21,7 @@ receive:
   resources:
     requests:
       cpu: 700m
-      memory: 2Gi
+      memory: 3Gi
     limits:
       memory: 5Gi
 
@@ -29,7 +29,7 @@ receive:
     replicas: 1
     resources:
       requests:
-        cpu: 100m
+        cpu: 250m
         memory: 512Mi
       limits:
         memory: 1Gi
@@ -44,7 +44,7 @@ query:
 
   resources:
     requests:
-      cpu: 300m
+      cpu: 1
       memory: 1Gi
     limits:
       memory: 5Gi
@@ -53,7 +53,7 @@ query:
     replicas: 1
     resources:
       requests:
-        cpu: 100m
+        cpu: 1
         memory: 500Mi
       limits:
         memory: 3Gi

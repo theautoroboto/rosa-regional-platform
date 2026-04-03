@@ -19,6 +19,13 @@ kube-prometheus-stack:
         memory: 128Mi
       limits:
         memory: 256Mi
+    prometheusConfigReloader:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          memory: 64Mi
 
   kube-state-metrics:
     resources:
@@ -52,7 +59,7 @@ kube-prometheus-stack:
       resources:
         requests:
           cpu: 200m
-          memory: 512Mi
+          memory: 1Gi
         limits:
           memory: 2Gi
 
