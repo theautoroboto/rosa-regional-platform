@@ -27,4 +27,7 @@ spec:
         memory: {{ .Values.query.frontend.resources.limits.memory }}
     additionalArgs:
       - "--tracing.config="
+      {{- if .Values.thanos.cacheRedisEndpoint }}
+      - '--query-frontend.response-cache-config={type: REDIS, config: {addr: "{{ .Values.thanos.cacheRedisEndpoint }}", tls_enabled: true}}'
+      {{- end }}
 {{- end }}
