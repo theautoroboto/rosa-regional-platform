@@ -33,9 +33,9 @@ variable "node_type" {
 }
 
 variable "engine_version" {
-  description = "Redis engine version. Use 7.x for TLS without mandatory auth token."
+  description = "Redis engine version in <major>.<minor> format (e.g. 7.0, 7.2). Redis 7.x supports TLS without a mandatory auth token."
   type        = string
-  default     = "7.0.7"
+  default     = "7.0"
 }
 
 variable "multi_az" {
