@@ -30,8 +30,8 @@ spec:
       # Split queries into fixed-boundary intervals so results are cacheable.
       # Without splitting every query has a unique time range ending at "now"
       # which is always a cache miss, making the response cache ineffective.
-      - "--query-range.split-interval=24h"
-      - "--labels.split-interval=24h"
+      - "--query-range.split-interval=1h"
+      - "--labels.split-interval=1h"
       {{- if .Values.thanos.cacheRedisEndpoint }}
       - '--query-range.response-cache-config={type: REDIS, config: {addr: "{{ .Values.thanos.cacheRedisEndpoint }}", tls_enabled: true, tls_config: {insecure_skip_verify: true}}}'
       {{- else }}
