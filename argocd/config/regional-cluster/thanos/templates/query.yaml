@@ -23,6 +23,8 @@ spec:
     # before sending, which drives OOMKills under query load.
     # Intra-cluster Grafana→Thanos traffic does not benefit from compression.
     compressResponses: false
+    queryRangeMaxRetries: 0
+    labelsMaxRetries: 0
     resourceRequirements:
       requests:
         cpu: {{ .Values.query.frontend.resources.requests.cpu }}
@@ -36,10 +38,6 @@ spec:
       # which is always a cache miss, making the response cache ineffective.
       - "--query-range.split-interval=1h"
       - "--labels.split-interval=1h"
-      # Reduce retries to zero — each retry creates an additional response buffer.
-      # The query-frontend split+cache already handles transient failures.
-      - "--query-range.max-retries-per-request=0"
-      - "--labels.max-retries-per-request=0"
       {{- if .Values.thanos.cacheRedisEndpoint }}
       - '--query-range.response-cache-config={type: REDIS, config: {addr: "{{ .Values.thanos.cacheRedisEndpoint }}", tls_enabled: true, tls_config: {insecure_skip_verify: true}}}'
       {{- else }}
