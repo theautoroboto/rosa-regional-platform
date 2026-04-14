@@ -56,7 +56,7 @@ query:
         cpu: 1
         memory: 500Mi
       limits:
-        memory: 3Gi
+        memory: 6Gi
 
 storeGateway:
   enabled: true
