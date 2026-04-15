@@ -379,3 +379,17 @@ output "thanos_helm_values" {
   description = "Helm values for Thanos Receiver chart (use with -f flag)"
   value       = module.thanos_infrastructure.helm_values
 }
+
+# =============================================================================
+# Security Monitoring Outputs — FedRAMP SI-04
+# =============================================================================
+
+output "vpc_flow_log_group_name" {
+  description = "CloudWatch log group name for VPC Flow Logs"
+  value       = module.security_monitoring.vpc_flow_log_group_name
+}
+
+output "security_metric_namespace" {
+  description = "CloudWatch namespace for security metrics (401, 403, privilege escalation, anonymous access)"
+  value       = module.security_monitoring.security_metric_namespace
+}

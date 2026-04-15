@@ -254,3 +254,13 @@ variable "thanos_service_account" {
   default     = "thanos-operator"
 }
 
+# =============================================================================
+# Security Monitoring Variables — FedRAMP SI-04
+# =============================================================================
+
+variable "enable_security_hub" {
+  description = "Enable AWS Security Hub with NIST 800-53 and AWS Foundational Security Best Practices standards (recommended for production)"
+  type        = bool
+  default     = true
+}
+

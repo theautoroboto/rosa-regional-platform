@@ -1,0 +1,46 @@
+{{- /*
+  Renders the YACE static scrape config for the Security/<cluster> CloudWatch
+  namespace. The cluster name and region are injected by the ApplicationSet at
+  sync time via .Values.global.cluster_name and .Values.global.aws_region.
+
+  Metric names here must match the metric_transformation.name values in
+  terraform/modules/security-monitoring/alarms.tf. The resulting Prometheus
+  metric names (produced by YACE) are:
+    aws_security_unauthorizedaccess401_sum
+    aws_security_forbiddenaccess403_sum
+    aws_security_privilegeescalation_sum
+    aws_security_anonymousaccess_sum
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: yace-aws-scrape-config
+  namespace: {{ .Release.Namespace }}
+data:
+  config.yml: |
+    static:
+      - name: security
+        namespace: "Security/{{ required "global.cluster_name is required" .Values.global.cluster_name }}"
+        regions:
+          - "{{ required "global.aws_region is required" .Values.global.aws_region }}"
+        metrics:
+          - name: UnauthorizedAccess401
+            statistics:
+              - Sum
+            period: 300
+            length: 300
+          - name: ForbiddenAccess403
+            statistics:
+              - Sum
+            period: 300
+            length: 300
+          - name: PrivilegeEscalation
+            statistics:
+              - Sum
+            period: 300
+            length: 300
+          - name: AnonymousAccess
+            statistics:
+              - Sum
+            period: 300
+            length: 300

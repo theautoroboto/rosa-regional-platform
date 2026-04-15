@@ -5,12 +5,134 @@ kube-prometheus-stack:
   crds:
     enabled: true
 
-  # Since these are not interactive clusters, we can turn off grafana
-  # and alertmanager. All of these metrics will be forwarded into RHOBS
-  alertmanager:
-    enabled: false
+  # Grafana is deployed as a separate ArgoCD application (argocd/config/regional-cluster/grafana/).
   grafana:
     enabled: false
+
+  alertmanager:
+    enabled: true
+    alertmanagerSpec:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          memory: 128Mi
+      storage:
+        volumeClaimTemplate:
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 5Gi
+    config:
+      global:
+        resolve_timeout: 5m
+      inhibit_rules: []
+      route:
+        group_by: ["alertname", "cluster"]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 12h
+        receiver: default
+        routes:
+          # Silence the always-firing Watchdog heartbeat alert.
+          - matchers:
+              - alertname = "Watchdog"
+            receiver: "null"
+      receivers:
+        # Default receiver is a no-op placeholder. Override this per environment
+        # in deploy/<env>/argocd-values-monitoring.yaml with a real receiver
+        # (webhook, PagerDuty, email, etc.) to complete the SI-04 alert chain.
+        - name: default
+        - name: "null"
+
+  # =============================================================================
+  # FedRAMP SI-04 Security Monitoring Rules
+  #
+  # These rules evaluate metrics published by YACE from the Security/<cluster>
+  # CloudWatch namespace. Metric names match those defined in
+  # terraform/modules/security-monitoring/alarms.tf.
+  # =============================================================================
+  additionalPrometheusRulesMap:
+    security-si04:
+      groups:
+        - name: security.si04
+          # Match the YACE scrape interval (60s) so rules evaluate on fresh data.
+          interval: 60s
+          rules:
+            # ---------------------------------------------------------------
+            # 401 Unauthorized — credential stuffing / invalid tokens
+            # Threshold of 10 per 5-minute CloudWatch period avoids noise from
+            # transient token expiry. Tune down once you've baselined traffic.
+            # ---------------------------------------------------------------
+            - alert: EKSUnauthorizedAccess401
+              expr: aws_security_unauthorizedaccess401_sum >= 10
+              for: 0m
+              labels:
+                severity: warning
+                control: SI-04
+              annotations:
+                summary: "Repeated 401 Unauthorized on EKS API server"
+                description: >-
+                  {{ $value }} HTTP 401 Unauthorized responses detected in EKS
+                  audit logs within the last 5 minutes on cluster
+                  {{ $labels.cluster }}. Possible credential stuffing, expired
+                  tokens, or misconfigured service accounts.
+
+            # ---------------------------------------------------------------
+            # 403 Forbidden — RBAC probing / over-privileged requests
+            # ---------------------------------------------------------------
+            - alert: EKSForbiddenAccess403
+              expr: aws_security_forbiddenaccess403_sum >= 10
+              for: 0m
+              labels:
+                severity: warning
+                control: SI-04
+              annotations:
+                summary: "Repeated 403 Forbidden on EKS API server"
+                description: >-
+                  {{ $value }} HTTP 403 Forbidden responses detected in EKS
+                  audit logs within the last 5 minutes on cluster
+                  {{ $labels.cluster }}. Possible RBAC misconfiguration or
+                  an attacker enumerating accessible resources.
+
+            # ---------------------------------------------------------------
+            # Privilege escalation — escalate / bind / impersonate verbs
+            # Any occurrence in a zero-operator environment is anomalous.
+            # ---------------------------------------------------------------
+            - alert: EKSPrivilegeEscalation
+              expr: aws_security_privilegeescalation_sum >= 1
+              for: 0m
+              labels:
+                severity: critical
+                control: SI-04
+              annotations:
+                summary: "Privilege escalation verb detected on EKS API"
+                description: >-
+                  {{ $value }} request(s) using a privilege-escalation verb
+                  (escalate, bind, or impersonate) detected in EKS audit logs
+                  on cluster {{ $labels.cluster }}. Immediate investigation
+                  required — these verbs should not appear in normal operation.
+
+            # ---------------------------------------------------------------
+            # Anonymous API access — unauthenticated requests
+            # The EKS API is fully private; anonymous traffic is always anomalous.
+            # ---------------------------------------------------------------
+            - alert: EKSAnonymousAPIAccess
+              expr: aws_security_anonymousaccess_sum >= 1
+              for: 0m
+              labels:
+                severity: critical
+                control: SI-04
+              annotations:
+                summary: "system:anonymous request reached private EKS API"
+                description: >-
+                  {{ $value }} unauthenticated (system:anonymous) request(s)
+                  detected in EKS audit logs on cluster {{ $labels.cluster }}.
+                  The API server is fully private — anonymous traffic reaching
+                  it requires immediate investigation.
 
   prometheusOperator:
     resources:

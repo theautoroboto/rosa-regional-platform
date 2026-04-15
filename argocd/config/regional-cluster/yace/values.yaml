@@ -1,0 +1,42 @@
+yet-another-cloudwatch-exporter:
+  # Use the ConfigMap rendered by templates/aws-scrape-config.yaml so the
+  # Security/<cluster-name> namespace is injected from global.cluster_name at
+  # sync time. The chart's built-in ConfigMap is skipped when this is set.
+  existingConfigMap: yace-aws-scrape-config
+
+  serviceAccount:
+    create: true
+    name: yace
+    # Credentials are supplied via EKS Pod Identity — no annotation needed.
+    # See terraform/config/regional-cluster/yace.tf for the binding.
+
+  # FedRAMP: non-root, read-only filesystem, no privilege escalation
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 1000
+    seccompProfile:
+      type: RuntimeDefault
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+  serviceMonitor:
+    # Prometheus's serviceMonitorNamespaceSelector is {} (all namespaces),
+    # so this ServiceMonitor in the "yace" namespace is picked up automatically.
+    enabled: true
+    interval: 60s

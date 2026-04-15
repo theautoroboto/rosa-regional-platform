@@ -1,0 +1,10 @@
+apiVersion: v2
+name: yace
+description: YACE (Yet Another CloudWatch Exporter) — scrapes Security/<cluster> CloudWatch metrics into Prometheus for FedRAMP SI-04 alerting
+type: application
+version: 0.1.0
+
+dependencies:
+  - name: yet-another-cloudwatch-exporter
+    version: 0.35.0
+    repository: https://nerdswords.github.io/yet-another-cloudwatch-exporter
