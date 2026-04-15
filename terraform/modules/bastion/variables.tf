@@ -29,7 +29,7 @@ variable "private_subnet_ids" {
 }
 
 variable "log_retention_days" {
-  description = "Number of days to retain CloudWatch logs. FedRAMP AC-17/AU-11 minimum: 365 days."
+  description = "Number of days to retain CloudWatch logs. FedRAMP Moderate AU-11 requires a minimum of 365 days online retention."
   type        = number
   default     = 365
 
