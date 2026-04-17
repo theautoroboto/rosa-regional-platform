@@ -250,3 +250,17 @@ module "thanos_infrastructure" {
   thanos_namespace       = var.thanos_namespace
   thanos_service_account = var.thanos_service_account
 }
+
+# =============================================================================
+# Continuous Monitoring Module (FedRAMP CA-07)
+# =============================================================================
+
+module "continuous_monitoring" {
+  source = "../../modules/continuous-monitoring"
+
+  cluster_id = var.regional_id
+
+  # GuardDuty EKS Runtime Monitoring is not available in all regions.
+  # Disable for non-US regions that do not support this feature.
+  enable_eks_runtime_monitoring = can(regex("^(us|us-gov)-", var.region))
+}
