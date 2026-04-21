@@ -1,6 +1,12 @@
 provider "aws" {
   region = var.region
 
+  # FedRAMP IA-07 / SC-13: Use FIPS 140-2 validated endpoints for all AWS API
+  # calls from Terraform when operating in US and GovCloud regions where FIPS
+  # endpoints are available. Non-US regions (EU, AP, SA, etc.) do not have FIPS
+  # endpoints; enabling them there would cause all API calls to fail.
+  use_fips_endpoint = can(regex("^(us|us-gov)-", var.region)) ? true : false
+
   # Conditionally assume role for cross-account deployment (local dev only)
   # When target_account_id is set, assume OrganizationAccountAccessRole in target account
   # In pipelines, target_account_id is empty - ambient creds are already the target account
@@ -27,9 +33,10 @@ provider "aws" {
 # so this provider uses a named profile written by the buildspec script.
 # For local dev, central_aws_profile is empty and ambient creds are used.
 provider "aws" {
-  alias   = "central"
-  region  = var.region
-  profile = var.central_aws_profile != "" ? var.central_aws_profile : null
+  alias             = "central"
+  region            = var.region
+  profile           = var.central_aws_profile != "" ? var.central_aws_profile : null
+  use_fips_endpoint = can(regex("^(us|us-gov)-", var.region)) ? true : false
 }
 
 # =============================================================================
