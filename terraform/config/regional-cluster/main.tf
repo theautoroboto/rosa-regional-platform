@@ -288,6 +288,7 @@ module "elasticache" {
   private_subnet_ids     = module.regional_cluster.private_subnets
   node_security_group_id = module.regional_cluster.node_security_group_id
 
-  node_type = var.elasticache_node_type
-  multi_az  = var.elasticache_multi_az
+  engine_version = "7.2"
+  node_type      = var.elasticache_node_type
+  multi_az       = var.elasticache_multi_az
 }
