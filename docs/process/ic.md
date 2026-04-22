@@ -15,9 +15,9 @@ This role should not prevent the IC from working on their project tasks. If the 
 The IC is responsible for the following tasks:
 
 - Ensure that the CI jobs are running correctly, in particular:
-    - [Nightly Ephemeral](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-online-rosa-regional-platform-main-nightly-ephemeral)
-    - [Nightly Integration](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-online-rosa-regional-platform-main-nightly-integration)
-    - [On-demand E2E](https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/directory/pull-ci-openshift-online-rosa-regional-platform-main-on-demand-e2e). Note that only consistent failures are the IC's responsibility, as opposed to one-off failures caused by the PR under test.
+  - [Nightly Ephemeral](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-online-rosa-regional-platform-main-nightly-ephemeral)
+  - [Nightly Integration](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-online-rosa-regional-platform-main-nightly-integration)
+  - [On-demand E2E](https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/directory/pull-ci-openshift-online-rosa-regional-platform-main-on-demand-e2e). Note that only consistent failures are the IC's responsibility, as opposed to one-off failures caused by the PR under test.
 - Review open PRs and close any that have gone stale.
 - Work on items in [ROSAENG-140 - Technical Debt and Continuous Improvement of RRP](https://redhat.atlassian.net/browse/ROSAENG-140). This Epic should only contain urgent tasks.
 
