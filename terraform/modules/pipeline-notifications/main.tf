@@ -3,7 +3,8 @@ data "aws_region" "current" {}
 
 locals {
   # Use name_prefix if provided, otherwise empty string
-  resource_prefix = var.name_prefix != "" ? "${var.name_prefix}-" : ""
+  resource_prefix    = var.name_prefix != "" ? "${var.name_prefix}-" : ""
+  log_retention_days = 365
 }
 
 # Lambda function to format and send Slack notifications for CodePipeline failures
@@ -255,7 +256,7 @@ resource "aws_lambda_function" "slack_notifier" {
 # CloudWatch Log Group for Lambda
 resource "aws_cloudwatch_log_group" "slack_notifier" {
   name              = "/aws/lambda/${aws_lambda_function.slack_notifier.function_name}"
-  retention_in_days = 7
+  retention_in_days = local.log_retention_days
 }
 
 # EventBridge rule to detect CodePipeline failures
