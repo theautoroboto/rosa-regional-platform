@@ -8,7 +8,7 @@ The IC is the weekly point person for operational interrupts on the ROSA Regiona
 
 There is no expectation for the IC to be available outside of Business Hours. The IC should review and address their responsibilities at the start of each day.
 
-This role should not prevent the IC from working on their project tasks. If the workload becomes overwhelming, reach out to the team for help.
+This role should not prevent the IC from working on their project tasks. The general tasks of the IC should not take more than one hour of your work day. If the workload becomes overwhelming, reach out to the team for help. When the IC asks for help, the entire team should stop what they're doing and help. This is our [Andon Cord](https://www.6sigma.us/six-sigma-in-focus/andon-cord-lean-manufacturing-tps/) ([shorter summary here](https://devlead.io/DevTips/AndonCord)).
 
 The IC is expected to use AI and write automation to reduce the burden on themselves and future ICs. Aspirationally, this role should not exist.
 
@@ -25,7 +25,6 @@ The IC is responsible for the following tasks:
     - Note that only consistent, platform-level failures are the IC's responsibility, as opposed to one-off failures caused by the PRs being tested
 - Monitor the PR queue:
   - Ensure all [PRs labeled `review-ready`](https://github.com/openshift-online/rosa-regional-platform/pulls?q=is%3Apr+is%3Aopen+label%3Areview-ready) have active reviewers
-  - Close any PRs that have [gone stale](https://github.com/openshift-online/rosa-regional-platform/pulls?q=is%3Apr+is%3Aopen+sort%3Acreated-asc)
   - Review all [`rrp-bot` PRs](https://github.com/openshift-online/rosa-regional-platform/pulls?q=is%3Apr+is%3Aopen+author%3Arrp-bot)
 - Work on items in [ROSAENG-140 - Technical Debt and Continuous Improvement of RRP](https://redhat.atlassian.net/browse/ROSAENG-140).
   - This Epic should only contain urgent tasks to be addressed during the ongoing week.
