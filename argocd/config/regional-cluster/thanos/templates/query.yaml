@@ -44,7 +44,7 @@ spec:
       - "--query-range.max-query-parallelism=4"
       - "--labels.max-query-parallelism=4"
       {{- if .Values.thanos.cacheRedisEndpoint }}
-      - '--query-range.response-cache-config={type: REDIS, config: {addr: "{{ .Values.thanos.cacheRedisEndpoint }}", tls_enabled: true, tls_config: {insecure_skip_verify: true}}}'
+      - '--query-range.response-cache-config={type: REDIS, config: {addr: "{{ .Values.thanos.cacheRedisEndpoint }}", tls_enabled: true}}'
       {{- else }}
       - '--query-range.response-cache-config={type: IN-MEMORY, config: {max_size: "1GB"}}'
       {{- end }}
