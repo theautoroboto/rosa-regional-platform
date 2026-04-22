@@ -12,7 +12,7 @@ This role should not prevent the IC from working on their project tasks. If the 
 
 The IC is expected to use AI and write automation to reduce the burden on themselves and future ICs. Aspirationally, this role should not exist.
 
-**Make the next IC's shift easier than yours!**. 
+**Make the next IC's shift easier than yours!**
 
 ## Responsibilities
 
