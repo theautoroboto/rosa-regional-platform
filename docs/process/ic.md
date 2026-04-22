@@ -22,7 +22,7 @@ The IC is responsible for the following tasks:
   - [Nightly Ephemeral](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-online-rosa-regional-platform-main-nightly-ephemeral)
   - [Nightly Integration](https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-online-rosa-regional-platform-main-nightly-integration)
   - [On-demand E2E](https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/directory/pull-ci-openshift-online-rosa-regional-platform-main-on-demand-e2e)
-    - Note that only consistent failures are the IC's responsibility, as opposed to one-off failures caused by the PRs being tested
+    - Note that only consistent, platform-level failures are the IC's responsibility, as opposed to one-off failures caused by the PRs being tested
 - Monitor the PR queue:
   - Ensure all [PRs labeled `review-ready`](https://github.com/openshift-online/rosa-regional-platform/pulls?q=is%3Apr+is%3Aopen+label%3Areview-ready) have active reviewers
   - Close any PRs that have [gone stale](https://github.com/openshift-online/rosa-regional-platform/pulls?q=is%3Apr+is%3Aopen+sort%3Acreated-asc)
