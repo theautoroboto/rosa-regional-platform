@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fetches open PRs labelled "review-ready" or "discussion-needed" across all
+# Fetches open PRs labelled "review-ready", "discussion-needed", or "needs-ok-to-test" across all
 # ROSA Regional Platform repos and writes dashboard/data.json.
 #
 # Uses `gh pr list` (not `gh search prs`) so we can include reviewRequests.
@@ -48,11 +48,18 @@ fetch_label "review-ready" > /tmp/rr.json
 echo "Fetching discussion-needed PRs..."
 fetch_label "discussion-needed" > /tmp/dn.json
 
+BOT_AUTHORS="app/dependabot|rosa-regional-platform-ci|rrp-bot"
+
+echo "Fetching needs-ok-to-test PRs (bot authors only)..."
+fetch_label "needs-ok-to-test" | jq --arg bots "$BOT_AUTHORS" \
+  '[.[] | select(.author.login | test($bots))]' > /tmp/okt.json
+
 jq -n \
   --arg updated "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --slurpfile rr /tmp/rr.json \
   --slurpfile dn /tmp/dn.json \
-  '{updated: $updated, review_ready: $rr[0], discussion_needed: $dn[0]}' \
+  --slurpfile okt /tmp/okt.json \
+  '{updated: $updated, review_ready: $rr[0], discussion_needed: $dn[0], needs_ok_to_test: $okt[0]}' \
   > "$OUT"
 
-echo "Wrote $OUT ($(jq '.review_ready | length' "$OUT") review-ready, $(jq '.discussion_needed | length' "$OUT") discussion-needed)"
+echo "Wrote $OUT ($(jq '.review_ready | length' "$OUT") review-ready, $(jq '.discussion_needed | length' "$OUT") discussion-needed, $(jq '.needs_ok_to_test | length' "$OUT") needs-ok-to-test)"
