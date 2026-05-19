@@ -10,7 +10,7 @@ global:
 # sigv4-proxy-logs: signs Loki push requests with SigV4 for the RC API Gateway.
 # Same architecture as Thanos remote-write sigv4 proxy on MC.
 # =====================================================================
-sigv4Proxy:
+sigv4ProxyLogs:
   image:
     repository: public.ecr.aws/aws-observability/aws-sigv4-proxy
     tag: "1.11"
@@ -121,7 +121,7 @@ vector:
   # MC logs route through sigv4-proxy-logs to reach RC Loki via API Gateway.
   # NOTE: customConfig is processed via Helm tpl within the subchart scope.
   # Only .Values.global.* is accessible (Helm propagates globals to subcharts).
-  # sigv4Proxy port is hardcoded here since parent values aren't available.
+  # sigv4ProxyLogs port is hardcoded here since parent values aren't available.
   customConfig:
     data_dir: /vector-data-dir
 

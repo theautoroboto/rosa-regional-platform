@@ -12,6 +12,6 @@ spec:
     app.kubernetes.io/name: sigv4-proxy-logs
   ports:
     - name: proxy
-      port: {{ .Values.sigv4Proxy.port }}
-      targetPort: {{ .Values.sigv4Proxy.port }}
+      port: {{ .Values.sigv4ProxyLogs.port }}
+      targetPort: {{ .Values.sigv4ProxyLogs.port }}
       protocol: TCP

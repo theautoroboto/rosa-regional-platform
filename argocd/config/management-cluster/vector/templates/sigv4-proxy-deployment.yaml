@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/component: logs-proxy
     app.kubernetes.io/part-of: observability
 spec:
-  replicas: {{ .Values.sigv4Proxy.replicas | default 2 }}
+  replicas: {{ .Values.sigv4ProxyLogs.replicas | default 2 }}
   selector:
     matchLabels:
       app.kubernetes.io/name: sigv4-proxy-logs
@@ -20,7 +20,7 @@ spec:
     spec:
       serviceAccountName: sigv4-proxy-logs
       securityContext:
-        {{- toYaml .Values.sigv4Proxy.podSecurityContext | nindent 8 }}
+        {{- toYaml .Values.sigv4ProxyLogs.podSecurityContext | nindent 8 }}
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone
@@ -36,10 +36,10 @@ spec:
               app.kubernetes.io/name: sigv4-proxy-logs
       containers:
         - name: sigv4-proxy
-          image: "{{ .Values.sigv4Proxy.image.repository }}:{{ .Values.sigv4Proxy.image.tag }}"
-          imagePullPolicy: {{ .Values.sigv4Proxy.image.pullPolicy }}
+          image: "{{ .Values.sigv4ProxyLogs.image.repository }}:{{ .Values.sigv4ProxyLogs.image.tag }}"
+          imagePullPolicy: {{ .Values.sigv4ProxyLogs.image.pullPolicy }}
           securityContext:
-            {{- toYaml .Values.sigv4Proxy.containerSecurityContext | nindent 12 }}
+            {{- toYaml .Values.sigv4ProxyLogs.containerSecurityContext | nindent 12 }}
           args:
             - --name
             - execute-api
@@ -48,15 +48,15 @@ spec:
             - --host
             - {{ (urlParse (.Values.global.rhobs_api_url | default "")).host | quote }}
             - --port
-            - {{ printf ":%d" (int .Values.sigv4Proxy.port) | quote }}
+            - {{ printf ":%d" (int .Values.sigv4ProxyLogs.port) | quote }}
             - --strip
             - Content-Encoding
           ports:
             - name: proxy
-              containerPort: {{ .Values.sigv4Proxy.port }}
+              containerPort: {{ .Values.sigv4ProxyLogs.port }}
               protocol: TCP
           resources:
-            {{- toYaml .Values.sigv4Proxy.resources | nindent 12 }}
+            {{- toYaml .Values.sigv4ProxyLogs.resources | nindent 12 }}
           livenessProbe:
             tcpSocket:
               port: proxy
