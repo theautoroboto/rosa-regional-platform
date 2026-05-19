@@ -108,9 +108,7 @@ docs/
    `terraform-fmt`, `check-docs`, `check-rendered-files`, `helm-lint`, and `terraform-validate`,
    matching the full CI suite. Individual targets (e.g. `make terraform-fmt`) can still be used
    for targeted runs.
-3. For testing: use `make ephemeral-provision` for ephemeral dev environments, or run
-   `terraform init && terraform apply` directly in the relevant `terraform/config/` directory
-4. Ensure architect agent reviews any architectural changes
+3. Ensure architect agent reviews any architectural changes
 
 #### For Application Changes
 
