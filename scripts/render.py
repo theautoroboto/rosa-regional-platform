@@ -14,6 +14,7 @@ Config inheritance: defaults.yaml -> <env>/defaults.yaml -> <env>/<region>.yaml
 """
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -22,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from jinja2 import ChainableUndefined, Environment
+from jinja2 import ChainableUndefined, Environment, Undefined
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
 
@@ -122,8 +123,29 @@ class _StrictChainableUndefined(ChainableUndefined):
         return False
 
 
+def _check_no_undefined(value: Any) -> None:
+    if isinstance(value, Undefined):
+        raise ValueError(
+            f"undefined variable passed to tojson: {value._undefined_name!r}"
+            f" — ensure it's defined in config/defaults.yaml"
+        )
+    if isinstance(value, dict):
+        for v in value.values():
+            _check_no_undefined(v)
+    elif isinstance(value, (list, tuple, set)):
+        for item in value:
+            _check_no_undefined(item)
+
+
+def _tojson_strict(value: Any, indent: int | None = None) -> str:
+    _check_no_undefined(value)
+    return json.dumps(value, sort_keys=True, indent=indent)
+
+
 def _make_jinja_env() -> "Environment":
-    return Environment(undefined=_StrictChainableUndefined)
+    env = Environment(undefined=_StrictChainableUndefined)
+    env.filters["tojson"] = _tojson_strict
+    return env
 
 
 def _resolve_var_path(context: dict, path: str) -> Any:

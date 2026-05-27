@@ -18,6 +18,7 @@ import pytest
 import yaml
 
 from render import (
+    _make_jinja_env,
     build_context,
     build_mc_list,
     check_docs,
@@ -69,6 +70,7 @@ def _create_config_structure(
         },
         "dns": {
             "domain": "",
+            "create_environment_zone": False,
         },
         "terraform_tags": {
             "app_code": "infra",
@@ -82,6 +84,19 @@ def _create_config_structure(
         "management_cluster_defaults": {
             "enable_bastion": False,
             "node_instance_types": ["t3.medium", "t3a.medium"],
+        },
+        "observability": {
+            "pagerduty": {
+                "enabled": False,
+                "escalation_policy_id": "",
+            },
+        },
+        "applications": {
+            "regional-cluster": {
+                "maestro": {
+                    "iotLogLevel": "WARN",
+                },
+            },
         },
     }
 
@@ -408,6 +423,44 @@ class TestResolveTemplates:
         data = {"key": "{{ missing.nested.path }}"}
         with pytest.raises(ValueError, match="undefined"):
             resolve_templates(data, {})
+
+
+# =============================================================================
+# tojson filter — undefined detection
+# =============================================================================
+
+
+class TestTojsonUndefinedDetection:
+    def _render(self, template_str, context=None):
+        env = _make_jinja_env()
+        return env.from_string(template_str).render(context or {})
+
+    def test_top_level_undefined_raises(self):
+        with pytest.raises(ValueError, match="undefined variable passed to tojson"):
+            self._render("{{ missing | tojson }}")
+
+    def test_nested_undefined_in_dict_raises(self):
+        with pytest.raises(ValueError, match="undefined variable passed to tojson"):
+            self._render(
+                '{{ {"key": parent.missing_child} | tojson }}',
+                {"parent": {"other": "exists"}},
+            )
+
+    def test_nested_undefined_in_list_raises(self):
+        with pytest.raises(ValueError, match="undefined variable passed to tojson"):
+            self._render(
+                "{{ [1, parent.missing_child] | tojson }}",
+                {"parent": {"other": "exists"}},
+            )
+
+    def test_defined_values_serialize(self):
+        result = self._render("{{ val | tojson }}", {"val": {"a": [1, True]}})
+        assert '"a"' in result
+        assert "1" in result
+
+    def test_default_filter_bypasses_check(self):
+        result = self._render('{{ missing | default("ok") | tojson }}')
+        assert '"ok"' in result
 
 
 # =============================================================================
