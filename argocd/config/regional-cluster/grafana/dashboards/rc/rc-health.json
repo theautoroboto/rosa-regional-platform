@@ -769,7 +769,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(kube_node_status_condition{condition=\"Ready\", status=\"true\"} == 1) or vector(0)",
+          "expr": "count(kube_node_status_condition{condition=\"Ready\", status=\"true\", cluster=~\".*regional|\"} == 1) or vector(0)",
           "legendFormat": "Ready"
         }
       ],
@@ -801,7 +801,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(kube_node_status_condition{condition=\"Ready\", status=\"true\"} == 0) or vector(0)",
+          "expr": "count(kube_node_status_condition{condition=\"Ready\", status=\"true\", cluster=~\".*regional|\"} == 0) or vector(0)",
           "legendFormat": "Not Ready"
         }
       ],
@@ -834,7 +834,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max(1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))) * 100",
+          "expr": "max(1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\", cluster=~\".*regional|\"}[5m]))) * 100",
           "legendFormat": "Max CPU %"
         }
       ],
@@ -869,7 +869,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100",
+          "expr": "max(1 - node_memory_MemAvailable_bytes{cluster=~\".*regional|\"} / node_memory_MemTotal_bytes{cluster=~\".*regional|\"}) * 100",
           "legendFormat": "Max Memory %"
         }
       ],
@@ -904,7 +904,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(kube_node_status_condition{condition=\"DiskPressure\", status=\"true\"} == 1) or vector(0)",
+          "expr": "count(kube_node_status_condition{condition=\"DiskPressure\", status=\"true\", cluster=~\".*regional|\"} == 1) or vector(0)",
           "legendFormat": "Disk Pressure"
         }
       ],
@@ -937,7 +937,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))) * 100",
+          "expr": "(1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\", cluster=~\".*regional|\"}[5m]))) * 100",
           "legendFormat": "{{ instance }}"
         }
       ],
@@ -969,7 +969,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100",
+          "expr": "(1 - node_memory_MemAvailable_bytes{cluster=~\".*regional|\"} / node_memory_MemTotal_bytes{cluster=~\".*regional|\"}) * 100",
           "legendFormat": "{{ instance }}"
         }
       ],
@@ -1001,7 +1001,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (condition) (kube_node_status_condition{condition=~\"MemoryPressure|DiskPressure|PIDPressure\", status=\"true\"})",
+          "expr": "sum by (condition) (kube_node_status_condition{condition=~\"MemoryPressure|DiskPressure|PIDPressure\", status=\"true\", cluster=~\".*regional|\"})",
           "legendFormat": "{{ condition }}"
         }
       ],
@@ -1040,7 +1040,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(karpenter_nodes_created_total[$__range])) or vector(0)",
+          "expr": "sum(increase(karpenter_nodes_created_total{cluster=~\".*regional|\"}[$__range])) or vector(0)",
           "legendFormat": "Created"
         }
       ],
@@ -1072,7 +1072,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(karpenter_nodes_terminated_total[$__range])) or vector(0)",
+          "expr": "sum(increase(karpenter_nodes_terminated_total{cluster=~\".*regional|\"}[$__range])) or vector(0)",
           "legendFormat": "Terminated"
         }
       ],
@@ -1104,7 +1104,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "karpenter_nodepool_usage{resource_type=\"cpu\"} / karpenter_nodepool_limit{resource_type=\"cpu\"} * 100",
+          "expr": "karpenter_nodepool_usage{resource_type=\"cpu\", cluster=~\".*regional|\"} / karpenter_nodepool_limit{resource_type=\"cpu\", cluster=~\".*regional|\"} * 100",
           "legendFormat": "CPU %"
         }
       ],
@@ -1140,7 +1140,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "karpenter_nodepool_usage{resource_type=\"memory\"} / karpenter_nodepool_limit{resource_type=\"memory\"} * 100",
+          "expr": "karpenter_nodepool_usage{resource_type=\"memory\", cluster=~\".*regional|\"} / karpenter_nodepool_limit{resource_type=\"memory\", cluster=~\".*regional|\"} * 100",
           "legendFormat": "Memory %"
         }
       ],
@@ -1176,12 +1176,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(karpenter_nodes_created_total[5m]))",
+          "expr": "sum(rate(karpenter_nodes_created_total{cluster=~\".*regional|\"}[5m]))",
           "legendFormat": "Created/s"
         },
         {
           "refId": "B",
-          "expr": "sum(rate(karpenter_nodes_terminated_total[5m]))",
+          "expr": "sum(rate(karpenter_nodes_terminated_total{cluster=~\".*regional|\"}[5m]))",
           "legendFormat": "Terminated/s"
         }
       ],
@@ -1213,7 +1213,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "karpenter_nodeclaims_initialized{condition=\"false\"}",
+          "expr": "karpenter_nodeclaims_initialized{condition=\"false\", cluster=~\".*regional|\"}",
           "legendFormat": "Uninitialized"
         }
       ],
@@ -1245,7 +1245,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (action) (increase(karpenter_voluntary_disruption_decisions_total[5m]))",
+          "expr": "sum by (action) (increase(karpenter_voluntary_disruption_decisions_total{cluster=~\".*regional|\"}[5m]))",
           "legendFormat": "{{ action }}"
         }
       ],
@@ -1285,7 +1285,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(apiserver_request_total{code=~\"5..\"}[5m])) / sum(rate(apiserver_request_total[5m])) * 100",
+          "expr": "sum(rate(apiserver_request_total{code=~\"5..\", cluster=~\".*regional|\"}[5m])) / sum(rate(apiserver_request_total{cluster=~\".*regional|\"}[5m])) * 100",
           "legendFormat": "5xx %"
         }
       ],
@@ -1320,7 +1320,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(kube_pod_status_phase{phase=\"Pending\"} == 1) or vector(0)",
+          "expr": "count(kube_pod_status_phase{phase=\"Pending\", cluster=~\".*regional|\"} == 1) or vector(0)",
           "legendFormat": "Pending"
         }
       ],
@@ -1354,7 +1354,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(kube_job_status_failed > 0) or vector(0)",
+          "expr": "count(kube_job_status_failed{cluster=~\".*regional|\"} > 0) or vector(0)",
           "legendFormat": "Failed"
         }
       ],
@@ -1387,7 +1387,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"} == 1) or vector(0)",
+          "expr": "count(kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\", cluster=~\".*regional|\"} == 1) or vector(0)",
           "legendFormat": "OOMKilled"
         }
       ],
@@ -1420,7 +1420,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(apiserver_request_total[5m]))",
+          "expr": "sum(rate(apiserver_request_total{cluster=~\".*regional|\"}[5m]))",
           "legendFormat": "req/s"
         }
       ],
@@ -1452,7 +1452,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(apiserver_request_duration_seconds_bucket{verb!~\"WATCH|CONNECT\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(apiserver_request_duration_seconds_bucket{verb!~\"WATCH|CONNECT\", cluster=~\".*regional|\"}[5m])))",
           "legendFormat": "p99"
         }
       ],
@@ -1492,7 +1492,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (namespace) (increase(kube_pod_container_status_restarts_total[5m])) > 0",
+          "expr": "sum by (namespace) (increase(kube_pod_container_status_restarts_total{cluster=~\".*regional|\"}[5m])) > 0",
           "legendFormat": "{{ namespace }}"
         }
       ],
@@ -1524,7 +1524,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(kube_pod_status_phase{phase=\"Pending\"} == 1) or vector(0)",
+          "expr": "count(kube_pod_status_phase{phase=\"Pending\", cluster=~\".*regional|\"} == 1) or vector(0)",
           "legendFormat": "Pending Pods"
         }
       ],
