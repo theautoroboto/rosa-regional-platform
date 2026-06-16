@@ -1,27 +1,8 @@
-provider "aws" {
-  region = var.region
-}
-
 data "aws_caller_identity" "current" {}
 
-# -----------------------------------------------------------------------------
-# KMS key for EBS encryption of FIPS RHEL EKS AMI builds
-# -----------------------------------------------------------------------------
-
-resource "aws_iam_role" "packer" {
-  name = "packer-ami-build"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Principal = { AWS = var.trusted_principal_arns }
-      Action    = "sts:AssumeRole"
-    }]
-  })
-
-  tags = { temporary = "true" }
-}
+# =============================================================================
+# KMS Key — EBS encryption for RHEL FIPS EKS AMI builds
+# =============================================================================
 
 resource "aws_kms_key" "ami" {
   description             = "EBS encryption key for FIPS RHEL EKS AMI builds"
@@ -56,7 +37,7 @@ resource "aws_kms_key" "ami" {
         Resource = "*"
       },
       {
-        # Build instance writes to its KMS-encrypted EBS root volume during provisioning
+        # Build instance writes to its KMS-encrypted EBS root volume during provisioning.
         Sid    = "AllowBuildInstanceRole"
         Effect = "Allow"
         Principal = {
@@ -82,8 +63,7 @@ resource "aws_kms_key" "ami" {
         Resource = "*"
       },
       {
-        # EC2 needs these to copy snapshot data into a new volume in the target
-        # account. Required in addition to CreateGrant for cross-account EBS.
+        # EC2 needs these to copy snapshot data into a new volume in the target account.
         Sid    = "AllowCrossAccountCryptoOps"
         Effect = "Allow"
         Principal = {
@@ -98,8 +78,8 @@ resource "aws_kms_key" "ami" {
         Resource = "*"
       },
       {
-        # Allows EC2 in the target accounts to create grants at instance launch
-        # so nodes can decrypt the encrypted EBS root volume at runtime.
+        # Allows EC2 in target accounts to create grants at instance launch so
+        # nodes can decrypt the encrypted EBS root volume at runtime.
         Sid    = "AllowCrossAccountCreateGrant"
         Effect = "Allow"
         Principal = {
@@ -113,8 +93,6 @@ resource "aws_kms_key" "ami" {
       },
     ]
   })
-
-  tags = { temporary = "true" }
 }
 
 resource "aws_kms_alias" "ami" {
@@ -122,9 +100,22 @@ resource "aws_kms_alias" "ami" {
   target_key_id = aws_kms_key.ami.key_id
 }
 
-# -----------------------------------------------------------------------------
-# IAM policy granting Packer the permissions it needs to build AMIs
-# -----------------------------------------------------------------------------
+# =============================================================================
+# IAM — Packer process role
+# =============================================================================
+
+resource "aws_iam_role" "packer" {
+  name = "packer-ami-build"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { AWS = var.trusted_principal_arns }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
 
 resource "aws_iam_policy" "ami_builder" {
   name = "ami-builder"
@@ -180,7 +171,7 @@ resource "aws_iam_policy" "ami_builder" {
           "ecr:BatchCheckLayerAvailability",
           "ecr:GetDownloadUrlForLayer",
         ]
-        # EKS public ECR account — region-specific, must match aws_region in make build
+        # EKS public ECR account — must match the aws_region used during make build
         Resource = "arn:aws:ecr:${var.region}:602401143452:repository/*"
       },
       {
@@ -203,7 +194,7 @@ resource "aws_iam_policy" "ami_builder" {
         Resource = aws_kms_key.ami.arn
       },
       {
-        # Packer calls GetInstanceProfile to validate it exists, then PassRole when calling RunInstances
+        # Packer calls GetInstanceProfile to validate it exists, then PassRole when calling RunInstances.
         Effect = "Allow"
         Action = ["iam:GetInstanceProfile", "iam:PassRole"]
         Resource = [
@@ -213,8 +204,6 @@ resource "aws_iam_policy" "ami_builder" {
       },
     ]
   })
-
-  tags = { temporary = "true" }
 }
 
 resource "aws_iam_role_policy_attachment" "packer" {
@@ -222,14 +211,13 @@ resource "aws_iam_role_policy_attachment" "packer" {
   policy_arn = aws_iam_policy.ami_builder.arn
 }
 
-# -----------------------------------------------------------------------------
-# IAM role and instance profile for the Packer build EC2 instance
+# =============================================================================
+# IAM — EC2 build instance role
 #
 # Distinct from packer-ami-build (used by the Packer process itself). The build
 # instance needs credentials to pull the pause container from ECR and to write
 # to the KMS-encrypted EBS root volume during provisioning.
-# Pass the profile name as iam_instance_profile in the make k8s command.
-# -----------------------------------------------------------------------------
+# =============================================================================
 
 resource "aws_iam_role" "build_instance" {
   name = "packer-ami-build-instance"
@@ -242,8 +230,6 @@ resource "aws_iam_role" "build_instance" {
       Action    = "sts:AssumeRole"
     }]
   })
-
-  tags = { temporary = "true" }
 }
 
 resource "aws_iam_role_policy" "build_instance" {
@@ -291,35 +277,38 @@ resource "aws_iam_role_policy" "build_instance" {
 resource "aws_iam_instance_profile" "build_instance" {
   name = "packer-ami-build-instance"
   role = aws_iam_role.build_instance.name
-
-  tags = { temporary = "true" }
 }
 
-# -----------------------------------------------------------------------------
-# VPC for Packer build instances
-# -----------------------------------------------------------------------------
+# =============================================================================
+# VPC — isolated network for Packer build instances
+#
+# Public subnet with IGW so instances have outbound internet access (required
+# to pull RHEL packages and EKS bootstrap binaries). map_public_ip_on_launch
+# is true so EC2 assigns a public IP; Packer's ephemeral security group blocks
+# all inbound except the SSH connection it creates.
+# =============================================================================
 
 resource "aws_vpc" "build" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_support   = true
   enable_dns_hostnames = true
 
-  tags = { Name = "ami-build", temporary = "true" }
+  tags = { Name = "ami-build" }
 }
 
 resource "aws_internet_gateway" "build" {
   vpc_id = aws_vpc.build.id
 
-  tags = { Name = "ami-build", temporary = "true" }
+  tags = { Name = "ami-build" }
 }
 
 resource "aws_subnet" "build" {
   vpc_id                  = aws_vpc.build.id
   cidr_block              = "10.0.1.0/24"
   availability_zone       = "${var.region}a"
-  map_public_ip_on_launch = false
+  map_public_ip_on_launch = true
 
-  tags = { Name = "ami-build", temporary = "true" }
+  tags = { Name = "ami-build" }
 }
 
 resource "aws_route_table" "build" {
@@ -330,7 +319,7 @@ resource "aws_route_table" "build" {
     gateway_id = aws_internet_gateway.build.id
   }
 
-  tags = { Name = "ami-build", temporary = "true" }
+  tags = { Name = "ami-build" }
 }
 
 resource "aws_route_table_association" "build" {

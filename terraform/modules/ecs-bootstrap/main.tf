@@ -111,6 +111,7 @@ resource "aws_ecs_task_definition" "bootstrap" {
           EKS_ENDPOINT=$(aws eks describe-cluster --name "$CLUSTER_NAME" --query 'cluster.endpoint' --output text)
           EKS_CA=$(aws eks describe-cluster --name "$CLUSTER_NAME" --query 'cluster.certificateAuthority.data' --output text)
           SERVICE_CIDR=$(aws eks describe-cluster --name "$CLUSTER_NAME" --query 'cluster.kubernetesNetworkConfig.serviceIpv4Cidr' --output text)
+          K8S_VERSION=$(aws eks describe-cluster --name "$CLUSTER_NAME" --query 'cluster.version' --output text)
 
           # Install Karpenter before seeding the NodePool. Karpenter must be
           # running so it can provision RHEL workload nodes as soon as the
@@ -255,6 +256,7 @@ resource "aws_ecs_task_definition" "bootstrap" {
               eks_endpoint: "$EKS_ENDPOINT"
               eks_ca: "$EKS_CA"
               service_cidr: "$SERVICE_CIDR"
+              k8s_version: "$K8S_VERSION"
           type: Opaque
           stringData:
             name: in-cluster

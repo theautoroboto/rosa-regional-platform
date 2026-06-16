@@ -60,3 +60,12 @@ module "pipeline_notifications" {
   region                  = var.region
   pipeline_names          = [module.pipeline_provisioner.provisioner_pipeline_name]
 }
+
+# AMI Builder — KMS key, IAM roles, and VPC for Packer RHEL FIPS EKS AMI builds
+module "ami_builder" {
+  source = "../../modules/ami-builder"
+
+  region                   = var.region
+  trusted_principal_arns   = var.trusted_principal_arns
+  ami_consumer_account_ids = var.ami_consumer_account_ids
+}

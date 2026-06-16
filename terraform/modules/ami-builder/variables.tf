@@ -1,7 +1,6 @@
 variable "region" {
   description = "AWS region for AMI build resources"
   type        = string
-  default     = "us-east-1"
 }
 
 variable "ami_consumer_account_ids" {

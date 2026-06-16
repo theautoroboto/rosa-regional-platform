@@ -16,6 +16,7 @@ spec:
         {{- range $k, $v := .Values.eksNodeClass.amiSelector.tags }}
         {{ $k }}: {{ $v | quote }}
         {{- end }}
+        rosa-regional-platform/k8s-version: {{ .Values.global.k8s_version | quote }}
   metadataOptions:
     httpEndpoint: enabled
     httpTokens: required

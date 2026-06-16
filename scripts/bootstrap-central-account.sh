@@ -132,6 +132,8 @@ GITHUB_BRANCH="${GITHUB_BRANCH:-main}"
 TARGET_ENVIRONMENT="${TARGET_ENVIRONMENT:-staging}"
 NAME_PREFIX="${NAME_PREFIX:-}"
 SLACK_WEBHOOK_SSM_PARAM="${SLACK_WEBHOOK_SSM_PARAM:-/rosa-regional/slack/webhook-url}"
+TRUSTED_PRINCIPAL_ARNS="${TRUSTED_PRINCIPAL_ARNS:-}"
+AMI_CONSUMER_ACCOUNT_IDS="${AMI_CONSUMER_ACCOUNT_IDS:-}"
 
 # Validate repository format (must be owner/name)
 if [[ ! "$GITHUB_REPOSITORY" =~ ^[^/]+/[^/]+$ ]]; then
@@ -197,6 +199,8 @@ if [[ "$SLACK_NOTIFICATIONS_ENABLED" == "true" ]]; then
 else
     echo "  Slack Notifications: disabled"
 fi
+echo "  Trusted Principal ARNs: ${TRUSTED_PRINCIPAL_ARNS:-<none>}"
+echo "  AMI Consumer Account IDs: ${AMI_CONSUMER_ACCOUNT_IDS:-<none>}"
 echo ""
 echo "✅ Proceeding with bootstrap..."
 
@@ -301,13 +305,17 @@ terraform import -var="github_repository=${GITHUB_REPOSITORY}" \
     aws_codestarconnections_connection.github "$GITHUB_CONNECTION_ARN" 2>/dev/null || true
 
 # Create tfvars file
+_TRUSTED_ARNS_HCL=$(echo "${TRUSTED_PRINCIPAL_ARNS:-}" | jq -Rc '[split(",")[] | select(. != "")]')
+_AMI_CONSUMER_IDS_HCL=$(echo "${AMI_CONSUMER_ACCOUNT_IDS:-}" | jq -Rc '[split(",")[] | select(. != "")]')
 cat > terraform.tfvars <<EOF
-github_repository     = "${GITHUB_REPOSITORY}"
-github_branch         = "${GITHUB_BRANCH}"
-region                = "${REGION}"
-environment           = "${TARGET_ENVIRONMENT}"
-name_prefix           = "${NAME_PREFIX}"
-slack_webhook_ssm_param = "${SLACK_WEBHOOK_SSM_PARAM}"
+github_repository        = "${GITHUB_REPOSITORY}"
+github_branch            = "${GITHUB_BRANCH}"
+region                   = "${REGION}"
+environment              = "${TARGET_ENVIRONMENT}"
+name_prefix              = "${NAME_PREFIX}"
+slack_webhook_ssm_param  = "${SLACK_WEBHOOK_SSM_PARAM}"
+trusted_principal_arns   = ${_TRUSTED_ARNS_HCL}
+ami_consumer_account_ids = ${_AMI_CONSUMER_IDS_HCL}
 EOF
 
 echo "Terraform configuration created (terraform.tfvars)"
@@ -320,6 +328,18 @@ terraform plan -var-file=terraform.tfvars -out=tfplan
 echo ""
 echo "✅ Applying Terraform configuration..."
 terraform apply tfplan
+
+echo ""
+echo "Storing AMI KMS key ARN in SSM..."
+AMI_KMS_KEY_ARN=$(terraform output -raw ami_kms_key_arn)
+aws ssm put-parameter \
+    --name "/infra/ami-build/kms-key-arn" \
+    --value "$AMI_KMS_KEY_ARN" \
+    --type String \
+    --overwrite \
+    --region "${REGION}" \
+    --no-cli-pager
+echo "✅ Stored ami_kms_key_arn → SSM /infra/ami-build/kms-key-arn (${REGION})"
 
 echo ""
 echo "==================================================="

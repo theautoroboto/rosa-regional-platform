@@ -70,6 +70,7 @@ spec:
               apiserver_endpoint: '{{ .metadata.annotations.eks_endpoint }}'
               cluster_ca: '{{ .metadata.annotations.eks_ca }}'
               service_cidr: '{{ .metadata.annotations.service_cidr }}'
+              k8s_version: '{{ .metadata.annotations.k8s_version }}'
             platformApi:
               targetGroup:
                 arn: '{{ .metadata.annotations.api_target_group_arn }}'

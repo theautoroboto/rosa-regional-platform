@@ -101,7 +101,7 @@ fi
 export TF_VAR_container_image="${PLATFORM_IMAGE}"
 
 export TF_VAR_enable_bastion="${ENABLE_BASTION}"
-export TF_VAR_ami_kms_key_arn=$(jq -r '.ami_kms_key_arn // ""' "$DEPLOY_CONFIG_FILE")
+export TF_VAR_ami_kms_key_arn="${AMI_KMS_KEY_ARN:-}"
 
 export TF_VAR_enable_cloudtrail=$(parseBool '.enable_cloudtrail' false "$DEPLOY_CONFIG_FILE")
 export TF_VAR_enable_api_custom_domain=$(parseBool '.enable_api_custom_domain' false "$DEPLOY_CONFIG_FILE")
