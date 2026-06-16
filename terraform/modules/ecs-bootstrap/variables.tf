@@ -71,3 +71,9 @@ variable "karpenter_controller_role_arn" {
   default     = ""
 }
 
+variable "karpenter_version" {
+  description = "Helm chart version for Karpenter (oci://public.ecr.aws/karpenter/karpenter)"
+  type        = string
+  default     = "1.4.0"
+}
+

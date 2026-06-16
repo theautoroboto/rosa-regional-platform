@@ -30,6 +30,12 @@ git:
 # @used-by deployment_name pipeline-regional-cluster-inputs/terraform.json.j2
 deployment_name: "{{ aws_region }}"
 
+ami:
+  # @doc ami.kms_key_arn ARN of the CMK in the AMI build account used to encrypt RHEL FIPS node AMI snapshots. Required for Karpenter cross-account AMI launch.
+  # @used-by ami.kms_key_arn pipeline-management-cluster-inputs/terraform.json.j2
+  # @used-by ami.kms_key_arn pipeline-regional-cluster-inputs/terraform.json.j2
+  kms_key_arn: "arn:aws:kms:us-east-1:791666871613:key/e30afe58-8a83-4fa2-bb71-8b982265b33a"
+
 aws:
   # @doc aws.account_id Regional AWS account ID.
   # @used-by aws.account_id _context

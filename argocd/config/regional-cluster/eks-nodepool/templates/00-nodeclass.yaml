@@ -12,9 +12,10 @@ spec:
         aws:eks:cluster-name: "{{ .Values.global.cluster_name }}"
   amiFamily: Custom
   amiSelectorTerms:
-    {{- range .Values.eksNodeClass.amiIds }}
-    - id: {{ . }}
-    {{- end }}
+    - tags:
+        {{- range $k, $v := .Values.eksNodeClass.amiSelector.tags }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
   metadataOptions:
     httpEndpoint: enabled
     httpTokens: required

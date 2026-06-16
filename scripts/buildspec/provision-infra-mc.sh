@@ -162,6 +162,7 @@ fi
 export TF_VAR_container_image="${PLATFORM_IMAGE}"
 
 export TF_VAR_enable_bastion="${ENABLE_BASTION}"
+export TF_VAR_ami_kms_key_arn=$(jq -r '.ami_kms_key_arn // ""' "$DEPLOY_CONFIG_FILE")
 
 if [ -n "${DNS_ZONE_OPERATOR_ROLE_ARN:-}" ]; then
     export TF_VAR_dns_zone_operator_role_arn="${DNS_ZONE_OPERATOR_ROLE_ARN}"
