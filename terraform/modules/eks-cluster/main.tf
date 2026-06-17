@@ -1,9 +1,11 @@
 # =============================================================================
 # EKS Cluster Configuration
 #
-# Creates a fully private EKS cluster with Auto Mode enabled.
-# Includes KMS encryption for secrets, proper networking,
-# and managed addons for a complete cluster deployment.
+# Creates a fully private EKS cluster with OSS Karpenter for node provisioning.
+# Auto Mode compute, storage, and networking features are explicitly disabled —
+# Karpenter provisions RHEL FIPS nodes, and the aws-ebs-csi-driver add-on
+# handles EBS storage. ALBs are managed directly by Terraform (api-gateway
+# module), not by the AWS Load Balancer Controller.
 # VPC and networking are provided as inputs from the vpc module.
 # =============================================================================
 
@@ -112,20 +114,18 @@ resource "aws_eks_cluster" "main" {
   }
 
   compute_config {
-    enabled       = true
-    node_pools    = ["system"]
-    node_role_arn = aws_iam_role.eks_auto_mode_node.arn
+    enabled = false
   }
 
   kubernetes_network_config {
     elastic_load_balancing {
-      enabled = true
+      enabled = false
     }
   }
 
   storage_config {
     block_storage {
-      enabled = true
+      enabled = false
     }
   }
 
@@ -297,6 +297,46 @@ resource "aws_eks_addon" "pod_identity" {
   configuration_values = jsonencode({
     nodeSelector = {}
   })
+}
+
+# EBS CSI Driver — replaces Auto Mode block_storage.
+# Uses EKS Pod Identity for IAM credentials (no IRSA/annotation needed).
+resource "aws_iam_role" "ebs_csi" {
+  name = "${local.cluster_id}-ebs-csi"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "pods.eks.amazonaws.com"
+      }
+      Action = ["sts:AssumeRole", "sts:TagSession"]
+    }]
+  })
+
+  tags = {
+    Name = "${local.cluster_id}-ebs-csi"
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi" {
+  role       = aws_iam_role.ebs_csi.name
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+
+resource "aws_eks_pod_identity_association" "ebs_csi" {
+  cluster_name    = aws_eks_cluster.main.name
+  namespace       = "kube-system"
+  service_account = "ebs-csi-controller-sa"
+  role_arn        = aws_iam_role.ebs_csi.arn
+}
+
+resource "aws_eks_addon" "ebs_csi_driver" {
+  cluster_name = aws_eks_cluster.main.name
+  addon_name   = "aws-ebs-csi-driver"
+
+  depends_on = [aws_eks_pod_identity_association.ebs_csi]
 }
 
 # AWS Secrets Store CSI Driver Provider (e.g. for Maestro agent secret mounting)
