@@ -1,3 +1,30 @@
+global:
+  cluster_name: <cluster-name>
+  region: us-east-1
+  # Injected by ApplicationSet from the cluster secret .server field
+  apiserver_endpoint: https://placeholder.example.com
+  # Base64-encoded cluster CA cert; injected by ApplicationSet from cluster secret annotation
+  cluster_ca: ""
+  # EKS service CIDR; nodeadm derives the CoreDNS address from this
+  service_cidr: "172.20.0.0/16"
+  # Injected by ApplicationSet from k8s_version cluster secret annotation (e.g. "1.34")
+  k8s_version: ""
+
+eksNodeClass:
+  # AMIs are selected by EC2 tags; no hardcoded IDs.
+  # AMIs must be tagged at build time with all three tags:
+  #   rosa-regional-platform/component: eks-node
+  #   rosa-regional-platform/fips: "true"
+  #   rosa-regional-platform/k8s-version: "<minor version>"
+  # Karpenter picks the most recently created AMI matching all tags — the latest
+  # CVE-patched build for this cluster's k8s version is selected automatically.
+  # The k8s-version tag is appended by the nodeclass template from global.k8s_version,
+  # which is injected by the ApplicationSet from the cluster secret annotation.
+  amiSelector:
+    tags:
+      rosa-regional-platform/component: eks-node
+      rosa-regional-platform/fips: "true"
+
 eksNodePool:
   instanceFamilies:
     - m8i

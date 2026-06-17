@@ -59,3 +59,27 @@ output "platform_image_tag" {
   description = "Tag of the platform image (based on Dockerfile hash)"
   value       = module.platform_image.image_tag
 }
+
+# =============================================================================
+# AMI Builder
+# =============================================================================
+
+output "ami_kms_key_arn" {
+  description = "KMS key ARN for RHEL FIPS AMI EBS encryption — set as ami_kms_key_arn in RC/MC deployments"
+  value       = module.ami_builder.kms_key_arn
+}
+
+output "ami_packer_role_arn" {
+  description = "IAM role ARN to assume before running Packer builds"
+  value       = module.ami_builder.packer_role_arn
+}
+
+output "ami_build_instance_profile_name" {
+  description = "IAM instance profile name for Packer build EC2 instances"
+  value       = module.ami_builder.build_instance_profile_name
+}
+
+output "ami_build_subnet_id" {
+  description = "Subnet ID for Packer build instances"
+  value       = module.ami_builder.subnet_id
+}

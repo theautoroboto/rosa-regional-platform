@@ -53,3 +53,19 @@ variable "slack_webhook_ssm_param" {
   default     = "/rosa-regional/slack/webhook-url"
 }
 
+# =============================================================================
+# AMI Builder Configuration
+# =============================================================================
+
+variable "trusted_principal_arns" {
+  description = "IAM ARNs (users or roles) allowed to assume the packer-ami-build role"
+  type        = list(string)
+  default     = []
+}
+
+variable "ami_consumer_account_ids" {
+  description = "AWS account IDs that will launch instances from the built AMIs (granted KMS key access)"
+  type        = list(string)
+  default     = []
+}
+

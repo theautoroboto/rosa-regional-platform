@@ -18,5 +18,6 @@
   "regional_id": "regional",
   "eph_prefix": "",
   "iot_log_level": "WARN",
+  "ami_kms_key_arn": "ssm:///infra/ami-build/kms-key-arn",
   "management_clusters_info": [{"account_id": "ssm:///infra/ephemeral/us-east-1/mc01/account_id", "id": "mc01"}]
 }

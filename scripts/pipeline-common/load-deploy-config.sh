@@ -115,12 +115,31 @@ if [[ "$_DEPLOY_MODE" == "management" ]]; then
     export REGIONAL_AWS_ACCOUNT_ID
 fi
 
+# Resolve ami_kms_key_arn — may be an SSM reference stored in the central account (us-east-1).
+# This runs before any account-switching (use_mc_account), so ambient creds are still the
+# central CodeBuild role.
+_RAW_AMI_KMS=$(jq -r '.ami_kms_key_arn // ""' "$DEPLOY_CONFIG_FILE")
+if [[ "$_RAW_AMI_KMS" =~ ^ssm:// ]]; then
+    _AMI_KMS_SSM_PARAM="${_RAW_AMI_KMS#ssm://}"
+    echo "Resolving SSM parameter: $_AMI_KMS_SSM_PARAM in central account (us-east-1)"
+    AMI_KMS_KEY_ARN=$(aws ssm get-parameter \
+        --name "$_AMI_KMS_SSM_PARAM" \
+        --with-decryption \
+        --query 'Parameter.Value' \
+        --output text \
+        --region us-east-1)
+    echo "  ami_kms_key_arn resolved from SSM"
+else
+    AMI_KMS_KEY_ARN="$_RAW_AMI_KMS"
+fi
+
 export DEPLOY_CONFIG_FILE
 export APP_CODE
 export SERVICE_PHASE
 export COST_CENTER
 export ENABLE_BASTION
 export ENVIRONMENT_DOMAIN
+export AMI_KMS_KEY_ARN
 
 echo "  APP_CODE=$APP_CODE SERVICE_PHASE=$SERVICE_PHASE COST_CENTER=$COST_CENTER"
 echo "  ENABLE_BASTION=$ENABLE_BASTION"

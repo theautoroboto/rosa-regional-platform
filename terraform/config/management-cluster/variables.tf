@@ -137,3 +137,9 @@ variable "oidc_cloudfront_domain" {
   default     = ""
 }
 
+variable "ami_kms_key_arn" {
+  description = "ARN of the CMK in the AMI build account used to encrypt RHEL FIPS node AMI snapshots. Required for cross-account AMI launch via Karpenter."
+  type        = string
+  default     = ""
+}
+
