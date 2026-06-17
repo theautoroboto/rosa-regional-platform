@@ -93,8 +93,6 @@ resource "aws_eks_cluster" "main" {
   role_arn = aws_iam_role.eks_cluster.arn
   version  = var.cluster_version
 
-  bootstrap_self_managed_addons = false
-
   access_config {
     authentication_mode = "API_AND_CONFIG_MAP"
   }
@@ -202,8 +200,6 @@ resource "aws_eks_node_group" "karpenter_bootstrap" {
 
   depends_on = [
     aws_eks_cluster.main,
-    aws_eks_addon.vpc_cni,
-    aws_eks_addon.kube_proxy,
   ]
 }
 
@@ -263,31 +259,6 @@ resource "aws_eks_addon" "metrics_server" {
       }
     }
   }) : null
-}
-
-# bootstrap_self_managed_addons = false prevents EKS from auto-installing VPC
-# CNI and kube-proxy. Auto Mode manages both on the regional cluster, so that
-# is correct there. On the management cluster (Karpenter, no Auto Mode) they
-# must be installed explicitly or nodes join but cannot get pod IPs.
-#
-# NOTE: vpc-cni and kube-proxy add-on schemas do not expose nodeSelector as a
-# configurable field. EKS Auto Mode injects compute-type=auto into these
-# DaemonSets at the cluster level. If Karpenter scheduling simulation fails due
-# to that nodeSelector, remove it manually:
-#   kubectl patch ds -n kube-system aws-node --type=merge \
-#     -p '{"spec":{"template":{"spec":{"nodeSelector":{"eks.amazonaws.com/compute-type":null}}}}}'
-#   kubectl patch ds -n kube-system kube-proxy --type=merge \
-#     -p '{"spec":{"template":{"spec":{"nodeSelector":{"eks.amazonaws.com/compute-type":null}}}}}'
-resource "aws_eks_addon" "vpc_cni" {
-  count        = var.enable_karpenter ? 1 : 0
-  cluster_name = aws_eks_cluster.main.name
-  addon_name   = "vpc-cni"
-}
-
-resource "aws_eks_addon" "kube_proxy" {
-  count        = var.enable_karpenter ? 1 : 0
-  cluster_name = aws_eks_cluster.main.name
-  addon_name   = "kube-proxy"
 }
 
 resource "aws_eks_addon" "pod_identity" {
