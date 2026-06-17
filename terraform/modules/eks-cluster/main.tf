@@ -142,36 +142,12 @@ resource "aws_eks_cluster" "main" {
 # capacity for the Karpenter controller pod before Karpenter can provision
 # RHEL workload nodes.
 #
-# The launch template injects InstanceIdNodeName=true into the merged NodeConfig
-# so that the kubelet registers using the EC2 instance ID as the node name.
-# This is required when the cluster uses API auth mode access entries, which
-# authenticate nodes as system:node:<instance-id> via {{SessionName}}.
-# Without it, the kubelet registers as the private DNS hostname and the Node
-# Authorizer rejects all API calls, leaving the node group stuck in CREATING.
+# No custom user data is needed. EKS auto-manages AL2023 bootstrap via the
+# managed node group API and maps the node IAM role to
+# system:node:{{EC2PrivateDNSName}} in aws-auth. The kubelet must use the
+# private DNS hostname as the node name (the default) so that the Node
+# Authorizer can match the authenticated identity to the node object.
 # -----------------------------------------------------------------------------
-resource "aws_launch_template" "karpenter_bootstrap" {
-  count       = var.enable_karpenter ? 1 : 0
-  name_prefix = "${local.cluster_id}-karpenter-bootstrap-"
-
-  # AL2023 managed node groups require MIME multipart format — raw JSON is
-  # silently ignored by EKS and featureGates never reach nodeadm.
-  user_data = base64encode(join("\n", [
-    "MIME-Version: 1.0",
-    "Content-Type: multipart/mixed; boundary=\"==NODECONFIG==\"",
-    "",
-    "--==NODECONFIG==",
-    "Content-Type: application/node.eks.aws",
-    "",
-    "---",
-    "apiVersion: node.eks.aws/v1alpha1",
-    "kind: NodeConfig",
-    "spec:",
-    "  featureGates:",
-    "    InstanceIdNodeName: true",
-    "--==NODECONFIG==--",
-  ]))
-}
-
 resource "aws_eks_node_group" "karpenter_bootstrap" {
   count = var.enable_karpenter ? 1 : 0
 
@@ -187,11 +163,6 @@ resource "aws_eks_node_group" "karpenter_bootstrap" {
     desired_size = 2
     min_size     = 2
     max_size     = 3
-  }
-
-  launch_template {
-    id      = aws_launch_template.karpenter_bootstrap[0].id
-    version = aws_launch_template.karpenter_bootstrap[0].latest_version
   }
 
   labels = {
