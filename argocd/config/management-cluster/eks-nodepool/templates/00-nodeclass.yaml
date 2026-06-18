@@ -30,8 +30,5 @@ spec:
           "certificateAuthority": "{{ .Values.global.cluster_ca }}",
           "cidr": "{{ .Values.global.service_cidr }}"
         },
-        "featureGates": {
-          "InstanceIdNodeName": true
-        }
       }
     }
