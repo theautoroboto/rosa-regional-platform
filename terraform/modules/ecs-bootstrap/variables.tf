@@ -65,3 +65,15 @@ variable "management_clusters" {
   default     = ""
 }
 
+variable "karpenter_controller_role_arn" {
+  description = "IAM role ARN for the Karpenter controller (empty string disables Karpenter bootstrap)"
+  type        = string
+  default     = ""
+}
+
+variable "karpenter_version" {
+  description = "Karpenter Helm chart version to install (e.g. \"1.13.0\")"
+  type        = string
+  default     = "1.13.0"
+}
+
