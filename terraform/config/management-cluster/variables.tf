@@ -137,3 +137,8 @@ variable "oidc_cloudfront_domain" {
   default     = ""
 }
 
+variable "ami_kms_key_arn" {
+  description = "KMS key ARN used to encrypt the FIPS RHEL EKS AMI EBS volume (output of ami-temp config)"
+  type        = string
+}
+

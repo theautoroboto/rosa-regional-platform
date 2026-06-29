@@ -167,7 +167,8 @@ module "regional_cluster" {
   cluster_security_group_id       = module.vpc.cluster_security_group_id
   vpc_endpoints_security_group_id = module.vpc.vpc_endpoints_security_group_id
   enable_karpenter                = true
-  ami_kms_key_arn                 = "arn:aws:kms:us-east-1:791666871613:key/e30afe58-8a83-4fa2-bb71-8b982265b33a"
+  karpenter_version               = "1.13.0" # var.karpenter_version
+  ami_kms_key_arn                 = "arn:aws:kms:us-east-1:791666871613:key/2fce5913-a3a4-4f99-9950-c51f56214350" # var.ami_kms_key_arn
 }
 
 # =============================================================================

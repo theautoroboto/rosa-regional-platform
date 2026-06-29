@@ -3,6 +3,11 @@ output "kms_key_arn" {
   value       = aws_kms_key.ami.arn
 }
 
+output "ami_kms_key_arn" {
+  description = "KMS key ARN used to encrypt the FIPS RHEL EKS AMI EBS volume — grant consumer node roles kms:CreateGrant on this ARN"
+  value       = aws_kms_key.ami.arn
+}
+
 output "role_arn" {
   description = "IAM role ARN — pass to aws sts assume-role before building"
   value       = aws_iam_role.packer.arn
