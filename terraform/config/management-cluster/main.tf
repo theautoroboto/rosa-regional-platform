@@ -49,7 +49,6 @@ module "management_cluster" {
   cluster_security_group_id       = module.vpc.cluster_security_group_id
   vpc_endpoints_security_group_id = module.vpc.vpc_endpoints_security_group_id
   enable_karpenter                = true
-  karpenter_version               = "1.13.0"
   ami_kms_key_arn                 = var.ami_kms_key_arn
 }
 
@@ -72,6 +71,7 @@ module "ecs_bootstrap" {
   repository_branch = var.repository_branch
 
   karpenter_controller_role_arn = module.management_cluster.karpenter_controller_role_arn
+  karpenter_version             = "1.13.0"
 }
 
 # =============================================================================
