@@ -186,49 +186,10 @@ resource "aws_eks_addon" "pod_identity" {
 # before any Karpenter-provisioned nodes exist. This breaks the bootstrap
 # deadlock: Karpenter cannot provision nodes for itself.
 #
-# IMDSv2 is enforced via the launch template. instanceIdNodeName: true in the
-# nodeadm NodeConfig ensures kubelet registers with the EC2 instance ID as the
-# node name, satisfying the API_AND_CONFIG_MAP auth mode SessionName constraint.
+# No custom launch template: EKS managed node groups set IMDSv2 hop limit to 2
+# by default for AL2023, and managed node group auth is handled automatically
+# by EKS regardless of node name format.
 # -----------------------------------------------------------------------------
-
-resource "aws_launch_template" "karpenter_bootstrap" {
-  count = var.enable_karpenter ? 1 : 0
-  name  = "${local.cluster_id}-karpenter-bootstrap"
-
-  metadata_options {
-    http_endpoint               = "enabled"
-    http_tokens                 = "required"
-    http_put_response_hop_limit = 2
-  }
-
-  # MIME multipart userData: EKS injects the primary NodeConfig (cluster endpoint,
-  # CA, CIDR) for managed node groups. This document is merged via nodeadm merge
-  # semantics, adding only instanceIdNodeName to the kubelet registration config.
-  user_data = base64encode(<<-USERDATA
-    MIME-Version: 1.0
-    Content-Type: multipart/mixed; boundary="==KARPENTER-BOOTSTRAP=="
-
-    --==KARPENTER-BOOTSTRAP==
-    Content-Type: application/node.eks.aws
-
-    ---
-    apiVersion: node.eks.aws/v1alpha1
-    kind: NodeConfig
-    spec:
-      instance:
-        localStorage:
-          strategy: Distributed
-      nodeadm:
-        instanceIdNodeName: true
-    --==KARPENTER-BOOTSTRAP==--
-  USERDATA
-  )
-
-  tag_specifications {
-    resource_type = "instance"
-    tags          = { "karpenter.sh/nodepool" = "bootstrap" }
-  }
-}
 
 resource "aws_eks_node_group" "karpenter_bootstrap" {
   count           = var.enable_karpenter ? 1 : 0
@@ -237,12 +198,8 @@ resource "aws_eks_node_group" "karpenter_bootstrap" {
   node_role_arn   = aws_iam_role.karpenter_node[0].arn
   subnet_ids      = var.private_subnet_ids
 
-  ami_type = "AL2023_x86_64_STANDARD"
-
-  launch_template {
-    id      = aws_launch_template.karpenter_bootstrap[0].id
-    version = aws_launch_template.karpenter_bootstrap[0].latest_version
-  }
+  ami_type       = "AL2023_x86_64_STANDARD"
+  instance_types = ["t3.medium"]
 
   scaling_config {
     desired_size = 2
