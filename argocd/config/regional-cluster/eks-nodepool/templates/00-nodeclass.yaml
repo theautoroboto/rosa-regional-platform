@@ -3,7 +3,8 @@ kind: EC2NodeClass
 metadata:
   name: fips
 spec:
-  amiFamily: Bottlerocket
+  amiSelectorTerms:
+    - alias: bottlerocket@latest
   role: {{ .Values.global.cluster_name }}-karpenter-node-role
   subnetSelectorTerms:
     - tags:
