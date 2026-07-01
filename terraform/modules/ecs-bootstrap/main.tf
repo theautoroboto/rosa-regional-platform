@@ -156,45 +156,72 @@ resource "aws_ecs_task_definition" "bootstrap" {
             echo "✓ FIPS NodePool already exists, skipping (managed by ArgoCD)"
           fi
 
-          # Check if ArgoCD already exists
-          if ! kubectl get deployment argocd-server -n argocd 2>/dev/null; then
-            echo "Installing ArgoCD from repo chart..."
+          # Always upgrade-or-install ArgoCD. The previous guard
+          # (kubectl get deployment argocd-server) was skipping the install
+          # on retries because helm --wait's timeout creates the Deployment
+          # object before giving up, leaving a broken install that subsequent
+          # runs silently skipped. helm upgrade --install is idempotent.
+          echo "Installing/upgrading ArgoCD from repo chart..."
 
-            # Create argocd namespace
-            kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+          # Create argocd namespace
+          kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
 
-            # Fetch chart dependencies (charts/ is gitignored)
-            helm repo add argo https://argoproj.github.io/argo-helm
-            helm dependency build "$REPO_DIR/argocd/config/shared/argocd"
+          # Fetch chart dependencies (charts/ is gitignored)
+          helm repo add argo https://argoproj.github.io/argo-helm
+          helm dependency build "$REPO_DIR/argocd/config/shared/argocd"
 
-            # Install using the same chart that the self-managed ArgoCD app
-            # uses (argocd/config/shared/argocd/), with tracking-id annotations
-            # so the self-managed ArgoCD app can adopt these resources.
-            # redisSecretInit is enabled here to create the Redis auth secret;
-            # the self-managed ArgoCD app has it disabled and prunes the
-            # completed Job on adoption.
-            helm upgrade --install argocd "$REPO_DIR/argocd/config/shared/argocd" \
-              --namespace argocd \
-              --set argo-cd.redisSecretInit.enabled=true \
-              --set 'argo-cd.redisSecretInit.tolerations[0].key=CriticalAddonsOnly' \
-              --set 'argo-cd.redisSecretInit.tolerations[0].operator=Exists' \
-              --set 'argo-cd.redisSecretInit.tolerations[0].effect=NoSchedule' \
-              --set-string 'argo-cd.controller.annotations.argocd\.argoproj\.io/tracking-id=argocd:argoproj.io/Application:argocd/argocd' \
-              --set-string 'argo-cd.server.annotations.argocd\.argoproj\.io/tracking-id=argocd:argoproj.io/Application:argocd/argocd' \
-              --set-string 'argo-cd.repoServer.annotations.argocd\.argoproj\.io/tracking-id=argocd:argoproj.io/Application:argocd/argocd' \
-              --wait --timeout=10m
+          # Install using the same chart that the self-managed ArgoCD app
+          # uses (argocd/config/shared/argocd/), with tracking-id annotations
+          # so the self-managed ArgoCD app can adopt these resources.
+          # redisSecretInit is enabled here to create the Redis auth secret;
+          # the self-managed ArgoCD app has it disabled and prunes the
+          # completed Job on adoption.
+          #
+          # CriticalAddonsOnly tolerations are set both here (via --set, for
+          # any git branch) and in values.yaml (for ArgoCD self-management).
+          helm upgrade --install argocd "$REPO_DIR/argocd/config/shared/argocd" \
+            --namespace argocd \
+            --set argo-cd.redisSecretInit.enabled=true \
+            --set 'argo-cd.redisSecretInit.tolerations[0].key=CriticalAddonsOnly' \
+            --set 'argo-cd.redisSecretInit.tolerations[0].operator=Exists' \
+            --set 'argo-cd.redisSecretInit.tolerations[0].effect=NoSchedule' \
+            --set 'argo-cd.server.tolerations[0].key=CriticalAddonsOnly' \
+            --set 'argo-cd.server.tolerations[0].operator=Exists' \
+            --set 'argo-cd.server.tolerations[0].effect=NoSchedule' \
+            --set 'argo-cd.controller.tolerations[0].key=CriticalAddonsOnly' \
+            --set 'argo-cd.controller.tolerations[0].operator=Exists' \
+            --set 'argo-cd.controller.tolerations[0].effect=NoSchedule' \
+            --set 'argo-cd.repoServer.tolerations[0].key=CriticalAddonsOnly' \
+            --set 'argo-cd.repoServer.tolerations[0].operator=Exists' \
+            --set 'argo-cd.repoServer.tolerations[0].effect=NoSchedule' \
+            --set 'argo-cd.applicationSet.tolerations[0].key=CriticalAddonsOnly' \
+            --set 'argo-cd.applicationSet.tolerations[0].operator=Exists' \
+            --set 'argo-cd.applicationSet.tolerations[0].effect=NoSchedule' \
+            --set 'argo-cd.dex.tolerations[0].key=CriticalAddonsOnly' \
+            --set 'argo-cd.dex.tolerations[0].operator=Exists' \
+            --set 'argo-cd.dex.tolerations[0].effect=NoSchedule' \
+            --set 'argo-cd.notifications.tolerations[0].key=CriticalAddonsOnly' \
+            --set 'argo-cd.notifications.tolerations[0].operator=Exists' \
+            --set 'argo-cd.notifications.tolerations[0].effect=NoSchedule' \
+            --set 'argo-cd.redis-ha.tolerations[0].key=CriticalAddonsOnly' \
+            --set 'argo-cd.redis-ha.tolerations[0].operator=Exists' \
+            --set 'argo-cd.redis-ha.tolerations[0].effect=NoSchedule' \
+            --set 'argo-cd.redis-ha.haproxy.tolerations[0].key=CriticalAddonsOnly' \
+            --set 'argo-cd.redis-ha.haproxy.tolerations[0].operator=Exists' \
+            --set 'argo-cd.redis-ha.haproxy.tolerations[0].effect=NoSchedule' \
+            --set-string 'argo-cd.controller.annotations.argocd\.argoproj\.io/tracking-id=argocd:argoproj.io/Application:argocd/argocd' \
+            --set-string 'argo-cd.server.annotations.argocd\.argoproj\.io/tracking-id=argocd:argoproj.io/Application:argocd/argocd' \
+            --set-string 'argo-cd.repoServer.annotations.argocd\.argoproj\.io/tracking-id=argocd:argoproj.io/Application:argocd/argocd' \
+            --wait --timeout=10m
 
-            echo "✓ ArgoCD installation complete"
+          echo "✓ ArgoCD installation complete"
 
-            # Wait for ArgoCD to be ready
-            kubectl wait --for=condition=available --timeout=600s deployment/argocd-server -n argocd
-            kubectl wait --for=condition=available --timeout=600s deployment/argocd-repo-server -n argocd
-            kubectl wait --for=condition=available --timeout=600s deployment/argocd-applicationset-controller -n argocd
+          # Wait for ArgoCD to be ready
+          kubectl wait --for=condition=available --timeout=600s deployment/argocd-server -n argocd
+          kubectl wait --for=condition=available --timeout=600s deployment/argocd-repo-server -n argocd
+          kubectl wait --for=condition=available --timeout=600s deployment/argocd-applicationset-controller -n argocd
 
-            echo "✓ ArgoCD is running and ready"
-          else
-            echo "✓ ArgoCD is already installed and running, skipping installation"
-          fi
+          echo "✓ ArgoCD is running and ready"
 
           echo "Creating/updating cluster identity secret with values:"
           echo "  ENVIRONMENT: $ENVIRONMENT"
