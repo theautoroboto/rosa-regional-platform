@@ -4,7 +4,7 @@ metadata:
   name: fips
 spec:
   amiFamily: Bottlerocket
-  role: {{ .Values.global.cluster_name }}-node-role
+  role: {{ .Values.global.cluster_name }}-karpenter-node-role
   subnetSelectorTerms:
     - tags:
         kubernetes.io/cluster/{{ .Values.global.cluster_name }}: owned
