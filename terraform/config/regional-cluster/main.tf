@@ -190,6 +190,9 @@ module "ecs_bootstrap" {
   loki_kms_key_arn   = module.loki_infrastructure.kms_key_arn
 
   management_clusters = var.management_clusters
+
+  karpenter_controller_role_arn = module.regional_cluster.karpenter_controller_role_arn != null ? module.regional_cluster.karpenter_controller_role_arn : ""
+  karpenter_queue_url           = module.regional_cluster.karpenter_queue_url != null ? module.regional_cluster.karpenter_queue_url : ""
 }
 
 # =============================================================================

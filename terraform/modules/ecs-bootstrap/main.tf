@@ -103,15 +103,47 @@ resource "aws_ecs_task_definition" "bootstrap" {
           # Configure kubectl for EKS
           aws eks update-kubeconfig --name $CLUSTER_NAME
 
-          # Seed the FIPS NodePool only on first bootstrap. On subsequent
-          # runs (resync), ArgoCD owns this resource via the eks-nodepool
-          # chart — we must not re-apply it to avoid Server-Side Apply
-          # ownership conflicts. When creating, we pass the environment
-          # values file so the initial NodePool matches what ArgoCD will
-          # enforce, avoiding Karpenter provisioning nodes with default
-          # instance types before ArgoCD syncs.
-          if ! kubectl get nodepool workloads 2>/dev/null; then
-            echo "Applying FIPS NodeClass and workloads NodePool from chart..."
+          # Wait for coredns and metrics-server (on the bootstrap node group)
+          # before installing Karpenter and ArgoCD.
+          for ADDON in coredns metrics-server; do
+            echo "Waiting for $ADDON to be active..."
+            aws eks wait addon-active \
+              --cluster-name "$CLUSTER_NAME" \
+              --addon-name "$ADDON" \
+              --region "$AWS_REGION"
+            echo "✓ $ADDON active"
+          done
+
+          # Install Karpenter before seeding the NodePool: the NodePool and
+          # EC2NodeClass CRDs (karpenter.sh/v1, karpenter.k8s.aws/v1) don't
+          # exist until Karpenter is installed. ArgoCD adopts this release
+          # via its self-managed Karpenter Application after bootstrap.
+          if ! kubectl get deployment karpenter -n kube-system 2>/dev/null; then
+            echo "Installing Karpenter $KARPENTER_VERSION..."
+            _KARPENTER_QUEUE_NAME=$(basename "$KARPENTER_QUEUE_URL")
+            helm upgrade --install karpenter \
+              oci://public.ecr.aws/karpenter/karpenter \
+              --version "$KARPENTER_VERSION" \
+              --namespace kube-system \
+              --set "settings.clusterName=$CLUSTER_NAME" \
+              --set "settings.interruptionQueue=$_KARPENTER_QUEUE_NAME" \
+              --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=$KARPENTER_CONTROLLER_ROLE_ARN" \
+              --set 'tolerations[0].key=CriticalAddonsOnly' \
+              --set 'tolerations[0].operator=Exists' \
+              --set 'tolerations[0].effect=NoSchedule' \
+              --wait --timeout=5m
+            echo "✓ Karpenter installed"
+          else
+            echo "✓ Karpenter already installed, skipping"
+          fi
+
+          # Seed the FIPS EC2NodeClass and NodePool only on first bootstrap.
+          # On subsequent runs (resync), ArgoCD owns these resources via the
+          # eks-nodepool chart. We pass the environment values file so the
+          # initial NodePool matches what ArgoCD will enforce.
+          _POOL_NAME="$([ "$CLUSTER_TYPE" = "regional-cluster" ] && echo "regional-workloads" || echo "management-workloads")"
+          if ! kubectl get nodepool "$_POOL_NAME" 2>/dev/null; then
+            echo "Applying FIPS EC2NodeClass and workloads NodePool from chart..."
             _NODEPOOL_VALUES="$REPO_DIR/deploy/$ENVIRONMENT/$REGION_DEPLOYMENT/argocd-values-$CLUSTER_TYPE.yaml"
             _VALUES_FLAG=""
             [ -f "$_NODEPOOL_VALUES" ] && _VALUES_FLAG="-f $_NODEPOOL_VALUES"
@@ -123,17 +155,6 @@ resource "aws_ecs_task_definition" "bootstrap" {
           else
             echo "✓ FIPS NodePool already exists, skipping (managed by ArgoCD)"
           fi
-
-          # Wait for coredns and metrics-server (managed by the built-in system pool)
-          # to be active before installing ArgoCD.
-          for ADDON in coredns metrics-server; do
-            echo "Waiting for $ADDON to be active..."
-            aws eks wait addon-active \
-              --cluster-name "$CLUSTER_NAME" \
-              --addon-name "$ADDON" \
-              --region "$AWS_REGION"
-            echo "✓ $ADDON active"
-          done
 
           # Check if ArgoCD already exists
           if ! kubectl get deployment argocd-server -n argocd 2>/dev/null; then
@@ -281,6 +302,18 @@ resource "aws_ecs_task_definition" "bootstrap" {
         {
           name  = "MANAGEMENT_CLUSTERS"
           value = var.management_clusters
+        },
+        {
+          name  = "KARPENTER_CONTROLLER_ROLE_ARN"
+          value = var.karpenter_controller_role_arn
+        },
+        {
+          name  = "KARPENTER_QUEUE_URL"
+          value = var.karpenter_queue_url
+        },
+        {
+          name  = "KARPENTER_VERSION"
+          value = var.karpenter_version
         }
       ]
 
