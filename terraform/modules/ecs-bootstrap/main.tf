@@ -172,6 +172,27 @@ resource "aws_ecs_task_definition" "bootstrap" {
           # Create argocd namespace
           kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
 
+          # Re-stamp Helm release ownership annotations before upgrade.
+          # ArgoCD's default client-side apply strips meta.helm.sh/* annotations
+          # because they are not part of chart templates: the 3-way merge removes
+          # keys present in the last-applied-configuration but absent from the new
+          # desired state. Without these annotations helm upgrade refuses to manage
+          # the resource ("cannot be imported into the current release").
+          # This is a no-op on fresh clusters where no resources exist yet.
+          echo "Re-stamping Helm release ownership annotations on existing argocd resources..."
+          for _RT in \
+            deployments statefulsets services configmaps serviceaccounts \
+            roles rolebindings secrets \
+            poddisruptionbudgets horizontalpodautoscalers networkpolicies \
+            servicemonitors prometheusrules podmonitors; do
+            kubectl get "$_RT" -n argocd -o name 2>/dev/null | while read -r _RES; do
+              kubectl annotate -n argocd "$_RES" \
+                "meta.helm.sh/release-name=argocd" \
+                "meta.helm.sh/release-namespace=argocd" \
+                --overwrite 2>/dev/null || true
+            done
+          done
+
           # Fetch chart dependencies (charts/ is gitignored)
           helm repo add argo https://argoproj.github.io/argo-helm
           helm dependency build "$REPO_DIR/argocd/config/shared/argocd"
