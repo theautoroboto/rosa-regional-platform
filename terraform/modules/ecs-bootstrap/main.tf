@@ -137,30 +137,36 @@ resource "aws_ecs_task_definition" "bootstrap" {
             echo "✓ Karpenter already installed, skipping"
           fi
 
-          # Seed the FIPS EC2NodeClass and NodePool only on first bootstrap.
-          # On subsequent runs (resync), ArgoCD owns these resources via the
-          # eks-nodepool chart. We pass the environment values file so the
-          # initial NodePool matches what ArgoCD will enforce.
-          _POOL_NAME="$([ "$CLUSTER_TYPE" = "regional-cluster" ] && echo "regional-workloads" || echo "management-workloads")"
-          if ! kubectl get nodepool "$_POOL_NAME" 2>/dev/null; then
-            echo "Applying FIPS EC2NodeClass and workloads NodePool from chart..."
-            _NODEPOOL_VALUES="$REPO_DIR/deploy/$ENVIRONMENT/$REGION_DEPLOYMENT/argocd-values-$CLUSTER_TYPE.yaml"
-            _VALUES_FLAG=""
-            [ -f "$_NODEPOOL_VALUES" ] && _VALUES_FLAG="-f $_NODEPOOL_VALUES"
-            helm template eks-nodepool "$REPO_DIR/argocd/config/$CLUSTER_TYPE/eks-nodepool" \
-              --set global.cluster_name="$CLUSTER_NAME" \
-              $_VALUES_FLAG \
-              | kubectl apply --server-side -f -
-            echo "✓ FIPS NodePool applied"
-          else
-            echo "✓ FIPS NodePool already exists, skipping (managed by ArgoCD)"
+          # Always apply the EC2NodeClass and NodePool from the current chart.
+          # kubectl apply --server-side is idempotent — it patches in-place.
+          # The original skip-if-exists guard caused a bootstrap bug: the first
+          # run seeded the EC2NodeClass with the wrong IAM role name, and all
+          # subsequent runs silently kept the broken spec, so Karpenter could
+          # never provision nodes. ArgoCD eventually owns these resources, but
+          # we must ensure the correct spec is present before ArgoCD is up.
+          echo "Applying FIPS EC2NodeClass and workloads NodePool from chart..."
+          _NODEPOOL_VALUES="$REPO_DIR/deploy/$ENVIRONMENT/$REGION_DEPLOYMENT/argocd-values-$CLUSTER_TYPE.yaml"
+          _VALUES_FLAG=""
+          [ -f "$_NODEPOOL_VALUES" ] && _VALUES_FLAG="-f $_NODEPOOL_VALUES"
+          helm template eks-nodepool "$REPO_DIR/argocd/config/$CLUSTER_TYPE/eks-nodepool" \
+            --set global.cluster_name="$CLUSTER_NAME" \
+            $_VALUES_FLAG \
+            | kubectl apply --server-side -f -
+          echo "✓ FIPS EC2NodeClass and NodePool applied"
+
+          # If a previous bootstrap run failed mid-install, the Helm release is
+          # left in 'failed' state. Running helm upgrade on a failed HA ArgoCD
+          # install causes a StatefulSet rolling-update deadlock: redis-ha uses
+          # OrderedReady policy, so pod-0 must be Ready before pod-1 is created,
+          # but pod-0's Sentinel readiness probe requires quorum from pods 1 & 2.
+          # Fix: uninstall the broken release so the next helm upgrade --install
+          # does a clean initial install with all pods created from scratch.
+          if helm status argocd -n argocd 2>/dev/null | grep -q "^STATUS: failed\|^STATUS: pending"; then
+            echo "ArgoCD Helm release is in a broken state, uninstalling for clean reinstall..."
+            helm uninstall argocd -n argocd 2>/dev/null || true
+            kubectl wait --for=delete pod --all -n argocd --timeout=120s 2>/dev/null || true
           fi
 
-          # Always upgrade-or-install ArgoCD. The previous guard
-          # (kubectl get deployment argocd-server) was skipping the install
-          # on retries because helm --wait's timeout creates the Deployment
-          # object before giving up, leaving a broken install that subsequent
-          # runs silently skipped. helm upgrade --install is idempotent.
           echo "Installing/upgrading ArgoCD from repo chart..."
 
           # Create argocd namespace
