@@ -194,7 +194,7 @@ resource "aws_ecs_task_definition" "bootstrap" {
                 "meta.helm.sh/release-name=argocd" \
                 "meta.helm.sh/release-namespace=argocd" \
                 --overwrite 2>/dev/null || true
-            done
+            done || true
           done
 
           # Fetch chart dependencies (charts/ is gitignored)
