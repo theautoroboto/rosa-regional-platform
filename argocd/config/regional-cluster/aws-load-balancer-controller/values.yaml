@@ -1,6 +1,5 @@
 aws-load-balancer-controller:
-  clusterName: "{{ .Values.global.cluster_name }}"
-
+  # clusterName injected via ApplicationSet valuesObject (aws-load-balancer-controller.clusterName)
   serviceAccount:
     create: true
     name: aws-load-balancer-controller
